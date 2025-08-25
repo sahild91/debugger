@@ -1,6 +1,6 @@
 import * as os from 'os';
 
-export type SupportedPlatform = 'win32-x64' | 'darwin-x64' | 'darwin-arm64' | 'linux-x64';
+export type SupportedPlatform = 'win32-x64' | 'darwin-x64' | 'darwin-arm64' | 'linux-x64' | 'linux-arm64';
 
 export class PlatformUtils {
     
@@ -16,7 +16,7 @@ export class PlatformUtils {
                 return arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
             
             case 'linux':
-                return 'linux-x64'; // Assume x64 for now, can be extended for other architectures
+                return arch === 'arm64' ? 'linux-arm64' : 'linux-x64';
             
             default:
                 throw new Error(`Unsupported platform: ${platform}-${arch}`);
@@ -30,7 +30,8 @@ export class PlatformUtils {
             'win32-x64': 'Windows x64',
             'darwin-x64': 'macOS Intel',
             'darwin-arm64': 'macOS Apple Silicon',
-            'linux-x64': 'Linux x64'
+            'linux-x64': 'Linux x64',
+            'linux-arm64': 'Linux ARM64'
         };
 
         return displayNames[platform];

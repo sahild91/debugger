@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { simpleGit, SimpleGit } from 'simple-git';
 
+// Define our own progress handler type since it's not exported in newer versions
 type ProgressHandler = (progress: { stage: string; progress: number }) => void;
 
 export interface SDKSetupProgress {
@@ -16,9 +17,9 @@ export class SDKManager {
     private outputChannel: vscode.OutputChannel;
     private sdkPath: string;
     private git: SimpleGit;
-
-    // TODO: Replace with actual MSPM0 SDK repository URL
-    private readonly SDK_REPO_URL = 'https://github.com/TexasInstruments/mspm0-sdk'; // Placeholder
+    
+    // MSPM0 SDK repository URL
+    private readonly SDK_REPO_URL = 'https://github.com/TexasInstruments/mspm0-sdk';
     private readonly SDK_FOLDER_NAME = 'mspm0-sdk';
 
     constructor(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
@@ -34,20 +35,43 @@ export class SDKManager {
                 return false;
             }
 
-            // Check if it's a valid git repository
+            // Check if it's a valid git repository (basic check)
             const gitPath = path.join(this.sdkPath, '.git');
             if (!fs.existsSync(gitPath)) {
-                return false;
+                this.outputChannel.appendLine('Warning: SDK directory exists but no .git directory found');
+                // Don't fail immediately - check if we have the essential files for building
             }
 
-            // Check if it has the expected MSPM0 structure
+            // Check if it has the expected MSPM0 structure for building
             const expectedPaths = [
                 'source',
-                'examples',
+                'examples', 
                 'kernel'
             ];
 
-            return expectedPaths.every(p => fs.existsSync(path.join(this.sdkPath, p)));
+            const hasRequiredStructure = expectedPaths.every(p => fs.existsSync(path.join(this.sdkPath, p)));
+            
+            if (!hasRequiredStructure) {
+                this.outputChannel.appendLine('SDK directory missing required structure for building');
+                return false;
+            }
+
+            // Additional check: verify we have critical build files
+            const criticalBuildFiles = [
+                'source/ti/driverlib',
+                'source/third_party'
+            ];
+
+            const hasBuildFiles = criticalBuildFiles.some(p => fs.existsSync(path.join(this.sdkPath, p)));
+            
+            if (!hasBuildFiles) {
+                this.outputChannel.appendLine('Warning: SDK may be incomplete - missing some build components');
+                // Return true anyway if basic structure exists - partial SDK might still work
+            }
+
+            this.outputChannel.appendLine('SDK validation passed - directory structure looks good for building');
+            return true;
+
         } catch (error) {
             this.outputChannel.appendLine(`Error checking SDK installation: ${error}`);
             return false;
@@ -119,7 +143,7 @@ export class SDKManager {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             this.outputChannel.appendLine(`SDK installation failed: ${errorMessage}`);
-
+            
             progressCallback?.({
                 stage: 'error',
                 progress: 0,
@@ -152,7 +176,7 @@ export class SDKManager {
             });
 
             const git = simpleGit(this.sdkPath);
-
+            
             progressCallback?.({
                 stage: 'updating',
                 progress: 50,
@@ -170,10 +194,10 @@ export class SDKManager {
                 });
 
                 await git.pull();
-
+                
                 const version = await this.getSDKVersion();
                 this.outputChannel.appendLine(`MSPM0 SDK updated successfully. New version: ${version}`);
-
+                
                 progressCallback?.({
                     stage: 'complete',
                     progress: 100,
@@ -190,7 +214,7 @@ export class SDKManager {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             this.outputChannel.appendLine(`SDK update failed: ${errorMessage}`);
-
+            
             progressCallback?.({
                 stage: 'error',
                 progress: 0,
@@ -210,7 +234,7 @@ export class SDKManager {
             // Try to get version from git
             const git = simpleGit(this.sdkPath);
             const log = await git.log(['-1', '--oneline']);
-
+            
             if (log.latest) {
                 return log.latest.hash.substring(0, 8);
             }

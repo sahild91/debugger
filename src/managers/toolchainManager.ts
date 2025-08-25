@@ -24,16 +24,17 @@ export class ToolchainManager {
     private toolchainPath: string;
     private downloadUtils: DownloadUtils;
     
-    // TODO: Replace with actual TI download URLs and update when we add license compliance
+    // TI ARM-CGT-CLANG toolchain download URLs (v4.0.3.LTS)
     private readonly TOOLCHAIN_URLS = {
-        'win32-x64': 'https://software-dl.ti.com/codegen/esd/cgt_public_sw/armnone/3.2.2.LTS/ti_cgt_armllvm_3.2.2.LTS_win32.zip',
-        'darwin-x64': 'https://software-dl.ti.com/codegen/esd/cgt_public_sw/armnone/3.2.2.LTS/ti_cgt_armllvm_3.2.2.LTS_osx.tar.gz',
-        'darwin-arm64': 'https://software-dl.ti.com/codegen/esd/cgt_public_sw/armnone/3.2.2.LTS/ti_cgt_armllvm_3.2.2.LTS_osx.tar.gz',
-        'linux-x64': 'https://software-dl.ti.com/codegen/esd/cgt_public_sw/armnone/3.2.2.LTS/ti_cgt_armllvm_3.2.2.LTS_linux-x64.tar.gz'
+        'win32-x64': 'https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-ayxs93eZNN/4.0.3.LTS/ti_cgt_armllvm_4.0.3.LTS_windows-x64_installer.exe',
+        'darwin-x64': 'https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-ayxs93eZNN/4.0.3.LTS/ti_cgt_armllvm_4.0.3.LTS_osx_installer.app.zip',
+        'darwin-arm64': 'https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-ayxs93eZNN/4.0.3.LTS/ti_cgt_armllvm_4.0.3.LTS_osx_installer.app.zip',
+        'linux-x64': 'https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-ayxs93eZNN/4.0.3.LTS/ti_cgt_armllvm_4.0.3.LTS_linux-x64_installer.bin',
+        'linux-arm64': 'https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-ayxs93eZNN/4.0.3.LTS/ti_cgt_armllvm_4.0.3.LTS_linux-arm64_installer.bin'
     };
 
-    private readonly TOOLCHAIN_FOLDER_NAME = 'ti-cgt-armllvm';
-    
+    private readonly TOOLCHAIN_FOLDER_NAME = 'ti-cgt-armllvm-4.0.3';
+
     constructor(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
         this.context = context;
         this.outputChannel = outputChannel;
@@ -67,10 +68,11 @@ export class ToolchainManager {
             const platform = PlatformUtils.getCurrentPlatform();
             const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
             
-            // Search in common subdirectories
+            // Search in common subdirectories for v4.0.3
             const possiblePaths = [
                 path.join(this.toolchainPath, 'bin', executableName),
-                path.join(this.toolchainPath, 'ti_cgt_armllvm_3.2.2.LTS', 'bin', executableName),
+                path.join(this.toolchainPath, 'ti-cgt-armllvm_4.0.3.LTS', 'bin', executableName),
+                path.join(this.toolchainPath, 'ccs', 'tools', 'compiler', 'ti-cgt-armllvm_4.0.3.LTS', 'bin', executableName),
                 path.join(this.toolchainPath, executableName)
             ];
 
@@ -136,7 +138,8 @@ export class ToolchainManager {
             this.outputChannel.appendLine(`URL: ${downloadUrl}`);
 
             // Download the toolchain
-            const downloadPath = path.join(os.tmpdir(), `toolchain-${Date.now()}.${downloadUrl.endsWith('.zip') ? 'zip' : 'tar.gz'}`);
+            const fileName = this.getInstallerFileName(downloadUrl);
+            const downloadPath = path.join(os.tmpdir(), `toolchain-${Date.now()}-${fileName}`);
             
             await this.downloadUtils.downloadFile(downloadUrl, downloadPath, (progress) => {
                 progressCallback?.({
@@ -149,11 +152,11 @@ export class ToolchainManager {
             progressCallback?.({
                 stage: 'extracting',
                 progress: 70,
-                message: 'Extracting toolchain...'
+                message: 'Installing toolchain...'
             });
 
-            // Extract the toolchain
-            await this.extractToolchain(downloadPath, this.toolchainPath);
+            // Handle different installer types based on platform
+            await this.installToolchainFromFile(downloadPath, platform);
 
             progressCallback?.({
                 stage: 'configuring',
@@ -216,9 +219,186 @@ export class ToolchainManager {
         }
     }
 
+    private getInstallerFileName(url: string): string {
+        const urlParts = url.split('/');
+        return urlParts[urlParts.length - 1];
+    }
+
+    private async installToolchainFromFile(installerPath: string, platform: string): Promise<void> {
+        const { spawn } = require('child_process');
+        
+        return new Promise((resolve, reject) => {
+            // Ensure install directory exists
+            if (!fs.existsSync(this.toolchainPath)) {
+                fs.mkdirSync(this.toolchainPath, { recursive: true });
+            }
+
+            let installCommand: string;
+            let installArgs: string[];
+
+            if (platform.startsWith('win32')) {
+                // Windows installer (.exe)
+                this.outputChannel.appendLine('Running Windows installer...');
+                installCommand = installerPath;
+                installArgs = [
+                    '/S', // Silent installation
+                    `/D=${this.toolchainPath}` // Installation directory
+                ];
+            } else if (platform.startsWith('darwin')) {
+                // macOS installer (.app.zip)
+                this.outputChannel.appendLine('Extracting and running macOS installer...');
+                
+                // First extract the .app.zip
+                installCommand = 'unzip';
+                installArgs = ['-q', '-o', installerPath, '-d', path.dirname(installerPath)];
+                
+                // Note: This is simplified - macOS .app installers often need additional handling
+            } else if (platform.startsWith('linux')) {
+                // Linux installer (.bin)
+                this.outputChannel.appendLine('Running Linux installer...');
+                
+                // Make installer executable
+                fs.chmodSync(installerPath, '755');
+                
+                installCommand = installerPath;
+                installArgs = [
+                    '--mode', 'silent',
+                    '--prefix', this.toolchainPath
+                ];
+            } else {
+                reject(new Error(`Unsupported platform for installation: ${platform}`));
+                return;
+            }
+
+            this.outputChannel.appendLine(`Install command: ${installCommand} ${installArgs.join(' ')}`);
+
+            // Additional Windows-specific preparation
+            if (platform.startsWith('win32')) {
+                // Check if file exists and is accessible
+                try {
+                    const stats = fs.statSync(installerPath);
+                    this.outputChannel.appendLine(`Installer file size: ${stats.size} bytes`);
+                    this.outputChannel.appendLine(`Installer file permissions: ${stats.mode}`);
+                } catch (error) {
+                    reject(new Error(`Cannot access installer file: ${error}`));
+                    return;
+                }
+
+                // Wait a moment to ensure file isn't locked
+                this.outputChannel.appendLine('Waiting for file to be ready...');
+                setTimeout(() => {
+                    this.executeInstaller(installCommand, installArgs, resolve, reject, platform);
+                }, 2000);
+            } else {
+                this.executeInstaller(installCommand, installArgs, resolve, reject, platform);
+            }
+        });
+    }
+
+    private executeInstaller(
+        command: string, 
+        args: string[], 
+        resolve: Function, 
+        reject: Function, 
+        platform: string
+    ): void {
+        const { spawn } = require('child_process');
+
+        // Try different execution methods for Windows
+        const executionMethods = platform.startsWith('win32') 
+            ? [
+                { name: 'Direct execution', useShell: false },
+                { name: 'Shell execution', useShell: true },
+                { name: 'PowerShell execution', usePowerShell: true }
+            ]
+            : [{ name: 'Direct execution', useShell: false }];
+
+        let currentMethod = 0;
+
+        const tryNextMethod = () => {
+            if (currentMethod >= executionMethods.length) {
+                reject(new Error('All execution methods failed'));
+                return;
+            }
+
+            const method = executionMethods[currentMethod];
+            this.outputChannel.appendLine(`Attempting: ${method.name}`);
+            currentMethod++;
+
+            let installProcess: { stdout: { on: (arg0: string, arg1: (data: any) => void) => void; }; stderr: { on: (arg0: string, arg1: (data: any) => void) => void; }; on: (arg0: string, arg1: { (code: any): void; (error: any): void; }) => void; killed: any; kill: () => void; };
+
+            try {
+                if (method.usePowerShell) {
+                    // Use PowerShell as a fallback for Windows
+                    const psCommand = `Start-Process "${command}" -ArgumentList "${args.join('","')}" -Wait -PassThru`;
+                    installProcess = spawn('powershell', ['-Command', psCommand], {
+                        stdio: ['pipe', 'pipe', 'pipe']
+                    });
+                } else {
+                    installProcess = spawn(command, args, {
+                        stdio: ['pipe', 'pipe', 'pipe'],
+                        shell: method.useShell
+                    });
+                }
+
+                let stdout = '';
+                let stderr = '';
+
+                installProcess.stdout?.on('data', (data) => {
+                    const output = data.toString();
+                    stdout += output;
+                    this.outputChannel.append(output);
+                });
+
+                installProcess.stderr?.on('data', (data) => {
+                    const output = data.toString();
+                    stderr += output;
+                    this.outputChannel.append(output);
+                });
+
+                installProcess.on('close', (code) => {
+                    if (code === 0) {
+                        this.outputChannel.appendLine(`${method.name} completed successfully`);
+                        resolve();
+                    } else {
+                        this.outputChannel.appendLine(`${method.name} failed with exit code ${code}`);
+                        this.outputChannel.appendLine(`stderr: ${stderr}`);
+                        tryNextMethod();
+                    }
+                });
+
+                installProcess.on('error', (error) => {
+                    this.outputChannel.appendLine(`${method.name} process error: ${error.message}`);
+                    
+                    if (error.message.includes('EBUSY')) {
+                        this.outputChannel.appendLine('File appears to be locked or in use by another process');
+                        this.outputChannel.appendLine('This might be caused by antivirus software or Windows Defender');
+                        this.outputChannel.appendLine('Try adding exclusions for the temp and extension directories');
+                    }
+                    
+                    tryNextMethod();
+                });
+
+                // Set timeout for installation (15 minutes)
+                setTimeout(() => {
+                    if (installProcess && !installProcess.killed) {
+                        installProcess.kill();
+                        this.outputChannel.appendLine(`${method.name} timed out`);
+                        tryNextMethod();
+                    }
+                }, 900000);
+
+            } catch (spawnError) {
+                this.outputChannel.appendLine(`${method.name} spawn failed: ${spawnError}`);
+                tryNextMethod();
+            }
+        };
+
+        tryNextMethod();
+    }
+
     private async extractToolchain(archivePath: string, extractPath: string): Promise<void> {
-        // For MVP, we'll implement basic extraction
-        // TODO: Add proper archive extraction using node libraries
+        // This method is now primarily for fallback/legacy support
         const { spawn } = require('child_process');
         
         return new Promise((resolve, reject) => {
@@ -247,7 +427,7 @@ export class ToolchainManager {
 
             const extractProcess = spawn(extractCommand, extractArgs);
             
-            extractProcess.on('close', (code: number) => {
+            extractProcess.on('close', (code: any) => {
                 if (code === 0) {
                     resolve();
                 } else {
@@ -269,7 +449,7 @@ export class ToolchainManager {
             const binPath = path.join(this.toolchainPath, '**', 'bin');
             const chmodProcess = spawn('find', [this.toolchainPath, '-name', 'bin', '-type', 'd', '-exec', 'chmod', '+x', '{}/*', ';']);
             
-            chmodProcess.on('close', (_code: any) => {
+            chmodProcess.on('close', (code: any) => {
                 resolve(); // Don't fail on chmod errors, just continue
             });
 
@@ -370,10 +550,11 @@ export class ToolchainManager {
             return [];
         }
 
-        // Common library paths for ARM-CGT-CLANG
+        // Common library paths for ARM-CGT-CLANG v4.0.3
         const possibleLibPaths = [
             path.join(this.toolchainPath, 'lib'),
-            path.join(this.toolchainPath, 'ti_cgt_armllvm_3.2.2.LTS', 'lib'),
+            path.join(this.toolchainPath, 'ti-cgt-armllvm_4.0.3.LTS', 'lib'),
+            path.join(this.toolchainPath, 'ccs', 'tools', 'compiler', 'ti-cgt-armllvm_4.0.3.LTS', 'lib'),
             path.join(this.toolchainPath, 'armcl', 'lib')
         ];
 
@@ -385,10 +566,11 @@ export class ToolchainManager {
             return [];
         }
 
-        // Common include paths for ARM-CGT-CLANG
+        // Common include paths for ARM-CGT-CLANG v4.0.3
         const possibleIncludePaths = [
             path.join(this.toolchainPath, 'include'),
-            path.join(this.toolchainPath, 'ti_cgt_armllvm_3.2.2.LTS', 'include'),
+            path.join(this.toolchainPath, 'ti-cgt-armllvm_4.0.3.LTS', 'include'),
+            path.join(this.toolchainPath, 'ccs', 'tools', 'compiler', 'ti-cgt-armllvm_4.0.3.LTS', 'include'),
             path.join(this.toolchainPath, 'armcl', 'include')
         ];
 

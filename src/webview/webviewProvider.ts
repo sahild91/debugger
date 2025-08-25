@@ -150,22 +150,38 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 data: { message: 'Starting setup process...' }
             });
 
+            this.outputChannel.appendLine('='.repeat(50));
+            this.outputChannel.appendLine('Starting comprehensive setup...');
+            this.outputChannel.appendLine('='.repeat(50));
+
             // Check current status
             const sdkInstalled = await this.sdkManager.isSDKInstalled();
             const toolchainInstalled = await this.toolchainManager.isToolchainInstalled();
 
+            this.outputChannel.appendLine(`Current status: SDK=${sdkInstalled}, Toolchain=${toolchainInstalled}`);
+
             // Install SDK if needed
             if (!sdkInstalled) {
+                this.outputChannel.appendLine('SDK not found - starting installation...');
                 await this.installSDK();
+            } else {
+                this.outputChannel.appendLine('SDK already installed - skipping SDK installation');
             }
 
             // Install toolchain if needed  
             if (!toolchainInstalled) {
+                this.outputChannel.appendLine('Toolchain not found - starting installation...');
                 await this.installToolchain();
+            } else {
+                this.outputChannel.appendLine('Toolchain already installed - skipping toolchain installation');
             }
 
             // Update final status
             await this.updateSetupStatus();
+
+            this.outputChannel.appendLine('='.repeat(50));
+            this.outputChannel.appendLine('Setup process completed successfully!');
+            this.outputChannel.appendLine('='.repeat(50));
 
             this.sendMessage({
                 command: 'setupComplete',
@@ -179,6 +195,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             this.outputChannel.appendLine(`Setup failed: ${errorMessage}`);
+            this.outputChannel.appendLine('='.repeat(50));
             
             this.sendMessage({
                 command: 'setupError',
