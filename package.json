@@ -1,0 +1,150 @@
+{
+  "name": "port11-debugger",
+  "displayName": "Port11 Debugger",
+  "description": "VS Code extension for MSPM0 development with build, flash, and debug capabilities",
+  "version": "0.1.0",
+  "publisher": "port11",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "mspm0",
+    "embedded",
+    "debugging",
+    "arm",
+    "cortex-m"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "workspaceContains:**/*.c",
+    "workspaceContains:**/*.cpp"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "port11-debugger.build",
+        "title": "Build Project",
+        "category": "Port11"
+      },
+      {
+        "command": "port11-debugger.flash",
+        "title": "Flash Firmware",
+        "category": "Port11"
+      },
+      {
+        "command": "port11-debugger.debug.start",
+        "title": "Start Debug Session",
+        "category": "Port11"
+      },
+      {
+        "command": "port11-debugger.debug.stop",
+        "title": "Stop Debug Session",
+        "category": "Port11"
+      },
+      {
+        "command": "port11-debugger.showPanel",
+        "title": "Show Port11 Panel",
+        "category": "Port11"
+      },
+      {
+        "command": "port11-debugger.setup",
+        "title": "Setup Toolchain",
+        "category": "Port11"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "port11-debugger.mainView",
+          "name": "Port11 Debugger",
+          "when": "true"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "port11-debugger.mainView",
+        "contents": "Welcome to Port11 Debugger!\n[Setup Toolchain](command:port11-debugger.setup)\n[Show Panel](command:port11-debugger.showPanel)"
+      }
+    ],
+    "configuration": {
+      "title": "Port11 Debugger",
+      "properties": {
+        "port11-debugger.autoUpdate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically update MSPM0 SDK and toolchains"
+        },
+        "port11-debugger.serialPort": {
+          "type": "string",
+          "description": "Override auto-detected serial port"
+        },
+        "port11-debugger.debugVerbose": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose DAP CLI output"
+        },
+        "port11-debugger.offlineMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Skip automatic downloads, use cached toolchains only"
+        },
+        "port11-debugger.buildOutputLevel": {
+          "type": "string",
+          "enum": ["minimal", "normal", "verbose"],
+          "default": "normal",
+          "description": "Build output verbosity level"
+        }
+      }
+    },
+    "problemMatchers": [
+      {
+        "name": "arm-cgt-clang",
+        "owner": "port11-debugger",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "20.x",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "typescript": "^5.3.0",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4",
+    "ts-loader": "^9.5.1",
+    "@vscode/test-cli": "^0.0.4",
+    "@vscode/test-electron": "^2.3.8"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.0",
+    "serialport": "^10.5.0",
+    "simple-git": "^3.16.0"
+  }
+}

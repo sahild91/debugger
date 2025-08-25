@@ -1,0 +1,58 @@
+# Source files
+src/**
+tsconfig.json
+webpack.config.js
+
+# Development dependencies and configs
+node_modules/**
+.eslintrc.js
+.gitignore
+
+# Documentation and development files
+*.md
+docs/**
+.vscode/**
+.vscode-test/**
+
+# Build artifacts not needed in package
+.nyc_output
+coverage/
+test-results/
+
+# Development scripts
+scripts/
+
+# Git files
+.git/**
+.gitignore
+
+# Editor files
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Local development files
+.env
+.env.*
+
+# Cache directories
+.npm/
+.cache/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Temporary files
+tmp/
+temp/
+
+# Test files
+src/test/**
+**/*.test.ts
+
+# Only include compiled JavaScript and necessary resources
+!dist/**
+!resources/**
