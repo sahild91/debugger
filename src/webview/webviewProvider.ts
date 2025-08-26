@@ -138,23 +138,21 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
     public async startSetup(): Promise<void> {
         if (this.isSetupInProgress) {
-            this.outputChannel.appendLine('Setup already in progress');
+            this.sendMessage({
+                command: 'setupError',
+                data: { message: 'Setup already in progress' }
+            });
             return;
         }
 
         this.isSetupInProgress = true;
-        
+
         try {
-            this.sendMessage({
-                command: 'setupStarted',
-                data: { message: 'Starting setup process...' }
-            });
-
             this.outputChannel.appendLine('='.repeat(50));
-            this.outputChannel.appendLine('Starting comprehensive setup...');
+            this.outputChannel.appendLine('Starting Port11 Debugger setup...');
             this.outputChannel.appendLine('='.repeat(50));
 
-            // Check current status
+            // Check current installation status
             const sdkInstalled = await this.sdkManager.isSDKInstalled();
             const toolchainInstalled = await this.toolchainManager.isToolchainInstalled();
 
@@ -188,9 +186,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 data: { message: 'Setup completed successfully!' }
             });
 
-            // Mark setup as complete in settings
-            const config = vscode.workspace.getConfiguration('port11-debugger');
-            await config.update('setupComplete', true, vscode.ConfigurationTarget.Global);
+            // Mark setup as complete in extension global state (not user settings)
+            await this.context.globalState.update('setupComplete', true);
+            await this.context.globalState.update('setupCompletedDate', new Date().toISOString());
+
+            this.outputChannel.appendLine('Setup completion status saved to extension state');
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -201,6 +201,12 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 command: 'setupError',
                 data: { message: `Setup failed: ${errorMessage}` }
             });
+
+            // Mark setup as failed in extension global state
+            await this.context.globalState.update('setupComplete', false);
+            await this.context.globalState.update('setupLastError', errorMessage);
+            await this.context.globalState.update('setupLastErrorDate', new Date().toISOString());
+
         } finally {
             this.isSetupInProgress = false;
         }
@@ -310,43 +316,92 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     }
 
     private async updateSetupStatus(): Promise<void> {
-        try {
-            const sdkInstalled = await this.sdkManager.isSDKInstalled();
-            const toolchainInstalled = await this.toolchainManager.isToolchainInstalled();
-            const boards = await this.serialManager.detectBoards();
-            const connectedPorts = this.serialManager.getConnectedPorts();
+        const status = await this.getSetupStatus();
+        
+        this.sendMessage({
+            command: 'statusUpdate',
+            data: {
+                setupComplete: status.isComplete,
+                sdkInstalled: status.sdkInstalled,
+                toolchainInstalled: status.toolchainInstalled,
+                completedDate: status.completedDate,
+                lastError: status.lastError
+            }
+        });
 
-            const status: SetupStatus = {
-                sdkInstalled,
-                toolchainInstalled,
-                boardConnected: connectedPorts.length > 0,
-                setupComplete: sdkInstalled && toolchainInstalled
-            };
-
-            // Get version information
-            const sdkVersion = await this.sdkManager.getSDKVersion();
-            const toolchainInfo = await this.toolchainManager.getToolchainInfo();
-
-            this.sendMessage({
-                command: 'statusUpdate',
-                data: {
-                    status,
-                    sdkVersion,
-                    toolchainInfo,
-                    boards,
-                    connectedPorts
-                }
-            });
-
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            this.outputChannel.appendLine(`Status update failed: ${errorMessage}`);
-            
-            this.sendMessage({
-                command: 'statusError',
-                data: { message: errorMessage }
-            });
+        // Log status for debugging
+        this.outputChannel.appendLine(`Setup Status - Complete: ${status.isComplete}, SDK: ${status.sdkInstalled}, Toolchain: ${status.toolchainInstalled}`);
+        if (status.completedDate) {
+            this.outputChannel.appendLine(`Setup completed on: ${status.completedDate}`);
         }
+        if (status.lastError) {
+            this.outputChannel.appendLine(`Last error (${status.lastError.date}): ${status.lastError.error}`);
+        }
+    }
+
+    /**
+     * Check if the setup has been completed
+     */
+    async isSetupComplete(): Promise<boolean> {
+        const setupComplete = this.context.globalState.get('setupComplete', false);
+        return setupComplete as boolean;
+    }
+
+    /**
+     * Get the setup completion date
+     */
+    async getSetupCompletedDate(): Promise<string | undefined> {
+        return this.context.globalState.get('setupCompletedDate') as string | undefined;
+    }
+
+    /**
+     * Get the last setup error information
+     */
+    async getLastSetupError(): Promise<{ error: string; date: string } | undefined> {
+        const error = this.context.globalState.get('setupLastError') as string | undefined;
+        const date = this.context.globalState.get('setupLastErrorDate') as string | undefined;
+        
+        if (error && date) {
+            return { error, date };
+        }
+        return undefined;
+    }
+
+    /**
+     * Reset the setup state (useful for testing or re-setup)
+     */
+    async resetSetupState(): Promise<void> {
+        await this.context.globalState.update('setupComplete', undefined);
+        await this.context.globalState.update('setupCompletedDate', undefined);
+        await this.context.globalState.update('setupLastError', undefined);
+        await this.context.globalState.update('setupLastErrorDate', undefined);
+        
+        this.outputChannel.appendLine('Setup state has been reset');
+    }
+
+    /**
+     * Get comprehensive setup status information
+     */
+    async getSetupStatus(): Promise<{
+        isComplete: boolean;
+        completedDate?: string;
+        lastError?: { error: string; date: string };
+        sdkInstalled: boolean;
+        toolchainInstalled: boolean;
+    }> {
+        const isComplete = await this.isSetupComplete();
+        const completedDate = await this.getSetupCompletedDate();
+        const lastError = await this.getLastSetupError();
+        const sdkInstalled = await this.sdkManager.isSDKInstalled();
+        const toolchainInstalled = await this.toolchainManager.isToolchainInstalled();
+
+        return {
+            isComplete,
+            completedDate,
+            lastError,
+            sdkInstalled,
+            toolchainInstalled
+        };
     }
 
     private getWebviewContent(): string {

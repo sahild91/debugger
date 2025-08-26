@@ -60,43 +60,58 @@ export class ToolchainManager {
         };
 
         try {
-            if (!fs.existsSync(this.toolchainPath)) {
-                return defaultInfo;
-            }
-
-            // Look for the compiler executable
-            const platform = PlatformUtils.getCurrentPlatform();
-            const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
-            
-            // Search in common subdirectories for v4.0.3
-            const possiblePaths = [
-                path.join(this.toolchainPath, 'bin', executableName),
-                path.join(this.toolchainPath, 'ti-cgt-armllvm_4.0.3.LTS', 'bin', executableName),
-                path.join(this.toolchainPath, 'ccs', 'tools', 'compiler', 'ti-cgt-armllvm_4.0.3.LTS', 'bin', executableName),
-                path.join(this.toolchainPath, executableName)
+            // Search in multiple possible installation locations
+            const searchPaths = [
+                // Our preferred location
+                this.toolchainPath,
+                // Common TI installation locations
+                'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_4.0.3.LTS',
+                'C:\\ti\\ti-cgt-armllvm_4.0.3.LTS',
+                'C:\\Program Files\\Texas Instruments\\ti-cgt-armllvm_4.0.3.LTS',
+                'C:\\Program Files (x86)\\Texas Instruments\\ti-cgt-armllvm_4.0.3.LTS',
+                // User's home directory variations  
+                path.join(os.homedir(), 'ti', 'ti-cgt-armllvm_4.0.3.LTS'),
+                path.join(os.homedir(), 'AppData', 'Local', 'ti', 'ti-cgt-armllvm_4.0.3.LTS'),
+                // Version variations
+                'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_4.0.3',
+                'C:\\ti\\ti-cgt-armllvm_4.0.3'
             ];
 
-            let executablePath: string | undefined;
-            for (const possiblePath of possiblePaths) {
-                if (fs.existsSync(possiblePath)) {
-                    executablePath = possiblePath;
-                    break;
+            this.outputChannel.appendLine('Searching for toolchain in multiple locations...');
+
+            for (const searchPath of searchPaths) {
+                this.outputChannel.appendLine(`Checking: ${searchPath}`);
+                
+                if (fs.existsSync(searchPath)) {
+                    this.outputChannel.appendLine(`Found directory: ${searchPath}`);
+                    
+                    const toolchainInfo = await this.validateToolchainAtPath(searchPath);
+                    if (toolchainInfo.isInstalled) {
+                        this.outputChannel.appendLine(`✅ Valid toolchain found at: ${searchPath}`);
+                        // Update our internal path to the actual location
+                        this.toolchainPath = searchPath;
+                        return toolchainInfo;
+                    } else {
+                        this.outputChannel.appendLine(`❌ Directory exists but no valid toolchain found`);
+                    }
+                } else {
+                    this.outputChannel.appendLine(`❌ Directory does not exist`);
                 }
             }
 
-            if (!executablePath) {
-                return defaultInfo;
+            // If not found in standard locations, try to find via registry or environment
+            const registryPath = await this.findToolchainViaRegistry();
+            if (registryPath && fs.existsSync(registryPath)) {
+                this.outputChannel.appendLine(`Found via registry: ${registryPath}`);
+                const toolchainInfo = await this.validateToolchainAtPath(registryPath);
+                if (toolchainInfo.isInstalled) {
+                    this.toolchainPath = registryPath;
+                    return toolchainInfo;
+                }
             }
 
-            // Try to get version information
-            const version = await this.getToolchainVersion(executablePath);
-
-            return {
-                version,
-                path: this.toolchainPath,
-                isInstalled: true,
-                executablePath
-            };
+            this.outputChannel.appendLine('❌ Toolchain not found in any expected location');
+            return defaultInfo;
 
         } catch (error) {
             this.outputChannel.appendLine(`Error getting toolchain info: ${error}`);
@@ -104,7 +119,96 @@ export class ToolchainManager {
         }
     }
 
+    private async validateToolchainAtPath(toolchainPath: string): Promise<ToolchainInfo> {
+        const defaultInfo: ToolchainInfo = {
+            version: 'Not installed',
+            path: toolchainPath,
+            isInstalled: false
+        };
+
+        try {
+            const platform = PlatformUtils.getCurrentPlatform();
+            const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
+            
+            // Search in common subdirectories for v4.0.3
+            const possiblePaths = [
+                path.join(toolchainPath, 'bin', executableName),
+                path.join(toolchainPath, 'ti-cgt-armllvm_4.0.3.LTS', 'bin', executableName),
+                path.join(toolchainPath, 'ccs', 'tools', 'compiler', 'ti-cgt-armllvm_4.0.3.LTS', 'bin', executableName),
+                path.join(toolchainPath, executableName)
+            ];
+
+            for (const possiblePath of possiblePaths) {
+                this.outputChannel.appendLine(`  Checking executable: ${possiblePath}`);
+                if (fs.existsSync(possiblePath)) {
+                    this.outputChannel.appendLine(`  ✅ Found compiler executable: ${possiblePath}`);
+                    
+                    // Try to get version information
+                    const version = await this.getToolchainVersion(possiblePath);
+
+                    return {
+                        version,
+                        path: toolchainPath,
+                        isInstalled: true,
+                        executablePath: possiblePath
+                    };
+                } else {
+                    this.outputChannel.appendLine(`  ❌ Not found: ${possiblePath}`);
+                }
+            }
+
+            return defaultInfo;
+        } catch (error) {
+            this.outputChannel.appendLine(`Error validating toolchain at ${toolchainPath}: ${error}`);
+            return defaultInfo;
+        }
+    }
+
+    private async findToolchainViaRegistry(): Promise<string | null> {
+        // Try to find TI tools installation via Windows registry
+        if (process.platform !== 'win32') {
+            return null;
+        }
+
+        try {
+            const { exec } = require('child_process');
+            
+            return new Promise((resolve) => {
+                // Query registry for TI installation paths
+                const regQuery = 'reg query "HKEY_LOCAL_MACHINE\\SOFTWARE\\Texas Instruments" /s /f "ti-cgt-armllvm" 2>nul';
+                
+                exec(regQuery, (error: any, stdout: string, stderr: any) => {
+                    if (error || !stdout) {
+                        this.outputChannel.appendLine('No TI registry entries found');
+                        resolve(null);
+                        return;
+                    }
+
+                    // Parse registry output to find installation path
+                    const lines = stdout.split('\n');
+                    for (const line of lines) {
+                        if (line.includes('ti-cgt-armllvm') && line.includes('4.0.3')) {
+                            // Extract path from registry line
+                            const pathMatch = line.match(/([C-Z]:\\[^"]*ti-cgt-armllvm[^"]*)/i);
+                            if (pathMatch) {
+                                this.outputChannel.appendLine(`Found registry path: ${pathMatch[1]}`);
+                                resolve(pathMatch[1]);
+                                return;
+                            }
+                        }
+                    }
+                    resolve(null);
+                });
+            });
+        } catch (error) {
+            this.outputChannel.appendLine(`Registry search failed: ${error}`);
+            return null;
+        }
+    }
+
     async installToolchain(progressCallback?: (progress: ToolchainSetupProgress) => void): Promise<void> {
+        let downloadPath: string | undefined;
+        
         try {
             // Check if already installed
             if (await this.isToolchainInstalled()) {
@@ -139,7 +243,7 @@ export class ToolchainManager {
 
             // Download the toolchain
             const fileName = this.getInstallerFileName(downloadUrl);
-            const downloadPath = path.join(os.tmpdir(), `toolchain-${Date.now()}-${fileName}`);
+            downloadPath = path.join(os.tmpdir(), `toolchain-${Date.now()}-${fileName}`);
             
             await this.downloadUtils.downloadFile(downloadUrl, downloadPath, (progress) => {
                 progressCallback?.({
@@ -181,11 +285,13 @@ export class ToolchainManager {
                 throw new Error('Toolchain validation failed after installation');
             }
 
-            // Clean up download file
-            try {
-                fs.unlinkSync(downloadPath);
-            } catch (cleanupError) {
-                this.outputChannel.appendLine(`Warning: Could not clean up download file: ${cleanupError}`);
+            // Clean up download file on success
+            if (downloadPath && fs.existsSync(downloadPath)) {
+                try {
+                    fs.unlinkSync(downloadPath);
+                } catch (cleanupError) {
+                    this.outputChannel.appendLine(`Warning: Could not clean up download file: ${cleanupError}`);
+                }
             }
 
             this.outputChannel.appendLine(`ARM-CGT-CLANG toolchain installed successfully. Version: ${toolchainInfo.version}`);
@@ -200,16 +306,28 @@ export class ToolchainManager {
             const errorMessage = error instanceof Error ? error.message : String(error);
             this.outputChannel.appendLine(`Toolchain installation failed: ${errorMessage}`);
             
+            // Complete the error progress callback
             progressCallback?.({
                 stage: 'error',
                 progress: 0,
                 message: `Installation failed: ${errorMessage}`
             });
 
-            // Clean up on failure
+            // Clean up download file on error
+            if (downloadPath && fs.existsSync(downloadPath)) {
+                try {
+                    fs.unlinkSync(downloadPath);
+                    this.outputChannel.appendLine('Cleaned up downloaded installer file');
+                } catch (cleanupError) {
+                    this.outputChannel.appendLine(`Warning: Could not clean up download file: ${cleanupError}`);
+                }
+            }
+
+            // Clean up installation directory on failure
             if (fs.existsSync(this.toolchainPath)) {
                 try {
                     fs.rmSync(this.toolchainPath, { recursive: true, force: true });
+                    this.outputChannel.appendLine('Cleaned up partial installation directory');
                 } catch (cleanupError) {
                     this.outputChannel.appendLine(`Cleanup failed: ${cleanupError}`);
                 }
@@ -241,8 +359,8 @@ export class ToolchainManager {
                 this.outputChannel.appendLine('Running Windows installer...');
                 installCommand = installerPath;
                 installArgs = [
-                    '/S', // Silent installation
-                    `/D=${this.toolchainPath}` // Installation directory
+                    '--mode unattended', // Silent installation
+                    `--prefix ${this.toolchainPath}` // Installation directory
                 ];
             } else if (platform.startsWith('darwin')) {
                 // macOS installer (.app.zip)
