@@ -3,123 +3,74 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src vscode-resource: 'unsafe-inline'; script-src vscode-resource: 'unsafe-inline'; img-src vscode-resource: data:;">
     <title>Port11 Debugger</title>
-    <link href="{{styleUri}}" rel="stylesheet">
+    <link rel="stylesheet" href="{{styleUri}}">
 </head>
 <body>
-    <div class="container">
-        <!-- Header Section -->
-        <header class="header">
-            <div class="header-content">
-                <div class="logo">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" class="logo-icon">
-                        <path d="M12 2L2 7L12 12L22 7L12 2Z"/>
-                        <path d="M2 17L12 22L22 17"/>
-                        <path d="M2 12L12 17L22 12"/>
-                    </svg>
-                    <h1>Port11 Debugger</h1>
-                </div>
-                <p class="subtitle">MSPM0 Development Environment</p>
-            </div>
-        </header>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <h1>
+                <div class="header-icon">⚡</div>
+                Port11 Debugger
+            </h1>
+            <p>MSPM0 Development Environment</p>
+        </div>
+    </header>
 
-        <!-- Status Overview Section -->
+    <div class="container">
+        <!-- System Status -->
         <section id="status-section" class="section">
             <div class="section-header">
                 <h2>System Status</h2>
-                <button id="refresh-status-btn" class="btn btn-icon" title="Refresh Status">
+                <button id="refresh-status-btn" class="btn btn-secondary btn-small">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M13.65 2.35A7.95 7.95 0 0 0 8 0a8 8 0 0 0-8 8h1a7 7 0 0 1 7-7 7 7 0 0 1 6.93 6H13l2 2 2-2h-2a8 8 0 0 0-1.35-5.65z"/>
+                        <path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/>
+                        <path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/>
                     </svg>
+                    Refresh
                 </button>
             </div>
-            
-            <div id="status-grid" class="status-grid">
-                <div class="status-item" id="status-sdk">
-                    <div class="status-icon">
-                        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M3 3h14v2H3V3zm0 4h14v2H3V7zm0 4h14v2H3v-2zm0 4h14v2H3v-2z"/>
-                        </svg>
+
+            <div class="status-grid">
+                <div class="status-card" id="sdk-status">
+                    <div class="status-header">
+                        <div class="status-title">MSPM0 SDK</div>
+                        <div class="status-icon" id="sdk-icon">○</div>
                     </div>
-                    <div class="status-details">
-                        <h3>MSPM0 SDK</h3>
-                        <p id="sdk-status-text">Checking...</p>
-                        <small id="sdk-version" class="status-version"></small>
-                    </div>
-                    <div class="status-indicator" id="sdk-indicator">
-                        <div class="spinner"></div>
-                    </div>
+                    <div class="status-details" id="sdk-details">Checking installation...</div>
+                    <div class="status-version" id="sdk-version"></div>
                 </div>
 
-                <div class="status-item" id="status-toolchain">
-                    <div class="status-icon">
-                        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M10.5 1.5L8.5 3.5L12 7L16 3L10.5 1.5ZM8 8L4 12L8 16L12 12L8 8Z"/>
-                        </svg>
+                <div class="status-card" id="toolchain-status">
+                    <div class="status-header">
+                        <div class="status-title">ARM-CGT-CLANG</div>
+                        <div class="status-icon" id="toolchain-icon">○</div>
                     </div>
-                    <div class="status-details">
-                        <h3>ARM-CGT-CLANG</h3>
-                        <p id="toolchain-status-text">Checking...</p>
-                        <small id="toolchain-version" class="status-version"></small>
-                    </div>
-                    <div class="status-indicator" id="toolchain-indicator">
-                        <div class="spinner"></div>
-                    </div>
+                    <div class="status-details" id="toolchain-details">Checking installation...</div>
+                    <div class="status-version" id="toolchain-version"></div>
                 </div>
 
-                <div class="status-item" id="status-board">
-                    <div class="status-icon">
-                        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M2 2h16v16H2V2zm2 2v12h12V4H4zm2 2h8v2H6V6zm0 4h8v2H6v-2zm0 4h8v2H6v-2z"/>
-                        </svg>
+                <div class="status-card" id="sysconfig-status">
+                    <div class="status-header">
+                        <div class="status-title">TI SysConfig</div>
+                        <div class="status-icon" id="sysconfig-icon">○</div>
                     </div>
-                    <div class="status-details">
-                        <h3>Boards</h3>
-                        <p id="board-status-text">Checking...</p>
-                        <small id="board-count" class="status-version"></small>
-                    </div>
-                    <div class="status-indicator" id="board-indicator">
-                        <div class="spinner"></div>
-                    </div>
+                    <div class="status-details" id="sysconfig-details">Checking installation...</div>
+                    <div class="status-version" id="sysconfig-version"></div>
                 </div>
-            </div>
-            
-            <!-- Setup Progress (Hidden by default) -->
-            <div id="setup-progress" class="progress-container" style="display: none;">
-                <div class="progress-header">
-                    <h3 id="progress-title">Setting up toolchain...</h3>
-                    <span id="progress-percentage">0%</span>
-                </div>
-                <div class="progress-bar">
-                    <div id="progress-fill" class="progress-fill"></div>
-                </div>
-                <p id="progress-text" class="progress-message">Initializing...</p>
-                <div id="progress-details" class="progress-details"></div>
             </div>
         </section>
 
-        <!-- Quick Actions Section -->
+        <!-- Quick Actions -->
         <section id="actions-section" class="section">
             <div class="section-header">
                 <h2>Quick Actions</h2>
             </div>
             
-            <div class="action-grid">
-                <button id="setup-btn" class="action-card setup-card">
-                    <div class="action-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 15.5A3.5 3.5 0 0 1 8.5 12A3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97c0-.33-.03-.66-.07-1l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.39-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1c0 .33.03.65.07.97l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1.01c.52.4 1.06.74 1.69.99l.37 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.65c.63-.26 1.17-.59 1.69-.99l2.49 1.01c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.66Z"/>
-                        </svg>
-                    </div>
-                    <div class="action-content">
-                        <h3>Setup Toolchain</h3>
-                        <p>Install SDK and compiler</p>
-                    </div>
-                </button>
-
-                <button id="build-btn" class="action-card build-card" disabled>
-                    <div class="action-icon">
+            <div class="actions-grid">
+                <button id="build-btn" class="action-btn">
+                    <div class="action-icon build-icon">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M12.89 3L14.85 3.4L11.11 21L9.15 20.6L12.89 3M19.59 12L16 8.41V5.58L22.42 12L16 18.41V15.58L19.59 12M1.58 12L8 5.58V8.41L4.41 12L8 15.58V18.41L1.58 12Z"/>
                         </svg>
@@ -130,10 +81,10 @@
                     </div>
                 </button>
 
-                <button id="flash-btn" class="action-card flash-card" disabled>
-                    <div class="action-icon">
+                <button id="flash-btn" class="action-btn">
+                    <div class="action-icon flash-icon">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M7 2V13H10V22L17 10H13L17 2H7Z"/>
+                            <path d="M7,2V13H10V22L17,10H13L17,2H7Z"/>
                         </svg>
                     </div>
                     <div class="action-content">
@@ -142,10 +93,10 @@
                     </div>
                 </button>
 
-                <button id="debug-btn" class="action-card debug-card" disabled>
-                    <div class="action-icon">
+                <button id="debug-btn" class="action-btn">
+                    <div class="action-icon debug-icon">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M20 8H17.19C16.74 7.22 16.12 6.55 15.37 6.04L17 4.41L15.59 3L13.42 5.17C12.96 5.06 12.49 5 12 5S11.04 5.06 10.59 5.17L8.41 3L7 4.41L8.62 6.04C7.88 6.55 7.26 7.22 6.81 8H4V10H6.09C6.04 10.33 6 10.66 6 11V12H4V14H6V15C6 15.34 6.04 15.67 6.09 16H4V18H6.81C7.85 19.79 9.78 21 12 21S16.15 19.79 17.19 18H20V16H17.91C17.96 15.67 18 15.34 18 15V14H20V12H18V11C18 10.66 17.96 10.33 17.91 10H20V8ZM16 15C16 16.66 14.66 18 13 18H11C9.34 18 8 16.66 8 15V11C8 9.34 9.34 8 11 8H13C14.66 8 16 9.34 16 11V15Z"/>
+                            <path d="M20,8H17.19C16.74,7.22 16.12,6.55 15.37,6.04L17,4.41L15.59,3L13.42,5.17C12.96,5.06 12.49,5 12,5C11.51,5 11.04,5.06 10.58,5.17L8.41,3L7,4.41L8.63,6.04C7.88,6.55 7.26,7.22 6.81,8H4V10H6.09C6.04,10.33 6,10.66 6,11V12H4V14H6V15C6,15.34 6.04,15.67 6.09,16H4V18H6.81C7.85,19.79 9.78,21 12,21C14.22,21 16.15,19.79 17.19,18H20V16H17.91C17.96,15.67 18,15.34 18,15V14H20V12H18V11C18,10.66 17.96,10.33 17.91,10H20V8M16,15A4,4 0 0,1 12,19A4,4 0 0,1 8,15V11A4,4 0 0,1 12,7A4,4 0 0,1 16,11V15M10,9H14V11H10V9M10,13H14V15H10V13Z"/>
                         </svg>
                     </div>
                     <div class="action-content">
@@ -153,98 +104,49 @@
                         <p>Debug your firmware</p>
                     </div>
                 </button>
+
+                <button id="setup-btn" class="action-btn btn-secondary">
+                    <div class="action-icon setup-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.22,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.22,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"/>
+                        </svg>
+                    </div>
+                    <div class="action-content">
+                        <h3>Setup</h3>
+                        <p>Re-run configuration</p>
+                    </div>
+                </button>
             </div>
         </section>
 
-        <!-- Board Management Section -->
+        <!-- Boards Section -->
         <section id="boards-section" class="section">
             <div class="section-header">
                 <h2>Connected Boards</h2>
-                <button id="detect-boards-btn" class="btn btn-secondary">
+                <button id="detect-boards-btn" class="btn btn-secondary btn-small">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M11.5 1a.5.5 0 0 1 .5.5v1h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1h-1a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h1v-1a.5.5 0 0 1 .5-.5h1z"/>
-                        <path d="M10.121 12.596c.53-.146.949-.55 1.212-1.096a2.5 2.5 0 1 0-4.666 0c.263.546.682.95 1.212 1.096a8.01 8.01 0 0 0-2.018 1.904H3.5a.5.5 0 0 0-.5.5v.5a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5v-.5a.5.5 0 0 0-.5-.5h-2.361a8.01 8.01 0 0 0-2.018-1.904z"/>
+                        <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
                     </svg>
                     Detect Boards
                 </button>
             </div>
-            
-            <div id="boards-list" class="boards-list">
+
+            <div id="boards-list">
                 <div class="empty-state">
-                    <svg width="48" height="48" viewBox="0 0 48 48" fill="currentColor" class="empty-icon">
-                        <path d="M6 6h36v36H6V6zm6 6v24h24V12H12zm6 6h12v3H18v-3zm0 6h12v3H18v-3z"/>
-                    </svg>
+                    <div class="empty-icon">📱</div>
                     <p>No boards detected</p>
                     <small>Click "Detect Boards" to scan for connected devices</small>
                 </div>
             </div>
         </section>
 
-        <!-- Debug Controls (Hidden by default) -->
-        <section id="debug-section" class="section" style="display: none;">
-            <div class="section-header">
-                <h2>Debug Controls</h2>
-                <div class="debug-status">
-                    <span id="debug-status" class="status-badge">Stopped</span>
-                </div>
+        <!-- Progress Section (Hidden by default) -->
+        <section id="progress-section" class="section" style="display: none;">
+            <div class="progress">
+                <div class="progress-bar" id="progress-bar" style="width: 0%"></div>
             </div>
-            
-            <div class="debug-controls">
-                <button id="debug-halt-btn" class="btn btn-secondary" disabled>
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M6 4h4v8H6z"/>
-                    </svg>
-                    Halt
-                </button>
-                <button id="debug-resume-btn" class="btn btn-secondary" disabled>
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M5 3l6 5-6 5V3z"/>
-                    </svg>
-                    Resume
-                </button>
-                <button id="debug-stop-btn" class="btn btn-danger" disabled>
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M4 4h8v8H4z"/>
-                    </svg>
-                    Stop
-                </button>
-            </div>
-
-            <div class="debug-info" id="debug-info">
-                <div class="debug-registers">
-                    <h4>Registers</h4>
-                    <div id="registers-list" class="registers-list">
-                        <div class="empty-state">
-                            <p>No debug session active</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <div class="progress-text" id="progress-text">Ready</div>
         </section>
-
-        <!-- Footer -->
-        <footer class="footer">
-            <div class="footer-content">
-                <div class="footer-status">
-                    <span id="footer-status">Ready</span>
-                </div>
-                <div class="footer-actions">
-                    <button id="settings-btn" class="btn btn-text" title="Open Settings">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
-                            <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.292-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.292c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115l.094-.319z"/>
-                        </svg>
-                        Settings
-                    </button>
-                    <button id="logs-btn" class="btn btn-text" title="Show Logs">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M3 2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v13h-2.5a.5.5 0 0 1 0-1h1.5V2H4v12h1.5a.5.5 0 0 1 0 1H3V2zm8.5 8.5a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1h6.5zM5 5a.5.5 0 0 0 0 1h6.5a.5.5 0 0 0 0-1H5zm0 3a.5.5 0 0 0 0 1h6.5a.5.5 0 0 0 0-1H5z"/>
-                        </svg>
-                        Logs
-                    </button>
-                </div>
-            </div>
-        </footer>
     </div>
 
     <script src="{{scriptUri}}"></script>

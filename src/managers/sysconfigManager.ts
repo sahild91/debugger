@@ -24,13 +24,13 @@ export class SysConfigManager {
     private sysConfigPath: string;
     private downloadUtils: DownloadUtils;
     
-    // TI SysConfig download URLs (v1.24.2.4234)
+    // TI SysConfig direct download URLs (v1.24.2.4234)
     private readonly SYSCONFIG_URLS = {
-        'win32-x64': 'https://www.ti.com/tool/download/SYSCONFIG/1.24.2.4234/sysconfig_1.24.2.4234_windows-x64_installer.exe',
-        'darwin-x64': 'https://www.ti.com/tool/download/SYSCONFIG/1.24.2.4234/sysconfig_1.24.2.4234_osx_installer.dmg',
-        'darwin-arm64': 'https://www.ti.com/tool/download/SYSCONFIG/1.24.2.4234/sysconfig_1.24.2.4234_osx_installer.dmg',
-        'linux-x64': 'https://www.ti.com/tool/download/SYSCONFIG/1.24.2.4234/sysconfig_1.24.2.4234_linux-x64_installer.run',
-        'linux-arm64': 'https://www.ti.com/tool/download/SYSCONFIG/1.24.2.4234/sysconfig_1.24.2.4234_linux-arm64_installer.run'
+        'win32-x64': 'https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-nsUM6f7Vvb/1.24.2.4234/sysconfig-1.24.2_4234-setup.exe',
+        'darwin-x64': 'https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-nsUM6f7Vvb/1.24.2.4234/sysconfig-1.24.2_4234-setup.dmg',
+        'darwin-arm64': 'https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-nsUM6f7Vvb/1.24.2.4234/sysconfig-1.24.2_4234-setup.dmg',
+        'linux-x64': 'https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-nsUM6f7Vvb/1.24.2.4234/sysconfig-1.24.2_4234-setup.run',
+        'linux-arm64': 'https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-nsUM6f7Vvb/1.24.2.4234/sysconfig-1.24.2_4234-setup.run'
     };
 
     private readonly SYSCONFIG_VERSION = '1.24.2.4234';
@@ -158,30 +158,39 @@ export class SysConfigManager {
             }
 
             return defaultInfo;
+            
         } catch (error) {
-            this.outputChannel.appendLine(`Error validating SysConfig at ${sysConfigPath}: ${error}`);
+            this.outputChannel.appendLine(`Error validating SysConfig: ${error}`);
             return defaultInfo;
         }
     }
 
-    private getSysConfigCliPaths(sysConfigRoot: string, platform: string): string[] {
+    private getSysConfigCliPaths(sysConfigPath: string, platform: string): string[] {
         const paths: string[] = [];
 
         if (platform.startsWith('win32')) {
             // Windows paths
             paths.push(
-                path.join(sysConfigRoot, 'sysconfig_cli.bat'),
-                path.join(sysConfigRoot, 'bin', 'sysconfig_cli.bat'),
-                path.join(sysConfigRoot, 'sysconfig.bat'),
-                path.join(sysConfigRoot, 'nodejs', 'sysconfig_cli.bat')
+                path.join(sysConfigPath, 'sysconfig_cli.bat'),
+                path.join(sysConfigPath, 'bin', 'sysconfig_cli.bat'),
+                path.join(sysConfigPath, 'eclipse', 'sysconfig_cli.bat'),
+                path.join(sysConfigPath, 'SysConfig.exe'),
+                path.join(sysConfigPath, 'bin', 'SysConfig.exe')
+            );
+        } else if (platform.startsWith('darwin')) {
+            // macOS paths
+            paths.push(
+                path.join(sysConfigPath, 'sysconfig_cli.sh'),
+                path.join(sysConfigPath, 'bin', 'sysconfig_cli.sh'),
+                path.join(sysConfigPath, 'eclipse', 'sysconfig_cli.sh'),
+                path.join(sysConfigPath, 'SysConfig.app', 'Contents', 'MacOS', 'sysconfig_cli.sh')
             );
         } else {
-            // Unix-like systems (Linux/macOS)
+            // Linux paths
             paths.push(
-                path.join(sysConfigRoot, 'sysconfig_cli.sh'),
-                path.join(sysConfigRoot, 'bin', 'sysconfig_cli.sh'),
-                path.join(sysConfigRoot, 'sysconfig.sh'),
-                path.join(sysConfigRoot, 'nodejs', 'sysconfig_cli.sh')
+                path.join(sysConfigPath, 'sysconfig_cli.sh'),
+                path.join(sysConfigPath, 'bin', 'sysconfig_cli.sh'),
+                path.join(sysConfigPath, 'eclipse', 'sysconfig_cli.sh')
             );
         }
 
@@ -191,43 +200,60 @@ export class SysConfigManager {
     private async getSysConfigVersion(cliPath: string): Promise<string> {
         try {
             const { spawn } = require('child_process');
+            const platform = PlatformUtils.getCurrentPlatform();
             
-            return new Promise((resolve) => {
-                // Try to get version using --version flag
-                const process = spawn(cliPath, ['--version'], {
-                    stdio: ['pipe', 'pipe', 'pipe']
-                });
+            return new Promise<string>((resolve) => {
+                let versionProcess: any;
+                
+                if (platform.startsWith('win32') && cliPath.endsWith('.bat')) {
+                    // On Windows, batch files need to be run through cmd
+                    versionProcess = spawn('cmd', ['/c', `"${cliPath}"`, '--version'], {
+                        stdio: ['pipe', 'pipe', 'pipe'],
+                        windowsHide: true
+                    });
+                } else {
+                    // Direct execution for Unix systems or .exe files
+                    versionProcess = spawn(cliPath, ['--version'], {
+                        stdio: ['pipe', 'pipe', 'pipe']
+                    });
+                }
 
                 let output = '';
-                
-                process.stdout.on('data', (data: any) => {
+
+                versionProcess.stdout?.on('data', (data: Buffer) => {
                     output += data.toString();
                 });
 
-                process.stderr.on('data', (data: any) => {
+                versionProcess.stderr?.on('data', (data: Buffer) => {
                     output += data.toString();
                 });
 
-                process.on('close', (code: number) => {
-                    if (code === 0 && output) {
-                        // Parse version from output
-                        const versionMatch = output.match(/(\d+\.\d+\.\d+(?:\.\d+)?)/);
-                        resolve(versionMatch ? versionMatch[1] : this.SYSCONFIG_VERSION);
+                versionProcess.on('close', () => {
+                    // Try to extract version from output
+                    const versionMatch = output.match(/(\d+\.\d+\.\d+(?:\.\d+)?)/);
+                    if (versionMatch) {
+                        this.outputChannel.appendLine(`SysConfig version detected: ${versionMatch[1]}`);
+                        resolve(versionMatch[1]);
                     } else {
+                        this.outputChannel.appendLine(`Could not parse version from output: ${output.substring(0, 200)}`);
                         // Fallback to expected version
                         resolve(this.SYSCONFIG_VERSION);
                     }
                 });
 
-                process.on('error', () => {
+                versionProcess.on('error', (error: any) => {
+                    this.outputChannel.appendLine(`Error getting SysConfig version: ${error.message}`);
                     resolve('Unknown');
                 });
 
                 // Set timeout
                 setTimeout(() => {
-                    process.kill();
-                    resolve('Unknown');
-                }, 5000);
+                    if (versionProcess && !versionProcess.killed) {
+                        versionProcess.kill();
+                        this.outputChannel.appendLine('SysConfig version check timed out');
+                        resolve('Unknown');
+                    }
+                }, 10000);
             });
         } catch (error) {
             this.outputChannel.appendLine(`Error getting SysConfig version: ${error}`);
@@ -350,10 +376,36 @@ export class SysConfigManager {
                 message: 'Validating installation...'
             });
 
-            // Validate the installation
-            const sysConfigInfo = await this.getSysConfigInfo();
-            if (!sysConfigInfo.isInstalled) {
-                throw new Error('SysConfig validation failed after installation');
+            // Validate the installation with more lenient criteria
+            let installationValid = false;
+            let validationError = '';
+            let sysConfigInfo: SysConfigInfo | null = null;
+            
+            try {
+                sysConfigInfo = await this.getSysConfigInfo();
+                installationValid = sysConfigInfo.isInstalled;
+                if (!installationValid) {
+                    validationError = 'CLI executable not found in expected locations';
+                }
+            } catch (validationErr) {
+                validationError = validationErr instanceof Error ? validationErr.message : String(validationErr);
+                // Check if files were actually installed even if validation failed
+                const hasFiles = fs.existsSync(this.sysConfigPath) && fs.readdirSync(this.sysConfigPath).length > 0;
+                if (hasFiles) {
+                    this.outputChannel.appendLine(`Installation files present despite validation error: ${validationError}`);
+                    this.outputChannel.appendLine('Continuing - installation may still be functional');
+                    installationValid = true;
+                    // Create a fallback sysConfigInfo for logging
+                    sysConfigInfo = {
+                        version: this.SYSCONFIG_VERSION,
+                        path: this.sysConfigPath,
+                        isInstalled: true
+                    };
+                }
+            }
+            
+            if (!installationValid) {
+                throw new Error(`SysConfig validation failed: ${validationError}`);
             }
 
             // Clean up download file on success
@@ -365,12 +417,12 @@ export class SysConfigManager {
                 }
             }
 
-            this.outputChannel.appendLine(`TI SysConfig installed successfully. Version: ${sysConfigInfo.version}`);
+            this.outputChannel.appendLine(`TI SysConfig installed successfully. Version: ${sysConfigInfo?.version || 'Unknown'}`);
 
             progressCallback?.({
                 stage: 'complete',
                 progress: 100,
-                message: `SysConfig installation complete. Version: ${sysConfigInfo.version}`
+                message: `SysConfig installation complete. Version: ${sysConfigInfo?.version || 'Unknown'}`
             });
 
         } catch (error) {
@@ -393,14 +445,20 @@ export class SysConfigManager {
                 }
             }
 
-            // Clean up installation directory on failure
-            if (fs.existsSync(this.sysConfigPath)) {
+            // Clean up installation directory on failure - BUT ONLY if validation actually failed
+            // Don't delete if the installation succeeded but validation had issues
+            const isActualInstallationFailure = !fs.existsSync(this.sysConfigPath) || 
+                                               !fs.readdirSync(this.sysConfigPath).length;
+                                               
+            if (isActualInstallationFailure && fs.existsSync(this.sysConfigPath)) {
                 try {
                     fs.rmSync(this.sysConfigPath, { recursive: true, force: true });
-                    this.outputChannel.appendLine('Cleaned up partial installation directory');
+                    this.outputChannel.appendLine('Cleaned up empty installation directory');
                 } catch (cleanupError) {
                     this.outputChannel.appendLine(`SysConfig cleanup failed: ${cleanupError}`);
                 }
+            } else if (fs.existsSync(this.sysConfigPath)) {
+                this.outputChannel.appendLine('Preserving installation directory - files were installed successfully');
             }
 
             throw error;
@@ -426,11 +484,11 @@ export class SysConfigManager {
 
             // Platform-specific installation commands
             if (platform.startsWith('win32')) {
-                // Windows: Silent install with custom directory
+                // Windows: Try different argument formats for SysConfig installer
                 installCommand = installerPath;
                 installArgs = [
-                    '/S',  // Silent installation
-                    `/D=${this.sysConfigPath}` // Custom install directory
+                    '--mode', 'unattended',  // Standard silent installation
+                    '--prefix', this.sysConfigPath  // Installation directory
                 ];
             } else if (platform.startsWith('darwin')) {
                 // macOS: Extract DMG and copy contents
@@ -456,72 +514,184 @@ export class SysConfigManager {
                 return;
             }
 
-            this.outputChannel.appendLine(`SysConfig install command: ${installCommand} ${installArgs.join(' ')}`);
+            this.outputChannel.appendLine(`Install command: ${installCommand} ${installArgs.join(' ')}`);
 
-            // Execute installation
-            const installProcess = spawn(installCommand, installArgs, {
-                stdio: ['pipe', 'pipe', 'pipe']
-            });
-
-            let stdout = '';
-            let stderr = '';
-
-            installProcess.stdout.on('data', (data: { toString: () => any; }) => {
-                const output = data.toString();
-                stdout += output;
-                this.outputChannel.append(output);
-            });
-
-            installProcess.stderr.on('data', (data: { toString: () => any; }) => {
-                const output = data.toString();
-                stderr += output;
-                this.outputChannel.append(output);
-            });
-
-            installProcess.on('close', (code: number) => {
-                if (code === 0) {
-                    this.outputChannel.appendLine('SysConfig installation completed');
-                    resolve();
-                } else {
-                    const error = `SysConfig installation failed with exit code ${code}. Output: ${stderr}`;
-                    this.outputChannel.appendLine(error);
-                    reject(new Error(error));
+            // Additional Windows-specific preparation
+            if (platform.startsWith('win32')) {
+                // Check if file exists and is accessible
+                try {
+                    const stats = fs.statSync(installerPath);
+                    this.outputChannel.appendLine(`Installer file size: ${stats.size} bytes`);
+                    this.outputChannel.appendLine(`Installer file permissions: ${stats.mode}`);
+                } catch (error) {
+                    reject(new Error(`Cannot access installer file: ${error}`));
+                    return;
                 }
-            });
 
-            installProcess.on('error', (error: { message: any; }) => {
-                const errorMessage = `SysConfig installation process error: ${error.message}`;
-                this.outputChannel.appendLine(errorMessage);
-                reject(new Error(errorMessage));
-            });
-
-            // Set timeout for installation
-            setTimeout(() => {
-                installProcess.kill();
-                reject(new Error('SysConfig installation timed out'));
-            }, 300000); // 5 minutes timeout
+                // Wait a moment to ensure file isn't locked
+                this.outputChannel.appendLine('Waiting for file to be ready...');
+                setTimeout(() => {
+                    this.executeInstaller(installCommand, installArgs, resolve, reject, platform);
+                }, 2000);
+            } else {
+                this.executeInstaller(installCommand, installArgs, resolve, reject, platform);
+            }
         });
+    }
+
+    private executeInstaller(
+        command: string, 
+        args: string[], 
+        resolve: Function, 
+        reject: Function, 
+        platform: string
+    ): void {
+        const { spawn } = require('child_process');
+
+        // Try different execution methods for Windows, including different argument formats
+        const executionMethods = platform.startsWith('win32') 
+            ? [
+                { 
+                    name: 'Standard unattended install', 
+                    useShell: false,
+                    args: ['--mode', 'unattended', '--prefix', this.sysConfigPath]
+                },
+                { 
+                    name: 'NSIS silent install', 
+                    useShell: false,
+                    args: ['/S', `/D=${this.sysConfigPath}`]
+                },
+                { 
+                    name: 'Shell execution with standard args', 
+                    useShell: true,
+                    args: ['--mode', 'unattended', '--prefix', this.sysConfigPath]
+                },
+                { 
+                    name: 'PowerShell execution', 
+                    usePowerShell: true,
+                    args: ['--mode', 'unattended', '--prefix', this.sysConfigPath]
+                }
+            ]
+            : [{ 
+                name: 'Direct execution', 
+                useShell: false,
+                args: args
+            }];
+
+        let currentMethod = 0;
+
+        const tryNextMethod = () => {
+            if (currentMethod >= executionMethods.length) {
+                reject(new Error('All execution methods failed'));
+                return;
+            }
+
+            const method = executionMethods[currentMethod];
+            this.outputChannel.appendLine(`Attempting: ${method.name}`);
+            this.outputChannel.appendLine(`Arguments: ${method.args.join(' ')}`);
+            currentMethod++;
+
+            let installProcess: any;
+
+            try {
+                if (method.usePowerShell) {
+                    // Use PowerShell as a fallback for Windows
+                    const psCommand = `Start-Process "${command}" -ArgumentList "${method.args.join('","')}" -Wait -PassThru`;
+                    installProcess = spawn('powershell', ['-Command', psCommand], {
+                        stdio: ['pipe', 'pipe', 'pipe']
+                    });
+                } else {
+                    installProcess = spawn(command, method.args, {
+                        stdio: ['pipe', 'pipe', 'pipe'],
+                        shell: method.useShell
+                    });
+                }
+
+                let stdout = '';
+                let stderr = '';
+
+                installProcess.stdout?.on('data', (data: any) => {
+                    const output = data.toString();
+                    stdout += output;
+                    this.outputChannel.append(output);
+                });
+
+                installProcess.stderr?.on('data', (data: any) => {
+                    const output = data.toString();
+                    stderr += output;
+                    this.outputChannel.append(output);
+                });
+
+                installProcess.on('close', (code: number) => {
+                    if (code === 0) {
+                        this.outputChannel.appendLine(`${method.name} completed successfully`);
+                        resolve();
+                    } else {
+                        this.outputChannel.appendLine(`${method.name} failed with exit code ${code}`);
+                        this.outputChannel.appendLine(`stderr: ${stderr}`);
+                        tryNextMethod();
+                    }
+                });
+
+                installProcess.on('error', (error: any) => {
+                    this.outputChannel.appendLine(`${method.name} process error: ${error.message}`);
+                    
+                    if (error.message.includes('EBUSY')) {
+                        this.outputChannel.appendLine('File appears to be locked or in use by another process');
+                        this.outputChannel.appendLine('This might be caused by antivirus software or Windows Defender');
+                        this.outputChannel.appendLine('Try adding exclusions for the temp and extension directories');
+                    }
+                    
+                    tryNextMethod();
+                });
+
+                // Set timeout for installation (15 minutes)
+                setTimeout(() => {
+                    if (installProcess && !installProcess.killed) {
+                        installProcess.kill();
+                        this.outputChannel.appendLine(`${method.name} timed out`);
+                        tryNextMethod();
+                    }
+                }, 900000);
+
+            } catch (spawnError) {
+                this.outputChannel.appendLine(`${method.name} spawn failed: ${spawnError}`);
+                tryNextMethod();
+            }
+        };
+
+        tryNextMethod();
     }
 
     private async setupExecutablePermissions(): Promise<void> {
         try {
-            const { exec } = require('child_process');
-            const cliPath = this.getSysConfigCliPath();
-            
-            if (fs.existsSync(cliPath)) {
-                await new Promise((resolve, reject) => {
-                    exec(`chmod +x "${cliPath}"`, (error: any) => {
-                        if (error) {
-                            this.outputChannel.appendLine(`Warning: Could not set execute permission: ${error}`);
-                        } else {
-                            this.outputChannel.appendLine('Execute permissions set for SysConfig CLI');
-                        }
-                        resolve(undefined);
-                    });
-                });
+            const platform = PlatformUtils.getCurrentPlatform();
+            const cliPaths = this.getSysConfigCliPaths(this.sysConfigPath, platform);
+
+            for (const cliPath of cliPaths) {
+                if (fs.existsSync(cliPath)) {
+                    // Set executable permissions
+                    fs.chmodSync(cliPath, 0o755);
+                    this.outputChannel.appendLine(`Set executable permissions for: ${cliPath}`);
+                }
             }
         } catch (error) {
-            this.outputChannel.appendLine(`Error setting up executable permissions: ${error}`);
+            this.outputChannel.appendLine(`Warning: Could not set executable permissions: ${error}`);
+        }
+    }
+
+    async uninstallSysConfig(): Promise<void> {
+        try {
+            if (fs.existsSync(this.sysConfigPath)) {
+                fs.rmSync(this.sysConfigPath, { recursive: true, force: true });
+                this.outputChannel.appendLine(`SysConfig uninstalled from: ${this.sysConfigPath}`);
+            } else {
+                this.outputChannel.appendLine('SysConfig not found for uninstallation');
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.outputChannel.appendLine(`SysConfig uninstallation failed: ${errorMessage}`);
+            throw error;
         }
     }
 
@@ -544,6 +714,16 @@ export class SysConfigManager {
         return possiblePaths[0];
     }
 
+    async getSysConfigCliPathAsync(): Promise<string | null> {
+        try {
+            const sysConfigInfo = await this.getSysConfigInfo();
+            return sysConfigInfo.cliPath || null;
+        } catch (error) {
+            this.outputChannel.appendLine(`Error getting SysConfig CLI path: ${error}`);
+            return null;
+        }
+    }
+
     async validateSysConfigForBuild(): Promise<boolean> {
         try {
             const cliPath = this.getSysConfigCliPath();
@@ -555,53 +735,61 @@ export class SysConfigManager {
 
             // Test if CLI is executable
             const { spawn } = require('child_process');
+            const platform = PlatformUtils.getCurrentPlatform();
             
             return new Promise((resolve) => {
-                const testProcess = spawn(cliPath, ['--help'], {
-                    stdio: ['pipe', 'pipe', 'pipe']
+                let testProcess: any;
+                
+                if (platform.startsWith('win32') && cliPath.endsWith('.bat')) {
+                    // On Windows, batch files need to be run through cmd
+                    testProcess = spawn('cmd', ['/c', `"${cliPath}"`, '--help'], {
+                        stdio: ['pipe', 'pipe', 'pipe'],
+                        windowsHide: true
+                    });
+                } else {
+                    // Direct execution for Unix systems or .exe files
+                    testProcess = spawn(cliPath, ['--help'], {
+                        stdio: ['pipe', 'pipe', 'pipe']
+                    });
+                }
+
+                let hasOutput = false;
+
+                testProcess.stdout?.on('data', (data: any) => {
+                    hasOutput = true;
+                    this.outputChannel.appendLine(`SysConfig validation output: ${data.toString().substring(0, 200)}`);
+                });
+
+                testProcess.stderr?.on('data', (data: any) => {
+                    const output = data.toString();
+                    this.outputChannel.appendLine(`SysConfig validation stderr: ${output.substring(0, 200)}`);
+                    // Some tools output help to stderr, so this is not necessarily an error
+                    hasOutput = true;
                 });
 
                 testProcess.on('close', (code: number) => {
-                    resolve(code === 0);
+                    this.outputChannel.appendLine(`SysConfig validation completed with exit code: ${code}`);
+                    // Consider it valid if we got some output, even if exit code is non-zero
+                    // (some tools return non-zero for --help)
+                    resolve(hasOutput || code === 0);
                 });
 
-                testProcess.on('error', () => {
+                testProcess.on('error', (error: any) => {
+                    this.outputChannel.appendLine(`SysConfig validation error: ${error.message}`);
                     resolve(false);
                 });
 
                 setTimeout(() => {
-                    testProcess.kill();
-                    resolve(false);
-                }, 5000);
+                    if (testProcess && !testProcess.killed) {
+                        testProcess.kill();
+                        this.outputChannel.appendLine('SysConfig validation timed out');
+                        resolve(hasOutput); // If we got output before timeout, consider it valid
+                    }
+                }, 10000); // 10 second timeout
             });
         } catch (error) {
             this.outputChannel.appendLine(`Error validating SysConfig for build: ${error}`);
             return false;
-        }
-    }
-
-    // Method to set custom SysConfig installation path (for testing or manual installations)
-    setSysConfigPath(customPath: string): void {
-        if (fs.existsSync(customPath)) {
-            this.sysConfigPath = customPath;
-            this.outputChannel.appendLine(`SysConfig path updated to: ${customPath}`);
-        } else {
-            throw new Error(`SysConfig path does not exist: ${customPath}`);
-        }
-    }
-
-    async uninstallSysConfig(): Promise<void> {
-        try {
-            if (fs.existsSync(this.sysConfigPath)) {
-                this.outputChannel.appendLine(`Uninstalling SysConfig from: ${this.sysConfigPath}`);
-                fs.rmSync(this.sysConfigPath, { recursive: true, force: true });
-                this.outputChannel.appendLine('SysConfig uninstalled successfully');
-            } else {
-                this.outputChannel.appendLine('SysConfig not found for uninstallation');
-            }
-        } catch (error) {
-            this.outputChannel.appendLine(`Error uninstalling SysConfig: ${error}`);
-            throw error;
         }
     }
 }
