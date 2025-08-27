@@ -510,7 +510,7 @@ export async function activate(context: vscode.ExtensionContext) {
 export function deactivate() {
     outputChannel?.appendLine('Port11 Debugger extension deactivated');
     statusBarItem?.dispose();
-    sysConfigManager?.uninstallSysConfig?.(); // Optional cleanup
+    //sysConfigManager?.uninstallSysConfig?.(); // Optional cleanup
     outputChannel?.dispose();
 }
 

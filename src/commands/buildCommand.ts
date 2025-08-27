@@ -241,68 +241,271 @@ export class BuildCommand {
     }
 
     private async executeBuild(config: any): Promise<BuildResult> {
-        return new Promise((resolve, reject) => {
-            // Ensure output directory exists
-            if (!fs.existsSync(config.outputPath)) {
-                fs.mkdirSync(config.outputPath, { recursive: true });
-            }
-
-            // Prepare compiler arguments
-            const args = this.buildCompilerArgs(config);
-            
-            this.outputChannel.appendLine(`Executing: ${config.compilerPath} ${args.join(' ')}`);
-
-            // Start build process
-            this.buildProcess = spawn(config.compilerPath, args, {
-                cwd: config.projectPath,
-                stdio: ['pipe', 'pipe', 'pipe']
-            });
-
-            let stdout = '';
-            let stderr = '';
-
-            this.buildProcess.stdout?.on('data', (data) => {
-                const output = data.toString();
-                stdout += output;
-                this.outputChannel.append(output);
-            });
-
-            this.buildProcess.stderr?.on('data', (data) => {
-                const output = data.toString();
-                stderr += output;
-                this.outputChannel.append(output);
-            });
-
-            this.buildProcess.on('close', (code) => {
-                this.buildProcess = null;
-
-                // Parse build output for errors and warnings
-                const diagnostics = this.parseBuildOutput(stdout + stderr, config.projectPath);
-                
-                const result: BuildResult = {
-                    success: code === 0,
-                    errors: diagnostics.filter(d => d.severity === vscode.DiagnosticSeverity.Error),
-                    warnings: diagnostics.filter(d => d.severity === vscode.DiagnosticSeverity.Warning),
-                    outputPath: code === 0 ? path.join(config.outputPath, 'main.out') : undefined,
-                    buildTime: 0 // Will be set by caller
-                };
-
-                // Update diagnostics collection
-                this.updateDiagnostics(diagnostics);
-
-                if (code === 0) {
-                    this.outputChannel.appendLine('Build completed successfully');
-                } else {
-                    this.outputChannel.appendLine(`Build failed with exit code ${code}`);
+        return new Promise(async (resolve, reject) => {
+            try {
+                // Ensure output directory exists
+                if (!fs.existsSync(config.outputPath)) {
+                    fs.mkdirSync(config.outputPath, { recursive: true });
                 }
 
-                resolve(result);
+                this.outputChannel.appendLine('='.repeat(60));
+                this.outputChannel.appendLine('🔨 MSPM0 BUILD PROCESS STARTING');
+                this.outputChannel.appendLine('='.repeat(60));
+
+                // Step 1: Show project information
+                this.outputChannel.appendLine(`📁 Project Path: ${config.projectPath}`);
+                this.outputChannel.appendLine(`📁 Output Path: ${config.outputPath}`);
+                this.outputChannel.appendLine(`⚙️ Optimization: ${config.optimization}`);
+                this.outputChannel.appendLine(`📄 Source Files (${config.sourceFiles.length}):`);
+                config.sourceFiles.forEach((file: string, index: number) => {
+                    this.outputChannel.appendLine(`   ${index + 1}. ${path.basename(file)}`);
+                });
+                this.outputChannel.appendLine('');
+
+                // Step 2: Check for SysConfig files and run SysConfig if needed
+                const hasSysConfigFile = config.sourceFiles.some((file: string) => file.endsWith('.syscfg'));
+                if (hasSysConfigFile) {
+                    this.outputChannel.appendLine('🔧 STEP 1: Running SysConfig Code Generation');
+                    this.outputChannel.appendLine('-'.repeat(50));
+                    
+                    const sysConfigCliPath = this.sysConfigManager.getSysConfigCliPath();
+                    const sysConfigFile = config.sourceFiles.find((file: string) => file.endsWith('.syscfg'));
+                    
+                    if (sysConfigFile && sysConfigCliPath) {
+                        const sysConfigArgs = [
+                            '--script', path.basename(sysConfigFile),
+                            '-o', 'syscfg',
+                            '--compiler', 'ticlang'
+                        ];
+
+                        this.outputChannel.appendLine(`$ ${sysConfigCliPath} ${sysConfigArgs.join(' ')}`);
+                        this.outputChannel.appendLine('');
+
+                        // Run SysConfig
+                        await this.runSysConfigGeneration(sysConfigCliPath, sysConfigArgs, config.projectPath);
+                    }
+                }
+
+                // Step 3: Prepare compiler arguments
+                const args = this.buildCompilerArgs(config);
+                
+                this.outputChannel.appendLine('🔨 STEP 2: Compiling Source Code');
+                this.outputChannel.appendLine('-'.repeat(50));
+                this.outputChannel.appendLine(`💻 Compiler: ${config.compilerPath}`);
+                this.outputChannel.appendLine(`📋 Compiler Command:`);
+                
+                // Show the full command in a readable format
+                const commandLine = `${path.basename(config.compilerPath)} ${args.join(' ')}`;
+                this.outputChannel.appendLine(`$ ${commandLine}`);
+                this.outputChannel.appendLine('');
+                
+                // Show key compiler flags for user understanding
+                this.outputChannel.appendLine(`🎯 Key Build Settings:`);
+                this.outputChannel.appendLine(`   • Target: MSPM0G3507 (Cortex-M0+)`);
+                this.outputChannel.appendLine(`   • Optimization: ${config.optimization === 'debug' ? 'Debug (-g --opt_level=0)' : 'Release (--opt_level=2)'}`);
+                this.outputChannel.appendLine(`   • Include Paths: ${config.includePaths.length} directories`);
+                this.outputChannel.appendLine(`   • Libraries: ${config.libraryPaths.length} library paths`);
+                this.outputChannel.appendLine('');
+
+                // Start build process
+                this.buildProcess = spawn(config.compilerPath, args, {
+                    cwd: config.projectPath,
+                    stdio: ['pipe', 'pipe', 'pipe']
+                });
+
+                let stdout = '';
+                let stderr = '';
+                let hasOutput = false;
+
+                this.buildProcess.stdout?.on('data', (data) => {
+                    const output = data.toString();
+                    stdout += output;
+                    hasOutput = true;
+                    
+                    // Show real-time output with prefix
+                    const lines = output.split('\n');
+                    lines.forEach((line: string) => {
+                        if (line.trim()) {
+                            this.outputChannel.appendLine(`  📝 ${line.trim()}`);
+                        }
+                    });
+                });
+
+                this.buildProcess.stderr?.on('data', (data) => {
+                    const output = data.toString();
+                    stderr += output;
+                    hasOutput = true;
+                    
+                    // Show errors/warnings with appropriate icons
+                    const lines = output.split('\n');
+                    lines.forEach((line: string) => {
+                        if (line.trim()) {
+                            if (line.toLowerCase().includes('error')) {
+                                this.outputChannel.appendLine(`  ❌ ${line.trim()}`);
+                            } else if (line.toLowerCase().includes('warning')) {
+                                this.outputChannel.appendLine(`  ⚠️  ${line.trim()}`);
+                            } else {
+                                this.outputChannel.appendLine(`  📝 ${line.trim()}`);
+                            }
+                        }
+                    });
+                });
+
+                this.buildProcess.on('close', (code) => {
+                    this.buildProcess = null;
+
+                    // Show build completion status
+                    this.outputChannel.appendLine('');
+                    this.outputChannel.appendLine('📊 BUILD RESULTS');
+                    this.outputChannel.appendLine('-'.repeat(30));
+
+                    // Parse build output for errors and warnings
+                    const diagnostics = this.parseBuildOutput(stdout + stderr, config.projectPath);
+                    const errors = diagnostics.filter(d => d.severity === vscode.DiagnosticSeverity.Error);
+                    const warnings = diagnostics.filter(d => d.severity === vscode.DiagnosticSeverity.Warning);
+
+                    const result: BuildResult = {
+                        success: code === 0,
+                        errors: errors,
+                        warnings: warnings,
+                        outputPath: code === 0 ? path.join(config.outputPath, 'main.out') : undefined,
+                        buildTime: 0 // Will be set by caller
+                    };
+
+                    // Update diagnostics collection
+                    this.updateDiagnostics(diagnostics);
+
+                    // Show detailed results
+                    if (code === 0) {
+                        this.outputChannel.appendLine(`✅ BUILD SUCCESSFUL`);
+                        this.outputChannel.appendLine(`   • Output File: ${result.outputPath}`);
+                        if (result.outputPath && fs.existsSync(result.outputPath)) {
+                            const stats = fs.statSync(result.outputPath);
+                            this.outputChannel.appendLine(`   • File Size: ${(stats.size / 1024).toFixed(2)} KB`);
+                        }
+                    } else {
+                        this.outputChannel.appendLine(`❌ BUILD FAILED (Exit Code: ${code})`);
+                    }
+
+                    this.outputChannel.appendLine(`   • Errors: ${errors.length}`);
+                    this.outputChannel.appendLine(`   • Warnings: ${warnings.length}`);
+
+                    // Show specific errors and warnings
+                    if (errors.length > 0) {
+                        this.outputChannel.appendLine('');
+                        this.outputChannel.appendLine('❌ ERRORS:');
+                        errors.forEach((error, index) => {
+                            this.outputChannel.appendLine(`   ${index + 1}. ${error.message}`);
+                        });
+                    }
+
+                    if (warnings.length > 0) {
+                        this.outputChannel.appendLine('');
+                        this.outputChannel.appendLine('⚠️  WARNINGS:');
+                        warnings.forEach((warning, index) => {
+                            this.outputChannel.appendLine(`   ${index + 1}. ${warning.message}`);
+                        });
+                    }
+
+                    // Show next steps
+                    if (code === 0) {
+                        this.outputChannel.appendLine('');
+                        this.outputChannel.appendLine('🚀 NEXT STEPS:');
+                        this.outputChannel.appendLine('   • Use "Flash Firmware" to program your board');
+                        this.outputChannel.appendLine('   • Use "Start Debug" to begin debugging session');
+                    } else {
+                        this.outputChannel.appendLine('');
+                        this.outputChannel.appendLine('🔧 TROUBLESHOOTING:');
+                        this.outputChannel.appendLine('   • Check the Problems panel for detailed error locations');
+                        this.outputChannel.appendLine('   • Verify all source files compile individually');
+                        this.outputChannel.appendLine('   • Check include paths and library dependencies');
+                    }
+
+                    this.outputChannel.appendLine('='.repeat(60));
+                    
+                    resolve(result);
+                });
+
+                this.buildProcess.on('error', (error) => {
+                    this.buildProcess = null;
+                    this.outputChannel.appendLine(`❌ Build process error: ${error.message}`);
+                    this.outputChannel.appendLine('='.repeat(60));
+                    reject(new Error(`Build process error: ${error.message}`));
+                });
+
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                this.outputChannel.appendLine(`❌ Build setup error: ${errorMessage}`);
+                this.outputChannel.appendLine('='.repeat(60));
+                reject(new Error(`Build setup error: ${errorMessage}`));
+            }
+        });
+    }
+
+    private async runSysConfigGeneration(sysConfigCliPath: string, args: string[], cwd: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const platform = require('os').platform();
+            let sysConfigProcess;
+
+            if (platform.startsWith('win32') && sysConfigCliPath.endsWith('.bat')) {
+                // Windows batch file
+                sysConfigProcess = spawn('cmd', ['/c', `"${sysConfigCliPath}"`, ...args], {
+                    cwd: cwd,
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                    windowsHide: true
+                });
+            } else {
+                // Direct execution
+                sysConfigProcess = spawn(sysConfigCliPath, args, {
+                    cwd: cwd,
+                    stdio: ['pipe', 'pipe', 'pipe']
+                });
+            }
+
+            sysConfigProcess.stdout?.on('data', (data) => {
+                const output = data.toString();
+                const lines = output.split('\n');
+                lines.forEach((line: string) => {
+                    if (line.trim()) {
+                        this.outputChannel.appendLine(`  🔧 ${line.trim()}`);
+                    }
+                });
             });
 
-            this.buildProcess.on('error', (error) => {
-                this.buildProcess = null;
-                reject(new Error(`Build process error: ${error.message}`));
+            sysConfigProcess.stderr?.on('data', (data) => {
+                const output = data.toString();
+                const lines = output.split('\n');
+                lines.forEach((line: string) => {
+                    if (line.trim()) {
+                        this.outputChannel.appendLine(`  ⚠️  ${line.trim()}`);
+                    }
+                });
             });
+
+            sysConfigProcess.on('close', (code) => {
+                if (code === 0) {
+                    this.outputChannel.appendLine('  ✅ SysConfig code generation completed');
+                    this.outputChannel.appendLine('');
+                    resolve();
+                } else {
+                    this.outputChannel.appendLine(`  ❌ SysConfig generation failed (Exit Code: ${code})`);
+                    this.outputChannel.appendLine('');
+                    reject(new Error(`SysConfig generation failed with exit code ${code}`));
+                }
+            });
+
+            sysConfigProcess.on('error', (error) => {
+                this.outputChannel.appendLine(`  ❌ SysConfig error: ${error.message}`);
+                reject(error);
+            });
+
+            // Timeout after 30 seconds
+            setTimeout(() => {
+                if (!sysConfigProcess.killed) {
+                    sysConfigProcess.kill();
+                    reject(new Error('SysConfig generation timed out'));
+                }
+            }, 30000);
         });
     }
 
