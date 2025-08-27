@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { SDKManager } from '../managers/sdkManager';
 import { ToolchainManager } from '../managers/toolchainManager';
+import { SysConfigManager } from '../managers/sysconfigManager';
 
 export interface BuildOptions {
     target?: string;
@@ -25,6 +26,7 @@ export class BuildCommand {
     private outputChannel: vscode.OutputChannel;
     private sdkManager: SDKManager;
     private toolchainManager: ToolchainManager;
+    private sysConfigManager: SysConfigManager;
     private buildProcess: ChildProcess | null = null;
     private diagnosticCollection: vscode.DiagnosticCollection;
 
@@ -32,15 +34,27 @@ export class BuildCommand {
         context: vscode.ExtensionContext,
         outputChannel: vscode.OutputChannel,
         sdkManager: SDKManager,
-        toolchainManager: ToolchainManager
+        toolchainManager: ToolchainManager,
+        sysConfigManager: SysConfigManager
     ) {
         this.context = context;
         this.outputChannel = outputChannel;
         this.sdkManager = sdkManager;
         this.toolchainManager = toolchainManager;
+        this.sysConfigManager = sysConfigManager;
         this.diagnosticCollection = vscode.languages.createDiagnosticCollection('port11-debugger');
         
         context.subscriptions.push(this.diagnosticCollection);
+    }
+
+    private async validateSysConfigForBuild(): Promise<void> {
+        if (!await this.sysConfigManager.isSysConfigInstalled()) {
+            throw new Error('TI SysConfig not installed. Please run setup first.');
+        }
+
+        if (!await this.sysConfigManager.validateSysConfigForBuild()) {
+            throw new Error('SysConfig CLI not functional. Please reinstall SysConfig.');
+        }
     }
 
     async execute(options: BuildOptions = {}): Promise<BuildResult> {
@@ -119,10 +133,17 @@ export class BuildCommand {
             throw new Error('ARM-CGT-CLANG toolchain not installed. Please run setup first.');
         }
 
+        // Check if SysConfig is installed and functional
+        await this.validateSysConfigForBuild();
+
         // Check if workspace is available
         if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
             throw new Error('No workspace folder open');
         }
+    }
+    
+    getSysConfigCliPath(): string {
+        return this.sysConfigManager.getSysConfigCliPath();
     }
 
     private async detectProject(): Promise<any> {

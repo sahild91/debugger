@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import { WebviewProvider } from './webview/webviewProvider';
 import { SDKManager } from './managers/sdkManager';
 import { ToolchainManager } from './managers/toolchainManager';
-import { SysConfigManager } from './managers/sysconfigManager';
 import { SerialManager } from './managers/serialManager';
 import { BuildCommand } from './commands/buildCommand';
 import { FlashCommand } from './commands/flashCommand';
@@ -12,7 +11,6 @@ let outputChannel: vscode.OutputChannel;
 let webviewProvider: WebviewProvider;
 let sdkManager: SDKManager;
 let toolchainManager: ToolchainManager;
-let sysConfigManager: SysConfigManager;
 let serialManager: SerialManager;
 let statusBarItem: vscode.StatusBarItem;
 
@@ -29,7 +27,6 @@ export async function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine('Port11 Debugger extension activated');
     outputChannel.appendLine(`VS Code version: ${vscode.version}`);
     outputChannel.appendLine(`Extension path: ${context.extensionPath}`);
-    outputChannel.appendLine(`Global storage path: ${context.globalStorageUri.fsPath}`);
 
     // Initialize status bar item
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -41,10 +38,9 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine('Initializing managers...');
         sdkManager = new SDKManager(context, outputChannel);
         toolchainManager = new ToolchainManager(context, outputChannel);
-        sysConfigManager = new SysConfigManager(context, outputChannel);
         serialManager = new SerialManager(outputChannel);
         
-        outputChannel.appendLine('All managers initialized successfully');
+        outputChannel.appendLine('Managers initialized successfully');
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         outputChannel.appendLine(`Failed to initialize managers: ${errorMessage}`);
@@ -57,7 +53,6 @@ export async function activate(context: vscode.ExtensionContext) {
         webviewProvider = new WebviewProvider(context, outputChannel, {
             sdkManager,
             toolchainManager,
-            sysConfigManager,
             serialManager
         });
         outputChannel.appendLine('Webview provider initialized successfully');
@@ -70,7 +65,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // Initialize commands
     try {
         outputChannel.appendLine('Initializing command handlers...');
-        const buildCommand = new BuildCommand(context, outputChannel, sdkManager, toolchainManager, sysConfigManager);
+        const buildCommand = new BuildCommand(context, outputChannel, sdkManager, toolchainManager);
         const flashCommand = new FlashCommand(context, outputChannel, serialManager);
         const debugCommand = new DebugCommand(context, outputChannel, serialManager);
         outputChannel.appendLine('Command handlers initialized successfully');
@@ -510,7 +505,6 @@ export async function activate(context: vscode.ExtensionContext) {
 export function deactivate() {
     outputChannel?.appendLine('Port11 Debugger extension deactivated');
     statusBarItem?.dispose();
-    sysConfigManager?.uninstallSysConfig?.(); // Optional cleanup
     outputChannel?.dispose();
 }
 
@@ -518,7 +512,7 @@ export function deactivate() {
 
 async function setupToolchain(): Promise<void> {
     try {
-        outputChannel.appendLine('Starting complete toolchain setup (SDK + Toolchain + SysConfig)...');
+        outputChannel.appendLine('Starting toolchain setup...');
         updateStatusBar('Setting up toolchain...');
         
         // Show webview panel
@@ -527,7 +521,7 @@ async function setupToolchain(): Promise<void> {
         // Start setup process
         await webviewProvider.startSetup();
         
-        outputChannel.appendLine('Complete toolchain setup completed successfully');
+        outputChannel.appendLine('Toolchain setup completed successfully');
         updateStatusBar('Setup complete');
         
     } catch (error) {
@@ -543,38 +537,33 @@ async function refreshStatus(): Promise<void> {
         outputChannel.appendLine('Refreshing status...');
         updateStatusBar('Refreshing...');
         
-        // Check all component statuses
+        // Check SDK status
         const sdkInstalled = await sdkManager.isSDKInstalled();
         const sdkVersion = await sdkManager.getSDKVersion();
         
+        // Check toolchain status
         const toolchainInstalled = await toolchainManager.isToolchainInstalled();
         const toolchainInfo = await toolchainManager.getToolchainInfo();
         
-        const sysConfigInstalled = await sysConfigManager.isSysConfigInstalled();
-        const sysConfigInfo = await sysConfigManager.getSysConfigInfo();
-        
+        // Check board connections
         const boards = await serialManager.detectBoards();
         
         outputChannel.appendLine(`Status refresh complete:`);
         outputChannel.appendLine(`  SDK: ${sdkInstalled ? `installed (${sdkVersion})` : 'not installed'}`);
         outputChannel.appendLine(`  Toolchain: ${toolchainInstalled ? `installed (${toolchainInfo.version})` : 'not installed'}`);
-        outputChannel.appendLine(`  SysConfig: ${sysConfigInstalled ? `installed (${sysConfigInfo.version})` : 'not installed'}`);
         outputChannel.appendLine(`  Boards: ${boards.length} detected`);
         
         // Update status bar
-        if (sdkInstalled && toolchainInstalled && sysConfigInstalled) {
+        if (sdkInstalled && toolchainInstalled) {
             updateStatusBar(`Ready (${boards.length} boards)`);
         } else {
-            const missing = [];
-            if (!sdkInstalled) missing.push('SDK');
-            if (!toolchainInstalled) missing.push('Toolchain');
-            if (!sysConfigInstalled) missing.push('SysConfig');
-            updateStatusBar(`Setup required: ${missing.join(', ')}`);
+            updateStatusBar('Setup required');
         }
         
         // Refresh webview if visible
         if (webviewProvider) {
             // Trigger webview status update
+            // Note: This would typically send a message to the webview to refresh its status
             outputChannel.appendLine('Webview status refreshed');
         }
         
@@ -687,27 +676,18 @@ async function initializeExtension(): Promise<void> {
 
 async function checkFirstTimeSetup(): Promise<void> {
     try {
-        // Check if all components are already installed
+        // Check if toolchain is already installed
         const sdkInstalled = await sdkManager.isSDKInstalled();
         const toolchainInstalled = await toolchainManager.isToolchainInstalled();
-        const sysConfigInstalled = await sysConfigManager.isSysConfigInstalled();
         
-        if (!sdkInstalled || !toolchainInstalled || !sysConfigInstalled) {
-            outputChannel.appendLine('First-time setup detected - missing components:');
-            if (!sdkInstalled) outputChannel.appendLine('  - MSPM0 SDK');
-            if (!toolchainInstalled) outputChannel.appendLine('  - ARM-CGT-CLANG Toolchain');
-            if (!sysConfigInstalled) outputChannel.appendLine('  - TI SysConfig');
+        if (!sdkInstalled || !toolchainInstalled) {
+            outputChannel.appendLine('First-time setup detected');
             
             const showWelcome = vscode.workspace.getConfiguration('port11-debugger').get('showWelcomeOnStartup', true);
             
             if (showWelcome) {
-                const missingComponents = [];
-                if (!sdkInstalled) missingComponents.push('SDK');
-                if (!toolchainInstalled) missingComponents.push('Toolchain');
-                if (!sysConfigInstalled) missingComponents.push('SysConfig');
-                
                 const result = await vscode.window.showInformationMessage(
-                    `Port11 Debugger: Setup required for MSPM0 development. Missing: ${missingComponents.join(', ')}. Would you like to set up now?`,
+                    'Port11 Debugger: Setup required for MSPM0 development. Would you like to set up the toolchain now?',
                     { title: 'Setup Now', isCloseAffordance: false },
                     { title: 'Setup Later', isCloseAffordance: false },
                     { title: 'Don\'t Show Again', isCloseAffordance: true }
@@ -724,7 +704,7 @@ async function checkFirstTimeSetup(): Promise<void> {
                 }
             }
         } else {
-            outputChannel.appendLine('All components already installed, skipping first-time setup');
+            outputChannel.appendLine('Toolchain already installed, skipping first-time setup');
         }
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -739,7 +719,7 @@ function checkForExtensionUpdates(): void {
     // Future implementation could:
     // 1. Check VS Code marketplace for newer versions
     // 2. Check GitHub releases for DAP binary updates
-    // 3. Check TI website for newer toolchain/SysConfig versions
+    // 3. Check TI website for newer toolchain versions
     // 4. Notify user of available updates
 }
 
@@ -754,7 +734,6 @@ export function getManagers() {
     return {
         sdkManager,
         toolchainManager,
-        sysConfigManager,
         serialManager,
         outputChannel,
         statusBarItem
