@@ -50,22 +50,6 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`Failed to initialize managers: ${errorMessage}`);
         throw error;
     }
-    
-    // Initialize webview provider
-    try {
-        outputChannel.appendLine('Initializing webview provider...');
-        webviewProvider = new WebviewProvider(context, outputChannel, {
-            sdkManager,
-            toolchainManager,
-            sysConfigManager,
-            serialManager
-        });
-        outputChannel.appendLine('Webview provider initialized successfully');
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        outputChannel.appendLine(`Failed to initialize webview provider: ${errorMessage}`);
-        throw error;
-    }
 
     // Initialize commands
     try {
@@ -74,6 +58,22 @@ export async function activate(context: vscode.ExtensionContext) {
         const flashCommand = new FlashCommand(context, outputChannel, serialManager);
         const debugCommand = new DebugCommand(context, outputChannel, serialManager);
         outputChannel.appendLine('Command handlers initialized successfully');
+
+        // Initialize webview provider
+        try {
+            outputChannel.appendLine('Initializing webview provider...');
+            webviewProvider = new WebviewProvider(context, outputChannel, {
+                sdkManager,
+                toolchainManager,
+                sysConfigManager,
+                serialManager
+            }, buildCommand);
+            outputChannel.appendLine('Webview provider initialized successfully');
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            outputChannel.appendLine(`Failed to initialize webview provider: ${errorMessage}`);
+            throw error;
+        }
 
         // Register all commands
         const commands = [

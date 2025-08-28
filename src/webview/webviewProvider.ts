@@ -5,6 +5,7 @@ import { SDKManager, SDKSetupProgress } from '../managers/sdkManager';
 import { ToolchainManager, ToolchainSetupProgress } from '../managers/toolchainManager';
 import { SysConfigManager, SysConfigSetupProgress } from '../managers/sysconfigManager';
 import { SerialManager, BoardInfo } from '../managers/serialManager';
+import { BuildCommand, BuildProgress } from '../commands/buildCommand';
 
 export interface WebviewMessage {
     command: string;
@@ -29,6 +30,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     private serialManager: SerialManager;
     private isSetupInProgress = false;
 
+    private buildCommand?: BuildCommand;
+    private isBuildInProgress = false;
+
     constructor(
         context: vscode.ExtensionContext,
         outputChannel: vscode.OutputChannel,
@@ -37,7 +41,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             toolchainManager: ToolchainManager;
             sysConfigManager: SysConfigManager;
             serialManager: SerialManager;
-        }
+        },
+        buildCommand?: BuildCommand
     ) {
         this.context = context;
         this.outputChannel = outputChannel;
@@ -45,6 +50,39 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         this.toolchainManager = managers.toolchainManager;
         this.sysConfigManager = managers.sysConfigManager;
         this.serialManager = managers.serialManager;
+        this.buildCommand = buildCommand;
+
+        if (this.buildCommand) {
+            this.buildCommand.setProgressCallback((progress) => {
+                this.handleBuildProgress(progress);
+            });
+        }
+    }
+
+    private handleBuildProgress(progress: BuildProgress): void {
+        // Send build progress to webview
+        this.sendMessage({
+            command: 'buildProgress',
+            data: {
+                stage: progress.stage,
+                percentage: progress.percentage,
+                message: progress.message,
+                elapsedTime: progress.elapsedTime,
+                currentFile: progress.currentFile
+            }
+        });
+
+        // Update build state
+        this.isBuildInProgress = progress.stage !== 'complete' && progress.stage !== 'error';
+        
+        // Update UI state based on build progress
+        this.sendMessage({
+            command: 'updateBuildState',
+            data: {
+                building: this.isBuildInProgress,
+                canCancel: this.isBuildInProgress && progress.stage !== 'complete'
+            }
+        });
     }
 
     public resolveWebviewView(
@@ -170,6 +208,18 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
             case 'log':
                 this.handleClientLog(message.data);
+                break;
+
+            case 'buildProject':
+                await this.buildProject(message.data?.options);
+                break;
+            
+            case 'cancelBuild':
+                await this.cancelBuild();
+                break;
+
+            case 'cleanBuild':
+                await this.cleanBuild();
                 break;
 
             default:
@@ -468,23 +518,97 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     }
 
     // Development Operations (placeholders for now)
-    private async buildProject(): Promise<void> {
-        try {
-            this.outputChannel.appendLine('Building project...');
-            
-            // This will be implemented with the build system
+    private async buildProject(options?: any): Promise<void> {
+        if (this.isBuildInProgress) {
             this.sendMessage({
-                command: 'buildComplete',
-                data: { success: true, message: 'Build functionality will be implemented next' }
+                command: 'error',
+                data: { message: 'Build already in progress. Cancel current build first.' }
             });
+            return;
+        }
+
+        if (!this.buildCommand) {
+            this.sendMessage({
+                command: 'error',
+                data: { message: 'Build system not initialized' }
+            });
+            return;
+        }
+
+        try {
+            this.isBuildInProgress = true;
+            
+            // Send build start message
+            this.sendMessage({
+                command: 'buildStarted',
+                data: { timestamp: Date.now() }
+            });
+
+            // Execute build with progress reporting
+            const result = await this.buildCommand.execute(options || {});
+
+            // Send build completion message
+            this.sendMessage({
+                command: 'buildCompleted',
+                data: {
+                    success: result.success,
+                    errors: result.errors.length,
+                    warnings: result.warnings.length,
+                    buildTime: result.buildTime,
+                    outputPath: result.outputPath
+                }
+            });
+
+            this.outputChannel.appendLine(`Build completed: ${result.success ? 'SUCCESS' : 'FAILED'}`);
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
+            
             this.sendMessage({
-                command: 'buildComplete',
-                data: { success: false, error: errorMessage }
+                command: 'buildError',
+                data: { 
+                    message: errorMessage,
+                    timestamp: Date.now()
+                }
+            });
+
+            this.outputChannel.appendLine(`Build error: ${errorMessage}`);
+        } finally {
+            this.isBuildInProgress = false;
+            
+            // Update UI to re-enable controls
+            this.sendMessage({
+                command: 'updateBuildState',
+                data: {
+                    building: false,
+                    canCancel: false
+                }
             });
         }
+    }
+
+    private async cancelBuild(): Promise<void> {
+        if (!this.buildCommand || !this.isBuildInProgress) {
+            return;
+        }
+
+        try {
+            await this.buildCommand.cancelBuild();
+            
+            this.sendMessage({
+                command: 'buildCancelled',
+                data: { timestamp: Date.now() }
+            });
+
+            this.outputChannel.appendLine('Build cancelled by user');
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.outputChannel.appendLine(`Error cancelling build: ${errorMessage}`);
+        }
+    }
+
+    private async cleanBuild(): Promise<void> {
+        await this.buildProject({ clean: true });
     }
 
     private async flashFirmware(): Promise<void> {

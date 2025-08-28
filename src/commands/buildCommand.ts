@@ -21,6 +21,14 @@ export interface BuildResult {
     buildTime: number;
 }
 
+export interface BuildProgress {
+    stage: 'setup' | 'sysconfig' | 'compile' | 'link' | 'complete' | 'error';
+    message: string;
+    percentage: number;
+    elapsedTime: number;
+    currentFile?: string;
+}
+
 export class BuildCommand {
     private context: vscode.ExtensionContext;
     private outputChannel: vscode.OutputChannel;
@@ -29,6 +37,11 @@ export class BuildCommand {
     private sysConfigManager: SysConfigManager;
     private buildProcess: ChildProcess | null = null;
     private diagnosticCollection: vscode.DiagnosticCollection;
+
+    private buildStartTime: number = 0;
+    private currentStage: string = '';
+    private progressCallback?: (progress: BuildProgress) => void;
+    private statusBarItem: vscode.StatusBarItem;
 
     constructor(
         context: vscode.ExtensionContext,
@@ -42,7 +55,11 @@ export class BuildCommand {
         this.sdkManager = sdkManager;
         this.toolchainManager = toolchainManager;
         this.sysConfigManager = sysConfigManager;
+        console.log('BuildCommand using output channel:', this.outputChannel);
         this.diagnosticCollection = vscode.languages.createDiagnosticCollection('port11-debugger');
+
+        this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+        this.statusBarItem.command = 'port11-debugger.showLogs';
         
         context.subscriptions.push(this.diagnosticCollection);
     }
@@ -57,60 +74,184 @@ export class BuildCommand {
         }
     }
 
+    setProgressCallback(callback: (progress: BuildProgress) => void): void {
+        this.progressCallback = callback;
+    }
+
+    private updateProgress(stage: BuildProgress['stage'], message: string, percentage: number, currentFile?: string): void {
+        const elapsedTime = Date.now() - this.buildStartTime;
+        const progress: BuildProgress = {
+            stage,
+            message,
+            percentage,
+            elapsedTime,
+            currentFile
+        };
+
+        // Update status bar
+        this.statusBarItem.text = `$(sync~spin) ${message} (${percentage}%)`;
+        this.statusBarItem.show();
+
+        // Update output channel with timestamp
+        const timestamp = new Date().toLocaleTimeString();
+        this.outputChannel.appendLine(`[${timestamp}] ${this.getStageIcon(stage)} ${message}`);
+
+        // Call progress callback for webview updates
+        if (this.progressCallback) {
+            this.progressCallback(progress);
+        }
+
+        this.currentStage = stage;
+    }
+
+    private getStageIcon(stage: BuildProgress['stage']): string {
+        switch (stage) {
+            case 'setup': return '🔧';
+            case 'sysconfig': return '⚙️';
+            case 'compile': return '🔨';
+            case 'link': return '🔗';
+            case 'complete': return '✅';
+            case 'error': return '❌';
+            default: return '📝';
+        }
+    }
+
+    private hideProgress(): void {
+        this.statusBarItem.hide();
+    }
+
+    async cancelBuild(): Promise<void> {
+        if (this.buildProcess) {
+            this.updateProgress('error', 'Cancelling build process', 100);
+            this.outputChannel.appendLine('🛑 Build cancelled by user');
+            
+            this.buildProcess.kill('SIGTERM');
+            
+            // Force kill after 5 seconds if it doesn't respond
+            setTimeout(() => {
+                if (this.buildProcess && !this.buildProcess.killed) {
+                    this.buildProcess.kill('SIGKILL');
+                }
+            }, 5000);
+            
+            this.buildProcess = null;
+            this.hideProgress();
+            
+            vscode.window.showWarningMessage('Build process cancelled');
+        }
+    }
+
     async execute(options: BuildOptions = {}): Promise<BuildResult> {
-        const startTime = Date.now();
-        
+        // Prevent multiple concurrent builds
+        if (this.buildProcess) {
+            console.log('🔥 BUILD EXECUTE EXCEPTION: Build Process is not available.')
+            throw new Error('Build already in progress. Use "Cancel Build" to stop the current build.');
+        }
+        console.log('🔥 BUILD EXECUTE CALLED');
+        console.log('🔥 OUTPUT CHANNEL:', this.outputChannel);
+        this.outputChannel.show(true);  // Force reveal
+        this.outputChannel.appendLine('='.repeat(50));
+        this.outputChannel.appendLine('🚀 DEBUG: Build command execute() called');
+        this.outputChannel.appendLine(`🚀 DEBUG: Options: ${JSON.stringify(options)}`);
+        this.outputChannel.appendLine('='.repeat(50));
+
+        this.buildStartTime = Date.now();
+
         try {
-            this.outputChannel.appendLine('='.repeat(50));
-            this.outputChannel.appendLine('Starting build process...');
-            this.outputChannel.appendLine('='.repeat(50));
-
-            // Validate prerequisites
-            await this.validatePrerequisites();
-
-            // Find project files
-            const projectInfo = await this.detectProject();
-            if (!projectInfo) {
-                throw new Error('No valid MSPM0 project found in workspace');
-            }
+            this.updateProgress('setup', 'Initializing build process', 0);
 
             // Clear previous diagnostics
             this.diagnosticCollection.clear();
 
-            // Prepare build environment
+            // Show output channel
+            this.outputChannel.show(true);
+            this.outputChannel.appendLine('='.repeat(80));
+            this.outputChannel.appendLine('🚀 MSPM0 BUILD PROCESS STARTING');
+            this.outputChannel.appendLine('='.repeat(80));
+
+            // Stage 1: Setup and validation (0-15%)
+            this.updateProgress('setup', 'Validating build prerequisites', 5);
+            await this.validateBuildPrerequisites();
+
+            this.updateProgress('setup', 'Detecting project structure', 10);
+            const projectInfo = await this.detectProject();
+            if (!projectInfo) {
+                throw new Error('No MSPM0 project found in workspace');
+            }
+
+            this.updateProgress('setup', 'Preparing build configuration', 15);
             const buildConfig = await this.prepareBuildConfig(projectInfo, options);
 
-            // Execute build
-            const result = await this.executeBuild(buildConfig);
-            
-            const buildTime = Date.now() - startTime;
-            result.buildTime = buildTime;
+            this.outputChannel.appendLine(`📁 Project: ${path.basename(projectInfo.rootPath)} (${projectInfo.rootPath})`);
+            this.outputChannel.appendLine(`🔧 Toolchain: ${path.basename(buildConfig.compilerPath)}`);
+            this.outputChannel.appendLine(`⚙️ Mode: ${options.optimization === 'release' ? 'Release' : 'Debug'}`);
+            this.outputChannel.appendLine(`📄 Source Files: ${buildConfig.sourceFiles.length}`);
+            this.outputChannel.appendLine('');
 
-            // Show build results
-            this.showBuildResults(result);
+            let currentProgress = 15;
 
-            return result;
+            // Stage 2: SysConfig generation if needed (15-35%)
+            if (projectInfo.hasSysConfig) {
+                this.updateProgress('sysconfig', 'Running SysConfig generation', 20);
+                await this.runSysConfigGeneration(buildConfig);
+                currentProgress = 35;
+                this.outputChannel.appendLine('✅ SysConfig generation completed\n');
+            }
+
+            // Stage 3: Compilation (35-100%)
+            this.updateProgress('compile', 'Starting compilation', currentProgress);
+            const buildResult = await this.executeBuild(buildConfig);
+
+            const totalTime = Date.now() - this.buildStartTime;
+            buildResult.buildTime = totalTime;
+
+            // Final status
+            if (buildResult.success) {
+                this.updateProgress('complete', `Build successful in ${(totalTime / 1000).toFixed(1)}s`, 100);
+                
+                vscode.window.showInformationMessage(
+                    `Build completed successfully in ${(totalTime / 1000).toFixed(1)}s`,
+                    'Flash Firmware',
+                    'Start Debug'
+                ).then(selection => {
+                    if (selection === 'Flash Firmware') {
+                        vscode.commands.executeCommand('port11-debugger.flash');
+                    } else if (selection === 'Start Debug') {
+                        vscode.commands.executeCommand('port11-debugger.debug.start');
+                    }
+                });
+            } else {
+                this.updateProgress('error', `Build failed with ${buildResult.errors.length} errors`, 100);
+                
+                vscode.window.showErrorMessage(
+                    `Build failed with ${buildResult.errors.length} errors`,
+                    'Show Problems',
+                    'View Output'
+                ).then(selection => {
+                    if (selection === 'Show Problems') {
+                        vscode.commands.executeCommand('workbench.panel.markers.view.focus');
+                    } else if (selection === 'View Output') {
+                        this.outputChannel.show();
+                    }
+                });
+            }
+
+            // Hide progress after delay
+            setTimeout(() => this.hideProgress(), 2000);
+
+            return buildResult;
 
         } catch (error) {
-            const buildTime = Date.now() - startTime;
+            this.updateProgress('error', `Build failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 100);
+            
             const errorMessage = error instanceof Error ? error.message : String(error);
+            this.outputChannel.appendLine(`❌ Build Error: ${errorMessage}`);
+            this.outputChannel.appendLine('='.repeat(80));
             
-            this.outputChannel.appendLine(`Build failed: ${errorMessage}`);
-            
-            const result: BuildResult = {
-                success: false,
-                errors: [{
-                    message: errorMessage,
-                    range: new vscode.Range(0, 0, 0, 0),
-                    severity: vscode.DiagnosticSeverity.Error,
-                    source: 'port11-debugger'
-                }],
-                warnings: [],
-                buildTime
-            };
-
-            this.showBuildResults(result);
-            return result;
+            setTimeout(() => this.hideProgress(), 2000);
+            throw error;
+        } finally {
+            this.buildProcess = null;
         }
     }
 
@@ -122,7 +263,7 @@ export class BuildCommand {
         }
     }
 
-    private async validatePrerequisites(): Promise<void> {
+    private async validateBuildPrerequisites(): Promise<void> {
         // Check if SDK is installed
         if (!await this.sdkManager.isSDKInstalled()) {
             throw new Error('MSPM0 SDK not installed. Please run setup first.');
@@ -248,63 +389,8 @@ export class BuildCommand {
                     fs.mkdirSync(config.outputPath, { recursive: true });
                 }
 
-                this.outputChannel.appendLine('='.repeat(60));
-                this.outputChannel.appendLine('🔨 MSPM0 BUILD PROCESS STARTING');
-                this.outputChannel.appendLine('='.repeat(60));
-
-                // Step 1: Show project information
-                this.outputChannel.appendLine(`📁 Project Path: ${config.projectPath}`);
-                this.outputChannel.appendLine(`📁 Output Path: ${config.outputPath}`);
-                this.outputChannel.appendLine(`⚙️ Optimization: ${config.optimization}`);
-                this.outputChannel.appendLine(`📄 Source Files (${config.sourceFiles.length}):`);
-                config.sourceFiles.forEach((file: string, index: number) => {
-                    this.outputChannel.appendLine(`   ${index + 1}. ${path.basename(file)}`);
-                });
-                this.outputChannel.appendLine('');
-
-                // Step 2: Check for SysConfig files and run SysConfig if needed
-                const hasSysConfigFile = config.sourceFiles.some((file: string) => file.endsWith('.syscfg'));
-                if (hasSysConfigFile) {
-                    this.outputChannel.appendLine('🔧 STEP 1: Running SysConfig Code Generation');
-                    this.outputChannel.appendLine('-'.repeat(50));
-                    
-                    const sysConfigCliPath = this.sysConfigManager.getSysConfigCliPath();
-                    const sysConfigFile = config.sourceFiles.find((file: string) => file.endsWith('.syscfg'));
-                    
-                    if (sysConfigFile && sysConfigCliPath) {
-                        const sysConfigArgs = [
-                            '--script', path.basename(sysConfigFile),
-                            '-o', 'syscfg',
-                            '--compiler', 'ticlang'
-                        ];
-
-                        this.outputChannel.appendLine(`$ ${sysConfigCliPath} ${sysConfigArgs.join(' ')}`);
-                        this.outputChannel.appendLine('');
-
-                        // Run SysConfig
-                        await this.runSysConfigGeneration(sysConfigCliPath, sysConfigArgs, config.projectPath);
-                    }
-                }
-
-                // Step 3: Prepare compiler arguments
                 const args = this.buildCompilerArgs(config);
-                
-                this.outputChannel.appendLine('🔨 STEP 2: Compiling Source Code');
-                this.outputChannel.appendLine('-'.repeat(50));
-                this.outputChannel.appendLine(`💻 Compiler: ${config.compilerPath}`);
-                this.outputChannel.appendLine(`📋 Compiler Command:`);
-                
-                // Show the full command in a readable format
-                const commandLine = `${path.basename(config.compilerPath)} ${args.join(' ')}`;
-                this.outputChannel.appendLine(`$ ${commandLine}`);
-                this.outputChannel.appendLine('');
-                
-                // Show key compiler flags for user understanding
-                this.outputChannel.appendLine(`🎯 Key Build Settings:`);
-                this.outputChannel.appendLine(`   • Target: MSPM0G3507 (Cortex-M0+)`);
-                this.outputChannel.appendLine(`   • Optimization: ${config.optimization === 'debug' ? 'Debug (-g --opt_level=0)' : 'Release (--opt_level=2)'}`);
-                this.outputChannel.appendLine(`   • Include Paths: ${config.includePaths.length} directories`);
-                this.outputChannel.appendLine(`   • Libraries: ${config.libraryPaths.length} library paths`);
+                this.outputChannel.appendLine(`🔨 Executing: ${path.basename(config.compilerPath)} ${args.join(' ')}`);
                 this.outputChannel.appendLine('');
 
                 // Start build process
@@ -315,18 +401,26 @@ export class BuildCommand {
 
                 let stdout = '';
                 let stderr = '';
-                let hasOutput = false;
+                let currentFileIndex = 0;
+                const totalFiles = config.sourceFiles.length;
 
                 this.buildProcess.stdout?.on('data', (data) => {
                     const output = data.toString();
                     stdout += output;
-                    hasOutput = true;
                     
-                    // Show real-time output with prefix
+                    // Parse output for file progress
                     const lines = output.split('\n');
                     lines.forEach((line: string) => {
                         if (line.trim()) {
                             this.outputChannel.appendLine(`  📝 ${line.trim()}`);
+                            
+                            // Try to extract current file being compiled
+                            const fileMatch = line.match(/(\w+\.c|\w+\.cpp)/);
+                            if (fileMatch) {
+                                currentFileIndex++;
+                                const progress = Math.min(95, 35 + ((currentFileIndex / totalFiles) * 60)); // 35-95%
+                                this.updateProgress('compile', `Compiling: ${fileMatch[1]}`, progress, fileMatch[1]);
+                            }
                         }
                     });
                 });
@@ -334,9 +428,7 @@ export class BuildCommand {
                 this.buildProcess.stderr?.on('data', (data) => {
                     const output = data.toString();
                     stderr += output;
-                    hasOutput = true;
                     
-                    // Show errors/warnings with appropriate icons
                     const lines = output.split('\n');
                     lines.forEach((line: string) => {
                         if (line.trim()) {
@@ -354,7 +446,6 @@ export class BuildCommand {
                 this.buildProcess.on('close', (code) => {
                     this.buildProcess = null;
 
-                    // Show build completion status
                     this.outputChannel.appendLine('');
                     this.outputChannel.appendLine('📊 BUILD RESULTS');
                     this.outputChannel.appendLine('-'.repeat(30));
@@ -365,7 +456,7 @@ export class BuildCommand {
                     const warnings = diagnostics.filter(d => d.severity === vscode.DiagnosticSeverity.Warning);
 
                     const result: BuildResult = {
-                        success: code === 0,
+                        success: code === 0 && errors.length === 0,
                         errors: errors,
                         warnings: warnings,
                         outputPath: code === 0 ? path.join(config.outputPath, 'main.out') : undefined,
@@ -394,55 +485,82 @@ export class BuildCommand {
                     if (errors.length > 0) {
                         this.outputChannel.appendLine('');
                         this.outputChannel.appendLine('❌ ERRORS:');
-                        errors.forEach((error, index) => {
+                        errors.slice(0, 5).forEach((error, index) => {
                             this.outputChannel.appendLine(`   ${index + 1}. ${error.message}`);
                         });
+                        if (errors.length > 5) {
+                            this.outputChannel.appendLine(`   ... and ${errors.length - 5} more errors`);
+                        }
                     }
 
                     if (warnings.length > 0) {
                         this.outputChannel.appendLine('');
                         this.outputChannel.appendLine('⚠️  WARNINGS:');
-                        warnings.forEach((warning, index) => {
+                        warnings.slice(0, 3).forEach((warning, index) => {
                             this.outputChannel.appendLine(`   ${index + 1}. ${warning.message}`);
                         });
+                        if (warnings.length > 3) {
+                            this.outputChannel.appendLine(`   ... and ${warnings.length - 3} more warnings`);
+                        }
                     }
 
-                    // Show next steps
+                    this.outputChannel.appendLine('');
+                    this.outputChannel.appendLine('🚀 NEXT STEPS:');
                     if (code === 0) {
-                        this.outputChannel.appendLine('');
-                        this.outputChannel.appendLine('🚀 NEXT STEPS:');
                         this.outputChannel.appendLine('   • Use "Flash Firmware" to program your board');
                         this.outputChannel.appendLine('   • Use "Start Debug" to begin debugging session');
                     } else {
-                        this.outputChannel.appendLine('');
-                        this.outputChannel.appendLine('🔧 TROUBLESHOOTING:');
                         this.outputChannel.appendLine('   • Check the Problems panel for detailed error locations');
                         this.outputChannel.appendLine('   • Verify all source files compile individually');
                         this.outputChannel.appendLine('   • Check include paths and library dependencies');
                     }
 
-                    this.outputChannel.appendLine('='.repeat(60));
-                    
+                    this.outputChannel.appendLine('='.repeat(80));
                     resolve(result);
                 });
 
                 this.buildProcess.on('error', (error) => {
                     this.buildProcess = null;
-                    this.outputChannel.appendLine(`❌ Build process error: ${error.message}`);
-                    this.outputChannel.appendLine('='.repeat(60));
                     reject(new Error(`Build process error: ${error.message}`));
                 });
 
             } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                this.outputChannel.appendLine(`❌ Build setup error: ${errorMessage}`);
-                this.outputChannel.appendLine('='.repeat(60));
-                reject(new Error(`Build setup error: ${errorMessage}`));
+                reject(error);
             }
         });
     }
 
-    private async runSysConfigGeneration(sysConfigCliPath: string, args: string[], cwd: string): Promise<void> {
+    private async runSysConfigGeneration(config: any): Promise<void> {
+        const sysConfigFiles = await vscode.workspace.findFiles(
+            new vscode.RelativePattern(config.projectPath, '**/*.syscfg'),
+            null,
+            10
+        );
+
+        if (sysConfigFiles.length === 0) {
+            this.outputChannel.appendLine('No .syscfg files found, skipping SysConfig generation');
+            return;
+        }
+
+        const sysConfigCliPath = this.sysConfigManager.getSysConfigCliPath();
+        
+        for (const sysConfigFile of sysConfigFiles) {
+            const sysConfigFilePath = sysConfigFile.fsPath;
+            const fileName = path.basename(sysConfigFilePath);
+            
+            this.outputChannel.appendLine(`🔧 Processing SysConfig file: ${fileName}`);
+            
+            const args = [
+                '-c', sysConfigFilePath,
+                '-o', path.dirname(sysConfigFilePath),
+                '--compiler', 'ccs'
+            ];
+
+            await this.runSysConfigCLI(sysConfigCliPath, args, path.dirname(sysConfigFilePath));
+        }
+    }
+
+    private async runSysConfigCLI(sysConfigCliPath: string, args: string[], cwd: string): Promise<void> {
         return new Promise((resolve, reject) => {
             const platform = require('os').platform();
             let sysConfigProcess;
@@ -631,5 +749,6 @@ export class BuildCommand {
             this.buildProcess.kill();
         }
         this.diagnosticCollection.dispose();
+        this.statusBarItem.dispose();
     }
 }

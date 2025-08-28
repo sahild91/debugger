@@ -393,6 +393,30 @@ window.addEventListener('message', event => {
             case 'disableActions':
                 disableActions();
                 break;
+
+            case 'buildProgress':
+                updateBuildProgress(message.data);
+                break;
+                
+            case 'buildStarted':
+                onBuildStarted(message.data);
+                break;
+                
+            case 'buildCompleted':
+                onBuildCompleted(message.data);
+                break;
+                
+            case 'buildError':
+                onBuildError(message.data);
+                break;
+                
+            case 'buildCancelled':
+                onBuildCancelled(message.data);
+                break;
+                
+            case 'updateBuildState':
+                updateBuildState(message.data);
+                break;
                 
             default:
                 console.log('Unknown message command:', message.command);
@@ -402,6 +426,79 @@ window.addEventListener('message', event => {
         showNotification('An error occurred while processing the response', 'error');
     }
 });
+
+function updateBuildProgress(data) {
+    // Update progress bar and status
+    if (progressBar && progressText) {
+        progressBar.style.width = data.percentage + '%';
+        progressText.textContent = `${data.message} (${data.percentage}%)`;
+        
+        if (data.currentFile) {
+            progressText.textContent += ` - ${data.currentFile}`;
+        }
+    }
+    
+    showProgress(data.message, data.percentage);
+}
+
+function onBuildStarted(data) {
+    disableActions();
+    showProgress('Starting build process...', 0);
+    
+    // Show cancel button if available
+    const cancelBtn = document.getElementById('cancel-build-btn');
+    if (cancelBtn) {
+        cancelBtn.style.display = 'inline-block';
+    }
+}
+
+function onBuildCompleted(data) {
+    enableActions();
+    hideProgress();
+    
+    const message = data.success 
+        ? `Build completed successfully in ${(data.buildTime / 1000).toFixed(1)}s`
+        : `Build failed with ${data.errors} errors`;
+    
+    showNotification(message, data.success ? 'success' : 'error');
+    
+    // Hide cancel button
+    const cancelBtn = document.getElementById('cancel-build-btn');
+    if (cancelBtn) {
+        cancelBtn.style.display = 'none';
+    }
+}
+
+function onBuildError(data) {
+    enableActions();
+    hideProgress();
+    showNotification(`Build error: ${data.message}`, 'error');
+}
+
+function onBuildCancelled(data) {
+    enableActions();
+    hideProgress();
+    showNotification('Build cancelled by user', 'warning');
+}
+
+function updateBuildState(data) {
+    // Enable/disable build button
+    const buildBtn = document.getElementById('build-btn');
+    if (buildBtn) {
+        buildBtn.disabled = data.building;
+    }
+    
+    // Show/hide cancel button
+    const cancelBtn = document.getElementById('cancel-build-btn');
+    if (cancelBtn) {
+        cancelBtn.style.display = data.canCancel ? 'inline-block' : 'none';
+    }
+}
+
+// Add cancel build function
+function cancelBuild() {
+    vscode.postMessage({ command: 'cancelBuild' });
+}
 
 // Notification system
 function showNotification(text, type = 'info') {
