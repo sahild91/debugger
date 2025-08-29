@@ -559,6 +559,28 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 }
             });
 
+            this.sendMessage({
+                command: 'buildProgress',
+                data: {
+                    stage: 'complete',
+                    percentage: 100,
+                    message: result.success ? 'Build successful' : 'Build finished',
+                    elapsedTime: result.buildTime,
+                    currentFile: undefined
+                }
+            });
+
+            this.sendMessage({
+                command: 'buildProgress',
+                data: {
+                    stage: 'error',
+                    percentage: 100,
+                    message: result.errors.length > 0 ? 'Build completed with errors' : 'Build completed successfully',
+                    elapsedTime: 0,
+                    currentFile: undefined
+                }
+            });
+
             this.outputChannel.appendLine(`Build completed: ${result.success ? 'SUCCESS' : 'FAILED'}`);
 
         } catch (error) {
@@ -865,16 +887,12 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                         </div>
                     </div>
                     
-                    <div id="setup-progress" class="progress-container" style="display: none;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <h3 id="progress-title" style="margin: 0; font-size: 14px;">Setting up...</h3>
-                            <span id="progress-percentage" style="font-size: 12px; font-weight: 600;">0%</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div id="progress-fill" class="progress-fill"></div>
-                        </div>
-                        <p id="progress-text" style="margin: 8px 0 0 0; font-size: 12px; color: var(--vscode-descriptionForeground);">Initializing...</p>
+                    <section id="progress-section" class="section" style="display: none;">
+                    <div class="progress">
+                        <div class="progress-bar" id="progress-bar" style="width: 0%"></div>
                     </div>
+                    <div class="progress-text" id="progress-text">Ready</div>
+                    </section>
                 </section>
 
                 <section class="section">

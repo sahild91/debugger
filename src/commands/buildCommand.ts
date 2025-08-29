@@ -536,17 +536,67 @@ export class BuildCommand {
                     }
                 });
 
+                const sdkSourceRoot = path.join(this.sdkManager.getSDKPath(), 'source');
+                if (fs.existsSync(sdkSourceRoot)) {
+                    args.push('-L');
+                    args.push(sdkSourceRoot);
+                    this.outputChannel.appendLine(`Added SDK source as library path: ${sdkSourceRoot}`);
+                }
+
+                const driverlibDir = path.join(this.sdkManager.getSDKPath(), 'source', 'ti', 'driverlib', 'lib', 'ticlang', 'm0p', 'mspm0g1x0x_g3x0x');
+                if (fs.existsSync(driverlibDir)) {
+                    args.push('-L');
+                    args.push(driverlibDir);
+                    this.outputChannel.appendLine(`Added driverlib directory: ${driverlibDir}`);
+                } else {
+                    this.outputChannel.appendLine(`Driverlib not found at: ${driverlibDir}`);
+                }
+
                 // Add linker script from syscfg if available
                 const linkerScript = path.join(config.projectPath, 'syscfg', 'device_linker.cmd');
                 if (fs.existsSync(linkerScript)) {
-                    args.push('-Wl,-T');
-                    args.push(linkerScript);
+                    // Use TI linker syntax - single argument with proper path
+                    args.push(`-Wl,-l${linkerScript}`);
                     this.outputChannel.appendLine(`🔗 Using linker script: ${path.basename(linkerScript)}`);
+                } else {
+                    this.outputChannel.appendLine(`⚠️  Linker script not found: ${linkerScript}`);
+                    this.outputChannel.appendLine(`   This may cause linking issues. Ensure SysConfig generation completed successfully.`);
+                }
+                // Additional linker flags
+                args.push('-Wl,--diag_wrap=off');          // Disable diagnostic wrapping
+                args.push('-Wl,--display_error_number');    // Show error numbers  
+                args.push('-Wl,--warn_sections');           // Warn about section issues
+                args.push('-Wl,--xml_link_info=main_linkInfo.xml');
+                args.push('-Wl,--rom_model');              // Use ROM model
+
+                // Add additional TI-specific linker libraries if available
+                const deviceGenLibs = path.join(config.projectPath, 'syscfg', 'device.cmd.genlibs');
+                if (fs.existsSync(deviceGenLibs)) {
+                    args.push(`-Wl,-l${deviceGenLibs}`);
                 }
 
-                // Additional linker flags
-                args.push('-Wl,--gc-sections');         // Remove unused sections
-                args.push('-Wl,--entry=Reset_Handler'); // Entry point
+                // Standard C library
+                args.push('-Wl,-llibc.a');
+
+                if (fs.existsSync(driverlibDir)) {
+                    args.push(`-Wl,--library=driverlib.a`);
+                    this.outputChannel.appendLine(`🔗 Added driverlib: ${driverlibDir}`);
+                }
+
+                // Add map file generation for debugging
+                const mapFile = path.join(config.outputPath, 'main.map');
+                args.push(`-Wl,-m${path.basename(mapFile)}`);
+
+                // const driverlibPath = path.join(this.sdkManager.getSDKPath(), 'source', 'ti', 'driverlib', 'lib', 'ticlang', 'm0p', 'mspm0g1x0x_g3x0x');
+                // this.outputChannel.appendLine(`🔗 $$$$$ Using driverlib: ${driverlibPath}`);
+                // if (fs.existsSync(driverlibPath)) {
+                //     const driverlibFile = path.join(driverlibPath, 'driverlib.a');
+                //     this.outputChannel.appendLine(`🔗 $$$$$ Using driverlib: ${driverlibFile}`);
+                //     if (fs.existsSync(driverlibFile)) {
+                //         args.push(`-Wl,-l${driverlibFile}`);
+                //         this.outputChannel.appendLine(`🔗 Added driverlib: ${driverlibFile}`);
+                //     }
+                // }
 
                 // Display the full command being executed
                 this.outputChannel.appendLine(`🔨 Executing: ${path.basename(config.compilerPath)} ${args.join(' ')}`);
@@ -588,7 +638,7 @@ export class BuildCommand {
                     const lines = output.split('\n');
                     lines.forEach((line: string) => {
                         if (line.trim()) {
-                            if (line.toLowerCase().includes('error:')) {
+                            if (line.toLowerCase().includes('error:') || line.toLowerCase().includes('fatal error')) {
                                 hasCompileErrors = true;
                                 this.outputChannel.appendLine(`  ❌ ${line.trim()}`);
                             } else if (line.toLowerCase().includes('warning:')) {
@@ -627,6 +677,50 @@ export class BuildCommand {
                     if (result.success) {
                         this.outputChannel.appendLine(`✅ BUILD COMPLETED SUCCESSFULLY (Exit Code: ${code})`);
                         this.outputChannel.appendLine(`📦 Output: ${path.relative(config.projectPath, outputFile)}`);
+
+                        (async () => {
+                            try {
+                                const os = require('os');
+                                const exe = os.platform().startsWith('win32') ? '.exe' : '';
+                                
+                                // Resolve tool paths from the same bin folder as tiarmclang
+                                const binDir = path.dirname(config.compilerPath);
+                                const tiarmhexPath = path.join(binDir, `tiarmhex${exe}`);
+                                const tiarmobjcopyPath = path.join(binDir, `tiarmobjcopy${exe}`);
+
+                                const outDir = config.outputPath;           // build directory
+                                const outOut = outputFile;                  // build/main.out
+                                const hexOut = path.join(outDir, 'main.hex');
+                                const elfOut = path.join(outDir, 'main.elf');
+
+                                // STEP_6: Generate Intel HEX from main.out
+                                // Mirrors your Compiler_Commands.txt STEP_6 flags
+                                const hexArgs = [
+                                    '--diag_wrap=off',
+                                    '--intel',
+                                    '--memwidth', '8',
+                                    '--romwidth', '8',
+                                    '-o', hexOut,
+                                    outOut
+                                ];
+                                await this.runExternalTool(tiarmhexPath, hexArgs, outDir, 'STEP_6 tiarmhex -> main.hex');
+
+                                // STEP_7: Emit ELF with symbols for DAP debugging (Option A)
+                                // Equivalent to: tiarmobjcopy -O elf32-littlearm "main.out" "main.elf"
+                                const elfArgs = [
+                                    '-O', 'elf32-littlearm',
+                                    outOut,
+                                    elfOut
+                                ];
+                                await this.runExternalTool(tiarmobjcopyPath, elfArgs, outDir, 'STEP_7 tiarmobjcopy -> main.elf');
+
+                                this.outputChannel.appendLine(`📦 Artifacts generated:`);
+                                this.outputChannel.appendLine(`   • ${path.relative(config.projectPath, hexOut)}`);
+                                this.outputChannel.appendLine(`   • ${path.relative(config.projectPath, elfOut)}`);
+                            } catch (postErr) {
+                                this.outputChannel.appendLine(`⚠️  Post-link step skipped due to error: ${String(postErr)}`);
+                            }
+                        })();
                         
                         // Show file size if available
                         try {
@@ -1028,6 +1122,51 @@ export class BuildCommand {
                     reject(new Error('SysConfig generation timed out after 60 seconds'));
                 }
             }, 60000);
+        });
+    }
+
+    private async runExternalTool(toolPath: string, args: string[], cwd: string, label: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            // Remove extraneous surrounding quotes if present
+            const cleanPath = toolPath.replace(/^"(.*)"$/, '$1');
+            this.outputChannel.appendLine(`🔧 Running ${label}:`);
+            this.outputChannel.appendLine(`   Path: ${cleanPath}`);
+            this.outputChannel.appendLine(`   Args: ${args.join(' ')}`);
+            this.outputChannel.appendLine(`   CWD:  ${cwd}`);
+
+            const proc = spawn(cleanPath, args, {
+                cwd,
+                stdio: ['ignore', 'pipe', 'pipe'],
+                ...(require('os').platform().startsWith('win32') ? { windowsHide: true, shell: false } : {})
+            });
+
+            let stderr = '';
+
+            proc.stdout?.on('data', (data) => {
+                const s = data.toString();
+                s.split('\n').forEach((line: string) => {
+                    if (line.trim()) this.outputChannel.appendLine(`  📝 ${line.trim()}`);
+                });
+            });
+
+            proc.stderr?.on('data', (data) => {
+                const s = data.toString();
+                stderr += s;
+                s.split('\n').forEach((line: string) => {
+                    if (line.trim()) this.outputChannel.appendLine(`  ⚙️ ${line.trim()}`);
+                });
+            });
+
+            proc.on('close', (code) => {
+                if (code === 0) {
+                    this.outputChannel.appendLine(`✅ ${label} completed successfully`);
+                    resolve();
+                } else {
+                    this.outputChannel.appendLine(`❌ ${label} failed with exit code ${code}`);
+                    if (stderr.trim()) this.outputChannel.appendLine(stderr.trim());
+                    reject(new Error(`${label} failed`));
+                }
+            });
         });
     }
 
