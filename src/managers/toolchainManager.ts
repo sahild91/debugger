@@ -60,57 +60,57 @@ export class ToolchainManager {
         };
 
         try {
-            // Search in multiple possible installation locations
-            const searchPaths = [
-                // Our preferred location
-                this.toolchainPath,
-                // Common TI installation locations
-                'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_4.0.3.LTS',
-                'C:\\ti\\ti-cgt-armllvm_4.0.3.LTS',
-                'C:\\Program Files\\Texas Instruments\\ti-cgt-armllvm_4.0.3.LTS',
-                'C:\\Program Files (x86)\\Texas Instruments\\ti-cgt-armllvm_4.0.3.LTS',
-                // User's home directory variations  
-                path.join(os.homedir(), 'ti', 'ti-cgt-armllvm_4.0.3.LTS'),
-                path.join(os.homedir(), 'AppData', 'Local', 'ti', 'ti-cgt-armllvm_4.0.3.LTS'),
-                // Version variations
-                'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_4.0.3',
-                'C:\\ti\\ti-cgt-armllvm_4.0.3'
-            ];
-
-            this.outputChannel.appendLine('Searching for toolchain in multiple locations...');
-
-            for (const searchPath of searchPaths) {
-                this.outputChannel.appendLine(`Checking: ${searchPath}`);
+            this.outputChannel.appendLine('🔍 Getting ARM-CGT-CLANG toolchain information...');
+            
+            // Find the compiler using our prioritized search
+            const compilerPath = this.getCompilerPath();
+            
+            if (compilerPath) {
+                // Extract the base path from the compiler path
+                let basePath: string;
                 
-                if (fs.existsSync(searchPath)) {
-                    this.outputChannel.appendLine(`Found directory: ${searchPath}`);
-                    
-                    const toolchainInfo = await this.validateToolchainAtPath(searchPath);
-                    if (toolchainInfo.isInstalled) {
-                        this.outputChannel.appendLine(`✅ Valid toolchain found at: ${searchPath}`);
-                        // Update our internal path to the actual location
-                        this.toolchainPath = searchPath;
-                        return toolchainInfo;
-                    } else {
-                        this.outputChannel.appendLine(`❌ Directory exists but no valid toolchain found`);
-                    }
+                // Handle different directory structures
+                if (compilerPath.includes(this.context.globalStorageUri.fsPath)) {
+                    // It's in our extension storage
+                    basePath = this.toolchainPath;
+                    this.outputChannel.appendLine(`✅ Using extension toolchain at: ${basePath}`);
                 } else {
-                    this.outputChannel.appendLine(`❌ Directory does not exist`);
+                    // It's a system installation - extract base path
+                    const parts = compilerPath.split(path.sep);
+                    const binIndex = parts.findIndex(part => part === 'bin');
+                    if (binIndex > 0) {
+                        basePath = parts.slice(0, binIndex).join(path.sep);
+                    } else {
+                        basePath = path.dirname(compilerPath);
+                    }
+                    this.outputChannel.appendLine(`✅ Using system toolchain at: ${basePath}`);
                 }
+                
+                // Try to get version information
+                const version = await this.getToolchainVersion(compilerPath);
+                
+                return {
+                    version,
+                    path: basePath,
+                    isInstalled: true,
+                    executablePath: compilerPath
+                };
             }
 
-            // If not found in standard locations, try to find via registry or environment
-            const registryPath = await this.findToolchainViaRegistry();
-            if (registryPath && fs.existsSync(registryPath)) {
-                this.outputChannel.appendLine(`Found via registry: ${registryPath}`);
-                const toolchainInfo = await this.validateToolchainAtPath(registryPath);
-                if (toolchainInfo.isInstalled) {
-                    this.toolchainPath = registryPath;
-                    return toolchainInfo;
-                }
-            }
-
-            this.outputChannel.appendLine('❌ Toolchain not found in any expected location');
+            this.outputChannel.appendLine('❌ No ARM-CGT-CLANG toolchain found');
+            
+            // Provide specific installation guidance
+            this.outputChannel.appendLine('');
+            this.outputChannel.appendLine('📋 To install ARM-CGT-CLANG toolchain:');
+            this.outputChannel.appendLine('   1. Run "Port11 Debugger: Setup Toolchain" command (recommended)');
+            this.outputChannel.appendLine('   2. Or manually install from: https://www.ti.com/tool/ARM-CGT');
+            this.outputChannel.appendLine('');
+            this.outputChannel.appendLine('🔍 Searched locations:');
+            this.outputChannel.appendLine(`   Extension storage: ${this.toolchainPath}`);
+            this.outputChannel.appendLine('   System TI installations: C:\\ti\\, /opt/ti/, etc.');
+            this.outputChannel.appendLine('   System PATH');
+            this.outputChannel.appendLine('');
+            
             return defaultInfo;
 
         } catch (error) {
@@ -613,12 +613,215 @@ export class ToolchainManager {
 
     getCompilerPath(): string | undefined {
         try {
-            const toolchainInfo = this.getToolchainInfoSync();
-            return toolchainInfo.executablePath;
+            this.outputChannel.appendLine('🔍 Searching for ARM-CGT-CLANG compiler...');
+            
+            // First priority: Check our extension's installation path
+            const extensionCompilerPath = this.findCompilerInExtensionStorage();
+            if (extensionCompilerPath) {
+                this.outputChannel.appendLine(`✅ Found compiler in extension storage: ${extensionCompilerPath}`);
+                return extensionCompilerPath;
+            }
+
+            // Second priority: Check system-wide TI installations (for user-installed toolchains)
+            const systemCompilerPath = this.findCompilerInSystemLocations();
+            if (systemCompilerPath) {
+                this.outputChannel.appendLine(`✅ Found compiler in system location: ${systemCompilerPath}`);
+                return systemCompilerPath;
+            }
+
+            // Third priority: Check system PATH
+            const pathCompilerPath = this.findCompilerInSystemPath();
+            if (pathCompilerPath) {
+                this.outputChannel.appendLine(`✅ Found compiler in system PATH: ${pathCompilerPath}`);
+                return pathCompilerPath;
+            }
+
+            this.outputChannel.appendLine('❌ No compiler found in any location');
+            return undefined;
+
         } catch (error) {
             this.outputChannel.appendLine(`Error getting compiler path: ${error}`);
             return undefined;
         }
+    }
+
+    private findCompilerInExtensionStorage(): string | undefined {
+        const platform = PlatformUtils.getCurrentPlatform();
+        const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
+        
+        this.outputChannel.appendLine(`🔍 Checking extension storage: ${this.toolchainPath}`);
+        
+        if (!fs.existsSync(this.toolchainPath)) {
+            this.outputChannel.appendLine(`   ❌ Extension toolchain directory doesn't exist: ${this.toolchainPath}`);
+            return undefined;
+        }
+
+        // Possible subdirectory structures in our extension installation
+        const possiblePaths = [
+            // Direct in bin directory
+            path.join(this.toolchainPath, 'bin', executableName),
+            
+            // With version folder structure (what TI installers typically create)
+            path.join(this.toolchainPath, 'ti-cgt-armllvm_4.0.3.LTS', 'bin', executableName),
+            path.join(this.toolchainPath, 'ti-cgt-armllvm_3.2.2.LTS', 'bin', executableName),
+            path.join(this.toolchainPath, 'ti-cgt-armllvm_3.2.1.LTS', 'bin', executableName),
+            path.join(this.toolchainPath, 'ti-cgt-armllvm_4.0.2.LTS', 'bin', executableName),
+            
+            // Alternative structures
+            path.join(this.toolchainPath, 'tools', 'bin', executableName),
+            path.join(this.toolchainPath, 'compiler', 'bin', executableName),
+            
+            // Direct in root (some installers do this)
+            path.join(this.toolchainPath, executableName),
+            
+            // Windows-specific paths that some TI installers create
+            path.join(this.toolchainPath, 'ccs', 'tools', 'compiler', 'ti-cgt-armllvm_4.0.3.LTS', 'bin', executableName),
+        ];
+
+        for (const compilerPath of possiblePaths) {
+            this.outputChannel.appendLine(`   Checking: ${compilerPath}`);
+            
+            if (fs.existsSync(compilerPath)) {
+                // Verify it's actually executable
+                if (this.verifyCompilerExecutable(compilerPath)) {
+                    this.outputChannel.appendLine(`   ✅ Valid compiler found: ${compilerPath}`);
+                    return compilerPath;
+                } else {
+                    this.outputChannel.appendLine(`   ⚠️  File exists but not valid: ${compilerPath}`);
+                }
+            } else {
+                this.outputChannel.appendLine(`   ❌ Not found: ${compilerPath}`);
+            }
+        }
+
+        return undefined;
+    }
+
+    private verifyCompilerExecutable(execPath: string): boolean {
+        try {
+            const stats = fs.statSync(execPath);
+            
+            if (!stats.isFile()) {
+                this.outputChannel.appendLine(`      ❌ Not a file: ${execPath}`);
+                return false;
+            }
+
+            // On Unix systems, check if executable bit is set
+            if (process.platform !== 'win32') {
+                const hasExecutePermission = (stats.mode & parseInt('111', 8)) !== 0;
+                if (!hasExecutePermission) {
+                    this.outputChannel.appendLine(`      ⚠️  File not executable: ${execPath}`);
+                    return false;
+                }
+            }
+
+            this.outputChannel.appendLine(`      ✅ Valid executable: ${execPath}`);
+            return true;
+        } catch (error) {
+            this.outputChannel.appendLine(`      ❌ Error verifying: ${error}`);
+            return false;
+        }
+    }
+
+    // 3. System locations search (fallback for user-installed toolchains)
+    private findCompilerInSystemLocations(): string | undefined {
+        const platform = PlatformUtils.getCurrentPlatform();
+        const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
+        
+        this.outputChannel.appendLine('🔍 Checking system TI installation locations...');
+        
+        // Define system-wide TI installation paths
+        const systemPaths: string[] = [];
+
+        if (platform.startsWith('win32')) {
+            systemPaths.push(
+                // TI CCS standard locations
+                'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_4.0.3.LTS',
+                'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_3.2.2.LTS',
+                'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_3.2.1.LTS',
+                
+                // Standalone installations
+                'C:\\ti\\ti-cgt-armllvm_4.0.3.LTS',
+                'C:\\ti\\ti-cgt-armllvm_3.2.2.LTS',
+                'C:\\ti\\ti-cgt-armllvm_3.2.1.LTS',
+                
+                // Program Files locations
+                'C:\\Program Files\\Texas Instruments\\ti-cgt-armllvm_4.0.3.LTS',
+                'C:\\Program Files\\Texas Instruments\\ti-cgt-armllvm_3.2.2.LTS',
+                'C:\\Program Files (x86)\\Texas Instruments\\ti-cgt-armllvm_4.0.3.LTS',
+                'C:\\Program Files (x86)\\Texas Instruments\\ti-cgt-armllvm_3.2.2.LTS'
+            );
+        } else if (platform.startsWith('darwin')) {
+            systemPaths.push(
+                '/Applications/ti/ccs/tools/compiler/ti-cgt-armllvm_4.0.3.LTS',
+                '/Applications/ti/ccs/tools/compiler/ti-cgt-armllvm_3.2.2.LTS',
+                '/Applications/ti/ti-cgt-armllvm_4.0.3.LTS',
+                '/Applications/ti/ti-cgt-armllvm_3.2.2.LTS',
+                '/opt/ti/ti-cgt-armllvm_4.0.3.LTS',
+                '/opt/ti/ti-cgt-armllvm_3.2.2.LTS'
+            );
+        } else {
+            // Linux paths (including your example from compiler commands)
+            systemPaths.push(
+                '/home/ti-cgt-armllvm_3.2.2.LTS',  // From your example
+                '/home/ti-cgt-armllvm_4.0.3.LTS',
+                '/opt/ti/ti-cgt-armllvm_4.0.3.LTS',
+                '/opt/ti/ti-cgt-armllvm_3.2.2.LTS',
+                '/opt/ti/ti-cgt-armllvm_3.2.1.LTS',
+                '/usr/local/ti/ti-cgt-armllvm_4.0.3.LTS',
+                '/usr/local/ti/ti-cgt-armllvm_3.2.2.LTS'
+            );
+        }
+
+        for (const basePath of systemPaths) {
+            this.outputChannel.appendLine(`   Checking system path: ${basePath}`);
+            
+            if (!fs.existsSync(basePath)) {
+                this.outputChannel.appendLine(`   ❌ Path doesn't exist`);
+                continue;
+            }
+
+            const compilerPath = path.join(basePath, 'bin', executableName);
+            this.outputChannel.appendLine(`   Checking compiler: ${compilerPath}`);
+            
+            if (fs.existsSync(compilerPath) && this.verifyCompilerExecutable(compilerPath)) {
+                this.outputChannel.appendLine(`   ✅ Valid system compiler found: ${compilerPath}`);
+                return compilerPath;
+            }
+        }
+
+        this.outputChannel.appendLine('   ❌ No valid compiler in system locations');
+        return undefined;
+    }
+
+    // 4. System PATH search (final fallback)
+    private findCompilerInSystemPath(): string | undefined {
+        const platform = PlatformUtils.getCurrentPlatform();
+        const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
+        
+        this.outputChannel.appendLine('🔍 Checking system PATH...');
+        
+        try {
+            const { execSync } = require('child_process');
+            let command: string;
+            
+            if (platform.startsWith('win32')) {
+                command = `where ${executableName}`;
+            } else {
+                command = `which ${executableName}`;
+            }
+            
+            const result = execSync(command, { encoding: 'utf8', timeout: 5000 }).toString().trim();
+            
+            if (result && fs.existsSync(result)) {
+                this.outputChannel.appendLine(`   ✅ Found in PATH: ${result}`);
+                return result;
+            }
+        } catch (error) {
+            this.outputChannel.appendLine(`   ❌ Not found in PATH: ${error}`);
+        }
+        
+        return undefined;
     }
 
     private getToolchainInfoSync(): ToolchainInfo {

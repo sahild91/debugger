@@ -18,7 +18,7 @@ let statusBarItem: vscode.StatusBarItem;
 
 export async function activate(context: vscode.ExtensionContext) {
     // Initialize output channel for logging
-    outputChannel = vscode.window.createOutputChannel('Port11 Debugger');
+    outputChannel = vscode.window.createOutputChannel('Port11 Debugger', 'log');
     
     // Show output channel only in debug mode or if specified in settings
     const showLogsOnStartup = vscode.workspace.getConfiguration('port11-debugger').get('showLogsOnStartup', false);
@@ -26,10 +26,15 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.show();
     }
     
-    outputChannel.appendLine('Port11 Debugger extension activated');
-    outputChannel.appendLine(`VS Code version: ${vscode.version}`);
-    outputChannel.appendLine(`Extension path: ${context.extensionPath}`);
-    outputChannel.appendLine(`Global storage path: ${context.globalStorageUri.fsPath}`);
+    outputChannel.clear();
+    outputChannel.appendLine('='.repeat(80));
+    outputChannel.appendLine('🚀 PORT11 DEBUGGER EXTENSION STARTING');
+    outputChannel.appendLine('='.repeat(80));
+    outputChannel.appendLine(`⏰ Activation Time: ${new Date().toISOString()}`);
+    outputChannel.appendLine(`📍 VS Code version: ${vscode.version}`);
+    outputChannel.appendLine(`📁 Extension path: ${context.extensionPath}`);
+    outputChannel.appendLine(`💾 Global storage path: ${context.globalStorageUri.fsPath}`);
+    outputChannel.appendLine('');
 
     // Initialize status bar item
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -38,16 +43,26 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Initialize managers
     try {
-        outputChannel.appendLine('Initializing managers...');
+        outputChannel.appendLine('🔧 Initializing core managers...');
         sdkManager = new SDKManager(context, outputChannel);
+        outputChannel.appendLine('  ✅ SDK Manager initialized');
+
         toolchainManager = new ToolchainManager(context, outputChannel);
+        outputChannel.appendLine('  ✅ Toolchain Manager initialized');
+
         sysConfigManager = new SysConfigManager(context, outputChannel);
+        outputChannel.appendLine('  ✅ SysConfig Manager initialized');
+
         serialManager = new SerialManager(outputChannel);
+        outputChannel.appendLine('  ✅ Serial Manager initialized');
         
-        outputChannel.appendLine('All managers initialized successfully');
+        outputChannel.appendLine('🎉 All managers initialized successfully');
+        outputChannel.appendLine('');
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         outputChannel.appendLine(`Failed to initialize managers: ${errorMessage}`);
+        outputChannel.show(true);
+        vscode.window.showErrorMessage(`Port11 Debugger initialization failed: ${errorMessage}`);
         throw error;
     }
 
@@ -61,14 +76,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Initialize webview provider
         try {
-            outputChannel.appendLine('Initializing webview provider...');
+            outputChannel.appendLine('🌐 Initializing webview provider...');
             webviewProvider = new WebviewProvider(context, outputChannel, {
                 sdkManager,
                 toolchainManager,
                 sysConfigManager,
                 serialManager
             }, buildCommand);
-            outputChannel.appendLine('Webview provider initialized successfully');
+            outputChannel.appendLine('  ✅ Webview provider initialized successfully');
+            outputChannel.appendLine('');
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             outputChannel.appendLine(`Failed to initialize webview provider: ${errorMessage}`);
@@ -449,8 +465,52 @@ export async function activate(context: vscode.ExtensionContext) {
                                             }
                                         });
                                         break;
+                                    case 'build':
+                                    case 'buildProject':
+                                        outputChannel.appendLine('🔨 Build command triggered from webview');
+                                        
+                                        // Execute the registered build command
+                                        await vscode.commands.executeCommand('port11-debugger.build', message.data || {});
+                                        
+                                        // Send acknowledgment back to webview
+                                        panel.webview.postMessage({
+                                            command: 'buildStarted',
+                                            data: { timestamp: Date.now() }
+                                        });
+                                        break;
+                                    
+                                    case 'cancelBuild':
+                                        outputChannel.appendLine('🛑 Cancel build command triggered from webview');
+                                        // Note: You'll need to implement cancel functionality in BuildCommand
+                                        panel.webview.postMessage({
+                                            command: 'buildCancelled',
+                                            data: { timestamp: Date.now() }
+                                        });
+                                        break;
+                                    
+                                    case 'flash':
+                                    case 'flashFirmware':
+                                        outputChannel.appendLine('⚡ Flash command triggered from webview');
+                                        await vscode.commands.executeCommand('port11-debugger.flash', message.data || {});
+                                        break;
+                                    
+                                    case 'debug':
+                                    case 'startDebug':
+                                        outputChannel.appendLine('🐛 Debug command triggered from webview');
+                                        await vscode.commands.executeCommand('port11-debugger.debug', message.data || {});
+                                        break;
+                                    
+                                    case 'showLogs':
+                                        outputChannel.show(true);
+                                        break;
+                                        
                                     default:
-                                        outputChannel.appendLine(`Unknown panel command: ${message.command}`);
+                                        outputChannel.appendLine(`❓ Unknown panel command: ${message.command}`);
+                                        // Send error back to webview
+                                        panel.webview.postMessage({
+                                            command: 'error',
+                                            data: { message: `Unknown command: ${message.command}` }
+                                        });
                                 }
                             } catch (error) {
                                 outputChannel.appendLine(`Error handling panel message: ${error}`);
@@ -475,7 +535,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Register webview provider
         const webviewDisposable = vscode.window.registerWebviewViewProvider(
-            'port11-debugger.mainView',
+            'port11-debugger.panel', 
             webviewProvider,
             { webviewOptions: { retainContextWhenHidden: true } }
         );
