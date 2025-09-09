@@ -424,16 +424,10 @@ export class SysConfigManager {
                 progress: 100,
                 message: `SysConfig installation complete. Version: ${sysConfigInfo?.version || 'Unknown'}`
             });
-
+            return;
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             this.outputChannel.appendLine(`SysConfig installation failed: ${errorMessage}`);
-            
-            progressCallback?.({
-                stage: 'error',
-                progress: 0,
-                message: `Installation failed: ${errorMessage}`
-            });
 
             // Clean up download file on error
             if (downloadPath && fs.existsSync(downloadPath)) {
@@ -471,7 +465,7 @@ export class SysConfigManager {
     }
 
     private async installSysConfigFromFile(installerPath: string, platform: string): Promise<void> {
-        const { spawn } = require('child_process');
+    const { spawnSync, spawn } = require("child_process");
         
         return new Promise((resolve, reject) => {
             // Ensure install directory exists
@@ -479,65 +473,123 @@ export class SysConfigManager {
                 fs.mkdirSync(this.sysConfigPath, { recursive: true });
             }
 
-            let installCommand: string;
-            let installArgs: string[];
+      if (platform.startsWith("darwin")) {
+        let mountPoint: string | null = null;
+        try {
+          this.outputChannel.appendLine(
+            `Step 1: Mounting DMG: ${installerPath}`
+          );
+          const attachProcess = spawnSync("hdiutil", [
+            "attach",
+            installerPath,
+            "-nobrowse",
+          ]);
 
-            // Platform-specific installation commands
-            if (platform.startsWith('win32')) {
-                // Windows: Try different argument formats for SysConfig installer
-                installCommand = installerPath;
-                installArgs = [
-                    '--mode', 'unattended',  // Standard silent installation
-                    '--prefix', this.sysConfigPath  // Installation directory
-                ];
-            } else if (platform.startsWith('darwin')) {
-                // macOS: Extract DMG and copy contents
-                installCommand = 'hdiutil';
-                installArgs = [
-                    'attach',
-                    installerPath,
-                    '-nobrowse'
-                ];
-                // Note: macOS installation is more complex, requires DMG mounting
-            } else {
-                // Linux: Run installer with custom prefix
-                installCommand = 'sh';
-                installArgs = [
-                    installerPath,
-                    '--mode', 'unattended',
-                    '--prefix', this.sysConfigPath
-                ];
+          if (attachProcess.status !== 0) {
+            const stderr = attachProcess.stderr.toString();
+            throw new Error(
+              `Failed to mount DMG. Exit code: ${attachProcess.status}. Stderr: ${stderr}`
+            );
+          }
+
+          const attachOutput = attachProcess.stdout.toString();
+          this.outputChannel.appendLine(`Mount output: ${attachOutput}`);
+
+          const mountMatch = attachOutput.match(/\/Volumes\/[^\n\r]+/);
+          if (!mountMatch) {
+            throw new Error(
+              "Could not determine mount point from hdiutil output."
+            );
+          }
+          mountPoint = mountMatch[0].trim();
+          this.outputChannel.appendLine(`DMG mounted at: ${mountPoint}`);
+
+          if (mountPoint) {
+            // Find the installer .app on the mounted volume
+            const appName = fs
+              .readdirSync(mountPoint)
+              .find((file) => file.endsWith(".app"));
+            if (!appName) {
+              throw new Error(
+                "Could not find installer .app file on the mounted volume."
+              );
+            }
+            const installerAppPath = path.join(mountPoint, appName);
+
+            this.outputChannel.appendLine(
+              `Step 2: Running installer from ${installerAppPath}`
+            );
+
+            // We don't use the generic `executeInstaller` here because this is a specific sequence.
+            const installProcess = spawnSync("open", [
+              "-a",
+              installerAppPath,
+              "-W", // Wait for the app to exit
+              "--args",
+              "--mode",
+              "unattended",
+              "--prefix",
+              this.sysConfigPath,
+            ]);
+
+            if (installProcess.status !== 0) {
+              const stderr = installProcess.stderr.toString();
+              throw new Error(
+                `SysConfig installer failed. Exit code: ${installProcess.status}. Stderr: ${stderr}`
+              );
             }
 
-            if (!installCommand) {
-                reject(new Error(`Unsupported platform for SysConfig installation: ${platform}`));
-                return;
-            }
+            this.outputChannel.appendLine("Installer finished successfully.");
+            resolve();
+          } else {
+            throw new Error("Mount point was unexpectedly null.");
+          }
+        } catch (error) {
+          reject(error);
+        } finally {
+          if (mountPoint) {
+            this.outputChannel.appendLine(
+              `Step 3: Unmounting DMG at ${mountPoint}`
+            );
+            // Use sync here to ensure it happens before the function truly exits
+            spawnSync("hdiutil", ["detach", mountPoint], { stdio: "ignore" });
+          }
+        }
+        return;
+      }
 
-            this.outputChannel.appendLine(`Install command: ${installCommand} ${installArgs.join(' ')}`);
+      // --- Logic for Windows and Linux ---
+      let installCommand: string;
+      let installArgs: string[];
 
-            // Additional Windows-specific preparation
-            if (platform.startsWith('win32')) {
-                // Check if file exists and is accessible
-                try {
-                    const stats = fs.statSync(installerPath);
-                    this.outputChannel.appendLine(`Installer file size: ${stats.size} bytes`);
-                    this.outputChannel.appendLine(`Installer file permissions: ${stats.mode}`);
-                } catch (error) {
-                    reject(new Error(`Cannot access installer file: ${error}`));
-                    return;
-                }
+      if (platform.startsWith("win32")) {
+        installCommand = installerPath;
+        installArgs = ["--mode", "unattended", "--prefix", this.sysConfigPath];
+      } else {
+        // Linux
+        installCommand = "sh";
+        installArgs = [
+          installerPath,
+          "--mode",
+          "unattended",
+          "--prefix",
+          this.sysConfigPath,
+        ];
+      }
 
-                // Wait a moment to ensure file isn't locked
-                this.outputChannel.appendLine('Waiting for file to be ready...');
-                setTimeout(() => {
-                    this.executeInstaller(installCommand, installArgs, resolve, reject, platform);
-                }, 2000);
-            } else {
-                this.executeInstaller(installCommand, installArgs, resolve, reject, platform);
-            }
-        });
-    }
+      this.outputChannel.appendLine(
+        `Install command: ${installCommand} ${installArgs.join(" ")}`
+      );
+      this.executeInstaller(
+        installCommand,
+        installArgs,
+        resolve,
+        reject,
+        platform
+      );
+    });
+  }
+
 
     private executeInstaller(
         command: string, 

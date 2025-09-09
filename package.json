@@ -54,7 +54,7 @@
     "commands": [
       {
         "command": "port11-debugger.openMainPanel",
-        "title": "Open Main Panel", 
+        "title": "Open Main Panel",
         "category": "Port11",
         "icon": "$(window)"
       },
@@ -376,7 +376,7 @@
         },
         "port11-debugger.debugTimeout": {
           "type": "number",
-          "default": 10000,
+          "default": 1e4,
           "description": "Timeout in milliseconds for debug operations (DAP commands)",
           "minimum": 1000,
           "maximum": 60000
@@ -552,6 +552,8 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/mocha": "^10.0.10",
     "node-fetch": "^3.3.1",
     "simple-git": "^3.19.1"
   },
