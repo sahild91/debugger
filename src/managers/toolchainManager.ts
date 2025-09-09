@@ -301,18 +301,10 @@ export class ToolchainManager {
                 progress: 100,
                 message: `Toolchain installation complete. Version: ${toolchainInfo.version}`
             });
-
+            return;
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             this.outputChannel.appendLine(`Toolchain installation failed: ${errorMessage}`);
-            
-            // Complete the error progress callback
-            progressCallback?.({
-                stage: 'error',
-                progress: 0,
-                message: `Installation failed: ${errorMessage}`
-            });
-
             // Clean up download file on error
             if (downloadPath && fs.existsSync(downloadPath)) {
                 try {
@@ -332,7 +324,12 @@ export class ToolchainManager {
                     this.outputChannel.appendLine(`Cleanup failed: ${cleanupError}`);
                 }
             }
-
+            // Complete the error progress callback
+            progressCallback?.({
+                stage: 'error',
+                progress: 0,
+                message: `Installation failed: ${errorMessage}`
+            });
             throw error;
         }
     }
@@ -359,18 +356,53 @@ export class ToolchainManager {
                 this.outputChannel.appendLine('Running Windows installer...');
                 installCommand = installerPath;
                 installArgs = [
-                    '--mode unattended', // Silent installation
-                    `--prefix ${this.toolchainPath}` // Installation directory
+                      "--mode",
+                      "unattended", // Silent installation
+                      "--prefix",
+                      this.toolchainPath, // Installation directory
                 ];
             } else if (platform.startsWith('darwin')) {
                 // macOS installer (.app.zip)
                 this.outputChannel.appendLine('Extracting and running macOS installer...');
-                
-                // First extract the .app.zip
-                installCommand = 'unzip';
-                installArgs = ['-q', '-o', installerPath, '-d', path.dirname(installerPath)];
-                
-                // Note: This is simplified - macOS .app installers often need additional handling
+                const tempDir = path.dirname(installerPath);
+
+                // Step 1: Unzip the installer
+                try {
+                  const { execSync } = require("child_process");
+                  execSync(`unzip -q -o "${installerPath}" -d "${tempDir}"`);
+                  this.outputChannel.appendLine("Extraction complete.");
+                } catch (error) {
+                  return reject(
+                    new Error(`Failed to extract macOS installer: ${error}`)
+                  );
+                }
+
+                // Step 2: Find the .app file and run it silently
+                this.outputChannel.appendLine(
+                  "Running the macOS .app installer..."
+                );
+                const appName = "ti_cgt_armllvm_4.0.3.LTS_osx_installer.app";
+                const appPath = path.join(tempDir, appName);
+
+                if (!fs.existsSync(appPath)) {
+                  return reject(
+                    new Error(`Could not find extracted installer at: ${appPath}`)
+                  );
+                }
+
+                // On macOS, we use the 'open' command to run .app bundles.
+                // The arguments for the installer are passed via the --args flag.
+                installCommand = "open";
+                installArgs = [
+                  "-a",
+                  appPath, // Specify the application to open
+                  "-W", // Wait for the application to exit before continuing
+                  "--args", // Pass the following arguments to the application itself
+                  "--mode",
+                  "unattended",
+                  "--prefix",
+                  this.toolchainPath,
+                ];
             } else if (platform.startsWith('linux')) {
                 // Linux installer (.bin)
                 this.outputChannel.appendLine('Running Linux installer...');
