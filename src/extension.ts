@@ -4,6 +4,7 @@ import { SDKManager } from './managers/sdkManager';
 import { ToolchainManager } from './managers/toolchainManager';
 import { SysConfigManager } from './managers/sysconfigManager';
 import { SerialManager } from './managers/serialManager';
+import { CliManager } from './managers/cliManager';
 import { BuildCommand } from './commands/buildCommand';
 import { FlashCommand } from './commands/flashCommand';
 import { DebugCommand } from './commands/debugCommand';
@@ -14,11 +15,25 @@ let sdkManager: SDKManager;
 let toolchainManager: ToolchainManager;
 let sysConfigManager: SysConfigManager;
 let serialManager: SerialManager;
+let cliManager: CliManager;
 let statusBarItem: vscode.StatusBarItem;
 
 export async function activate(context: vscode.ExtensionContext) {
     // Initialize output channel for logging
     outputChannel = vscode.window.createOutputChannel('Port11 Debugger', 'log');
+    let sharedTerminal: vscode.Terminal | undefined;
+    function getOrCreateTerminal(): vscode.Terminal {
+        if (!sharedTerminal || sharedTerminal.exitStatus !== undefined) {
+            sharedTerminal = vscode.window.createTerminal(`Port11 Debugger`);
+        }
+        return sharedTerminal;
+    }
+
+    context.subscriptions.push(vscode.window.onDidCloseTerminal(closedTerminal => {
+        if (closedTerminal === sharedTerminal) {
+            sharedTerminal = undefined;
+        }
+    }));
     
     // Show output channel only in debug mode or if specified in settings
     const showLogsOnStartup = vscode.workspace.getConfiguration('port11-debugger').get('showLogsOnStartup', false);
@@ -37,9 +52,100 @@ export async function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine('');
 
     // Initialize status bar item
-    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 101);
     statusBarItem.command = 'port11-debugger.showPanel';
     updateStatusBar('Initializing...');
+    
+    let flashDisposable = vscode.commands.registerCommand("extension.flashCommand", () => {
+        vscode.window.showInformationMessage("Flash command triggered!");
+        const terminal = getOrCreateTerminal();
+        terminal.show();
+        terminal.sendText("swd-debugger flash --file build/main.hex");
+    });
+
+    // Halt command
+    let haltDisposable = vscode.commands.registerCommand(
+        "extension.haltCommand",
+        () => {
+            vscode.window.showInformationMessage("Halt command triggered!");
+            const terminal = getOrCreateTerminal();
+            terminal.show();
+            terminal.sendText("swd-debugger halt");
+        }
+    );
+
+    // Resume command
+    let resumeDisposable = vscode.commands.registerCommand(
+        "extension.resumeCommand",
+        () => {
+            vscode.window.showInformationMessage("Resume command triggered!");
+            const terminal = getOrCreateTerminal();
+            terminal.show();
+            terminal.sendText("swd-debugger resume");
+        }
+    );
+
+    // Erase command
+    let eraseDisposable = vscode.commands.registerCommand(
+        "extension.eraseCommand",
+        () => {
+            vscode.window.showInformationMessage("Erase command triggered!");
+            const terminal = getOrCreateTerminal();
+            terminal.show();
+            terminal.sendText("swd-debugger erase 0x08000000 0x0801FFFF");
+        }
+    );
+
+    context.subscriptions.push(flashDisposable, haltDisposable, resumeDisposable, eraseDisposable);
+    
+
+    // Create and show the status bar items
+    const buildStatusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        100
+    );
+    buildStatusBar.text = "$(tools) Build";
+    buildStatusBar.command = "extension.buildCommand";
+    buildStatusBar.tooltip = "Build the connected device";
+    buildStatusBar.show();
+
+    const flashStatusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        99
+    );
+    flashStatusBar.text = "$(zap) Flash";
+    flashStatusBar.command = "extension.flashCommand";
+    flashStatusBar.tooltip = "Flash the connected device";
+    flashStatusBar.show();
+
+    const haltStatusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        98
+    );
+    haltStatusBar.text = "$(debug-pause) Halt";
+    haltStatusBar.command = "extension.haltCommand";
+    haltStatusBar.tooltip = "Halt the target processor";
+    haltStatusBar.show();
+
+    const resumeStatusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        97
+    );
+    resumeStatusBar.text = "$(debug-continue) Resume";
+    resumeStatusBar.command = "extension.resumeCommand";
+    resumeStatusBar.tooltip = "Resume the target processor";
+    resumeStatusBar.show();
+
+    const eraseStatusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        96
+    );
+    eraseStatusBar.text = "$(trash) Erase";
+    eraseStatusBar.command = "extension.eraseCommand";
+    eraseStatusBar.tooltip = "Erase flash memory";
+    eraseStatusBar.show();
+
+    context.subscriptions.push(buildStatusBar,flashStatusBar, haltStatusBar, resumeStatusBar, eraseStatusBar);
 
     // Initialize managers
     try {
@@ -55,7 +161,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
         serialManager = new SerialManager(outputChannel);
         outputChannel.appendLine('  ✅ Serial Manager initialized');
-        
+
+        outputChannel.appendLine('🔧 Initializing CLI Manager...');
+        cliManager = new CliManager(context);
+        try {
+            await cliManager.initialize();
+            outputChannel.appendLine('  ✅ CLI Manager initialized and swd-debugger ready');
+        } catch (error) {
+            outputChannel.appendLine(`  ❌ CLI Manager initialization failed: ${error}`);
+            throw error;
+        }
+
         outputChannel.appendLine('🎉 All managers initialized successfully');
         outputChannel.appendLine('');
     } catch (error) {
@@ -103,6 +219,12 @@ export async function activate(context: vscode.ExtensionContext) {
             // Build commands
             vscode.commands.registerCommand('port11-debugger.build', () => buildCommand.execute()),
             vscode.commands.registerCommand('port11-debugger.clean', () => buildCommand.execute({ clean: true })),
+
+            // Status bar build command
+            vscode.commands.registerCommand("extension.buildCommand", () => {
+                vscode.window.showInformationMessage("Build command triggered!");
+                buildCommand.execute();
+            }),
 
             // Flash commands
             vscode.commands.registerCommand('port11-debugger.flash', () => flashCommand.execute()),
@@ -159,7 +281,7 @@ export async function activate(context: vscode.ExtensionContext) {
                         outputChannel.appendLine(`⚠️ Could not load HTML template: ${error}`);
                         
                         // Use fallback HTML with full interface
-                        htmlContent = `
+                        htmlContent = /*html*/ `
                         <!DOCTYPE html>
                         <html lang="en">
                         <head>
@@ -626,9 +748,9 @@ async function refreshStatus(): Promise<void> {
             updateStatusBar(`Ready (${boards.length} boards)`);
         } else {
             const missing = [];
-            if (!sdkInstalled) missing.push('SDK');
-            if (!toolchainInstalled) missing.push('Toolchain');
-            if (!sysConfigInstalled) missing.push('SysConfig');
+            if (!sdkInstalled) {missing.push('SDK');}
+            if (!toolchainInstalled) {missing.push('Toolchain');}
+            if (!sysConfigInstalled) {missing.push('SysConfig');}
             updateStatusBar(`Setup required: ${missing.join(', ')}`);
         }
         
@@ -754,17 +876,17 @@ async function checkFirstTimeSetup(): Promise<void> {
         
         if (!sdkInstalled || !toolchainInstalled || !sysConfigInstalled) {
             outputChannel.appendLine('First-time setup detected - missing components:');
-            if (!sdkInstalled) outputChannel.appendLine('  - MSPM0 SDK');
-            if (!toolchainInstalled) outputChannel.appendLine('  - ARM-CGT-CLANG Toolchain');
-            if (!sysConfigInstalled) outputChannel.appendLine('  - TI SysConfig');
+            if (!sdkInstalled) {outputChannel.appendLine('  - MSPM0 SDK');}
+            if (!toolchainInstalled) {outputChannel.appendLine('  - ARM-CGT-CLANG Toolchain');}
+            if (!sysConfigInstalled) {outputChannel.appendLine('  - TI SysConfig');}
             
             const showWelcome = vscode.workspace.getConfiguration('port11-debugger').get('showWelcomeOnStartup', true);
             
             if (showWelcome) {
                 const missingComponents = [];
-                if (!sdkInstalled) missingComponents.push('SDK');
-                if (!toolchainInstalled) missingComponents.push('Toolchain');
-                if (!sysConfigInstalled) missingComponents.push('SysConfig');
+                if (!sdkInstalled) {missingComponents.push('SDK');}
+                if (!toolchainInstalled) {missingComponents.push('Toolchain');}
+                if (!sysConfigInstalled) {missingComponents.push('SysConfig');}
                 
                 const result = await vscode.window.showInformationMessage(
                     `Port11 Debugger: Setup required for MSPM0 development. Missing: ${missingComponents.join(', ')}. Would you like to set up now?`,
