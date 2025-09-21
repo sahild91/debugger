@@ -4,8 +4,12 @@ import * as os from "os";
 import * as path from "path";
 import * as https from "https";
 
-const DOWNLOAD_URL =
-  "https://res.cloudinary.com/drclxio85/raw/upload/v1758433874/evobi/swd-debugger";
+const DOWNLOAD_URLS = {
+  darwin: "https://res.cloudinary.com/drclxio85/raw/upload/v1758433874/evobi/swd-debugger",
+  win32: "https://res.cloudinary.com/drclxio85/raw/upload/v1758478832/evobi/swd-debugger_win",
+  linux: "https://res.cloudinary.com/drclxio85/raw/upload/v1758433874/evobi/swd-debugger"
+};
+
 const DEST_FILE_NAME = "swd-debugger";
 
 export class CliManager {
@@ -36,7 +40,13 @@ export class CliManager {
   }
 
   private getInstallPath(): string {
-    return path.join(this.getInstallDir(), DEST_FILE_NAME);
+    const fileName = process.platform === 'win32' ? `${DEST_FILE_NAME}.exe` : DEST_FILE_NAME;
+    return path.join(this.getInstallDir(), fileName);
+  }
+
+  private getDownloadUrl(): string {
+    const platform = process.platform as keyof typeof DOWNLOAD_URLS;
+    return DOWNLOAD_URLS[platform] || DOWNLOAD_URLS.linux;
   }
 
   async initialize(): Promise<void> {
@@ -91,11 +101,14 @@ export class CliManager {
 
       // Download file with verification
       progress.report({ message: "Downloading executable..." });
-      await this.downloadFile(DOWNLOAD_URL, installPath);
+      const downloadUrl = this.getDownloadUrl();
+      await this.downloadFile(downloadUrl, installPath);
 
-      // Make executable
-      progress.report({ message: "Setting permissions..." });
-      fs.chmodSync(installPath, "755");
+      // Make executable (Unix-like systems only)
+      if (process.platform !== 'win32') {
+        progress.report({ message: "Setting permissions..." });
+        fs.chmodSync(installPath, "755");
+      }
 
       // Update shell config
       progress.report({ message: "Updating shell configuration..." });
