@@ -6,6 +6,7 @@ import { ToolchainManager } from './managers/toolchainManager';
 import { SysConfigManager } from './managers/sysconfigManager';
 import { SerialManager } from './managers/serialManager';
 import { CliManager } from './managers/cliManager';
+import { ConnectionManager } from './managers/connectionManager';
 import { BuildCommand } from './commands/buildCommand';
 import { FlashCommand } from './commands/flashCommand';
 import { DebugCommand } from './commands/debugCommand';
@@ -17,6 +18,7 @@ let toolchainManager: ToolchainManager;
 let sysConfigManager: SysConfigManager;
 let serialManager: SerialManager;
 let cliManager: CliManager;
+let connectionManager: ConnectionManager;
 let statusBarItem: vscode.StatusBarItem;
 
 // Utility functions
@@ -156,7 +158,26 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     );
 
-    context.subscriptions.push(flashDisposable, haltDisposable, resumeDisposable, eraseDisposable);
+    // Connect command
+    let connectDisposable = vscode.commands.registerCommand(
+        "extension.connectCommand",
+        async () => {
+            try {
+                outputChannel.appendLine('🔌 Connect command triggered');
+                outputChannel.show();
+                const selectedPort = await connectionManager.showPortSelection();
+                if (selectedPort) {
+                    outputChannel.appendLine(`📍 Selected port: ${selectedPort}`);
+                } else {
+                    outputChannel.appendLine('❌ No port selected');
+                }
+            } catch (error) {
+                outputChannel.appendLine(`❌ Connect command failed: ${error}`);
+            }
+        }
+    );
+
+    context.subscriptions.push(flashDisposable, haltDisposable, resumeDisposable, eraseDisposable, connectDisposable);
     
 
     // Create and show the status bar items
@@ -205,7 +226,16 @@ export async function activate(context: vscode.ExtensionContext) {
     eraseStatusBar.tooltip = "Erase flash memory";
     eraseStatusBar.show();
 
-    context.subscriptions.push(buildStatusBar,flashStatusBar, haltStatusBar, resumeStatusBar, eraseStatusBar);
+    const connectStatusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        95
+    );
+    connectStatusBar.text = "$(plug) Connect";
+    connectStatusBar.command = "extension.connectCommand";
+    connectStatusBar.tooltip = "Connect to a serial port";
+    connectStatusBar.show();
+
+    context.subscriptions.push(buildStatusBar,flashStatusBar, haltStatusBar, resumeStatusBar, eraseStatusBar, connectStatusBar);
 
     // Initialize managers
     try {
@@ -221,6 +251,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
         serialManager = new SerialManager(outputChannel);
         outputChannel.appendLine('  ✅ Serial Manager initialized');
+
+        connectionManager = new ConnectionManager(outputChannel);
+        outputChannel.appendLine('  ✅ Connection Manager initialized');
 
         outputChannel.appendLine('🔧 Initializing CLI Manager...');
         cliManager = new CliManager(context);

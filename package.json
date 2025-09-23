@@ -141,6 +141,12 @@
         "title": "Show Extension Logs",
         "category": "Port11",
         "icon": "$(output)"
+      },
+      {
+        "command": "extension.connectCommand",
+        "title": "Connect to Serial Port",
+        "category": "Port11",
+        "icon": "$(plug)"
       }
     ],
     "keybindings": [
@@ -223,6 +229,10 @@
         },
         {
           "command": "port11-debugger.showLogs",
+          "when": "true"
+        },
+        {
+          "command": "extension.connectCommand",
           "when": "true"
         }
       ],
