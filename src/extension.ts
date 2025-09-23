@@ -27,6 +27,14 @@ function escapePathForShell(path: string): string {
     return path.replace(/\s/g, '\\ ');
 }
 
+function getAbsolutePath(relativePath: string): string {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+    if (!workspaceFolder) {
+        throw new Error('No workspace folder open');
+    }
+    return vscode.Uri.joinPath(vscode.Uri.file(workspaceFolder), relativePath).fsPath;
+}
+
 function executeSwdDebuggerCommand(args: string, successMessage: string, requiresPort: boolean = true): Promise<void> {
     return new Promise((resolve, reject) => {
         const executablePath = cliManager.getExecutablePath();
@@ -51,26 +59,27 @@ function executeSwdDebuggerCommand(args: string, successMessage: string, require
         let command: string;
 
         if (selectedPort) {
-            // Use quotes around the executable path for Windows compatibility
-            if (process.platform === 'win32') {
-                command = `"${executablePath}" --port ${selectedPort} ${args}`;
-            } else {
-                command = `${escapedPath} --port ${selectedPort} ${args}`;
-            }
+            command = `${escapedPath} --port ${selectedPort} ${args}`;
         } else {
-            if (process.platform === 'win32') {
-                command = `"${executablePath}" ${args}`;
-            } else {
-                command = `${escapedPath} ${args}`;
-            }
+            command = `${escapedPath} ${args}`;
         }
 
-        outputChannel.appendLine(`🔧 Executing: ${command}`);
-        outputChannel.appendLine(`📝 Debug - executable: ${executablePath}`);
-        outputChannel.appendLine(`📝 Debug - selectedPort: ${selectedPort}`);
-        outputChannel.appendLine(`📝 Debug - args: ${args}`);
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+        if (!workspaceFolder) {
+            const errorMessage = 'No workspace folder open. Cannot determine file paths.';
+            outputChannel.appendLine(`❌ ${errorMessage}`);
+            vscode.window.showErrorMessage(errorMessage);
+            reject(new Error(errorMessage));
+            return;
+        }
 
-        exec(command, (error, stdout, stderr) => {
+        const execOptions = {
+            cwd: workspaceFolder 
+        };
+
+        outputChannel.appendLine(`🔧 Executing: ${command}`);
+
+        exec(command, execOptions, (error, stdout, stderr) => {
             const combinedOutput = stdout + stderr;
 
             // Check for process-level errors
@@ -146,7 +155,12 @@ export async function activate(context: vscode.ExtensionContext) {
         try {
             outputChannel.appendLine('🚀 Flash command triggered');
             outputChannel.show();
-            await executeSwdDebuggerCommand('flash --file build/main.hex', 'Flash operation completed successfully!');
+
+            // Get absolute path for the hex file
+            const hexFilePath = getAbsolutePath('build/main.hex');
+            outputChannel.appendLine(`📁 Using hex file: ${hexFilePath}`);
+
+            await executeSwdDebuggerCommand(`flash --file "${hexFilePath}"`, 'Flash operation completed successfully!');
         } catch (error) {
             outputChannel.appendLine(`❌ Flash command failed: ${error}`);
         }
