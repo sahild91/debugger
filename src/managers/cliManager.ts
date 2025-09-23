@@ -5,9 +5,12 @@ import * as path from "path";
 import * as https from "https";
 
 const DOWNLOAD_URLS = {
-  darwin: "https://res.cloudinary.com/drclxio85/raw/upload/v1758433874/evobi/swd-debugger",
-  win32: "https://res.cloudinary.com/drclxio85/raw/upload/v1758478832/evobi/swd-debugger_win",
-  linux: "https://res.cloudinary.com/drclxio85/raw/upload/v1758433874/evobi/swd-debugger"
+  darwin:
+    "https://res.cloudinary.com/drclxio85/raw/upload/v1758433874/evobi/swd-debugger",
+  win32:
+    "https://res.cloudinary.com/drclxio85/raw/upload/v1758515423/evobi/swd-debugger_win",
+  linux:
+    "https://res.cloudinary.com/drclxio85/raw/upload/v1758433874/evobi/swd-debugger",
 };
 
 const DEST_FILE_NAME = "swd-debugger";
@@ -21,26 +24,12 @@ export class CliManager {
   }
 
   private getInstallDir(): string {
-    const appName = "swd-debugger";
-    switch (process.platform) {
-      case "win32":
-        return path.join(process.env.APPDATA || os.homedir(), appName);
-      case "darwin":
-        return path.join(
-          os.homedir(),
-          "Library",
-          "Application Support",
-          appName
-        );
-      case "linux":
-        return path.join(os.homedir(), ".local", "share", appName);
-      default:
-        return path.join(os.homedir(), `.${appName}`);
-    }
+    return path.join(this.context.extensionPath, "dist");
   }
 
   private getInstallPath(): string {
-    const fileName = process.platform === 'win32' ? `${DEST_FILE_NAME}.exe` : DEST_FILE_NAME;
+    const fileName =
+      process.platform === "win32" ? `${DEST_FILE_NAME}.exe` : DEST_FILE_NAME;
     return path.join(this.getInstallDir(), fileName);
   }
 
@@ -105,14 +94,10 @@ export class CliManager {
       await this.downloadFile(downloadUrl, installPath);
 
       // Make executable (Unix-like systems only)
-      if (process.platform !== 'win32') {
+      if (process.platform !== "win32") {
         progress.report({ message: "Setting permissions..." });
         fs.chmodSync(installPath, "755");
       }
-
-      // Update shell config
-      progress.report({ message: "Updating shell configuration..." });
-      await this.updateShellConfig();
     } catch (error: any) {
       // Clean up on failure
       if (fs.existsSync(installPath)) {
@@ -150,30 +135,6 @@ export class CliManager {
     });
   }
 
-  private async updateShellConfig(): Promise<void> {
-    const installDir = this.getInstallDir();
-    const exportLine = `export PATH="${installDir}:$PATH"`;
-
-    const shellFiles = [
-      path.join(os.homedir(), ".zshrc"),
-      path.join(os.homedir(), ".bashrc"),
-      path.join(os.homedir(), ".bash_profile"),
-    ];
-
-    for (const shellFile of shellFiles) {
-      if (fs.existsSync(shellFile)) {
-        let shellContent = fs.readFileSync(shellFile, "utf8");
-
-        if (
-          !shellContent.includes(installDir) &&
-          !shellContent.includes("swd-debugger")
-        ) {
-          fs.appendFileSync(shellFile, `\n${exportLine}\n`);
-        }
-      }
-    }
-  }
-
   private verifyInstallation(): boolean {
     const installPath = this.getInstallPath();
 
@@ -206,5 +167,9 @@ export class CliManager {
 
   isCliAvailable(): boolean {
     return this.verifyInstallation();
+  }
+
+  getExecutablePath(): string {
+    return this.getInstallPath();
   }
 }

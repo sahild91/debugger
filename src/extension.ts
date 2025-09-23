@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { exec } from 'child_process';
 import { WebviewProvider } from './webview/webviewProvider';
 import { SDKManager } from './managers/sdkManager';
 import { ToolchainManager } from './managers/toolchainManager';
@@ -18,22 +19,69 @@ let serialManager: SerialManager;
 let cliManager: CliManager;
 let statusBarItem: vscode.StatusBarItem;
 
+// Utility functions
+function escapePathForShell(path: string): string {
+    return path.replace(/\s/g, '\\ ');
+}
+
+function executeSwdDebuggerCommand(args: string, successMessage: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const executablePath = cliManager.getExecutablePath();
+        const escapedPath = escapePathForShell(executablePath);
+        const command = `${escapedPath} ${args}`;
+
+        outputChannel.appendLine(`🔧 Executing: ${command}`);
+
+        exec(command, (error, stdout, stderr) => {
+            const combinedOutput = stdout + stderr;
+
+            // Check for process-level errors
+            if (error) {
+                const errorMessage = `swd-debugger ${args.split(' ')[0]} failed: ${error.message}`;
+                outputChannel.appendLine(`❌ ${errorMessage}`);
+                if (combinedOutput) {
+                    outputChannel.appendLine(`Output: ${combinedOutput}`);
+                }
+                vscode.window.showErrorMessage(errorMessage);
+                reject(error);
+                return;
+            }
+
+            // Display output
+            if (combinedOutput) {
+                outputChannel.appendLine(`📄 Output: ${combinedOutput}`);
+            }
+
+            // Check for application-level errors in the output
+            const hasError = combinedOutput.includes('ERROR') ||
+                           combinedOutput.includes('Failed to') ||
+                           combinedOutput.includes('Error:') ||
+                           combinedOutput.includes('failed:') ||
+                           combinedOutput.includes('FATAL') ||
+                           combinedOutput.includes('not connected') ||
+                           combinedOutput.includes('No device found') ||
+                           combinedOutput.includes('Permission denied');
+
+            if (hasError) {
+                const operation = args.split(' ')[0];
+                const errorMessage = `swd-debugger ${operation} failed - check output for details`;
+                outputChannel.appendLine(`❌ ${errorMessage}`);
+                vscode.window.showErrorMessage(errorMessage);
+                reject(new Error(errorMessage));
+                return;
+            }
+
+            // Success case
+            outputChannel.appendLine(`✅ ${successMessage}`);
+            vscode.window.showInformationMessage(successMessage);
+            resolve();
+        });
+    });
+}
+
 export async function activate(context: vscode.ExtensionContext) {
     // Initialize output channel for logging
     outputChannel = vscode.window.createOutputChannel('Port11 Debugger', 'log');
-    let sharedTerminal: vscode.Terminal | undefined;
-    function getOrCreateTerminal(): vscode.Terminal {
-        if (!sharedTerminal || sharedTerminal.exitStatus !== undefined) {
-            sharedTerminal = vscode.window.createTerminal(`Port11 Debugger`);
-        }
-        return sharedTerminal;
-    }
-
-    context.subscriptions.push(vscode.window.onDidCloseTerminal(closedTerminal => {
-        if (closedTerminal === sharedTerminal) {
-            sharedTerminal = undefined;
-        }
-    }));
     
     // Show output channel only in debug mode or if specified in settings
     const showLogsOnStartup = vscode.workspace.getConfiguration('port11-debugger').get('showLogsOnStartup', false);
@@ -56,43 +104,55 @@ export async function activate(context: vscode.ExtensionContext) {
     statusBarItem.command = 'port11-debugger.showPanel';
     updateStatusBar('Initializing...');
     
-    let flashDisposable = vscode.commands.registerCommand("extension.flashCommand", () => {
-        vscode.window.showInformationMessage("Flash command triggered!");
-        const terminal = getOrCreateTerminal();
-        terminal.show();
-        terminal.sendText("swd-debugger flash --file build/main.hex");
+    let flashDisposable = vscode.commands.registerCommand("extension.flashCommand", async () => {
+        try {
+            outputChannel.appendLine('🚀 Flash command triggered');
+            outputChannel.show();
+            await executeSwdDebuggerCommand('flash --file build/main.hex', 'Flash operation completed successfully!');
+        } catch (error) {
+            outputChannel.appendLine(`❌ Flash command failed: ${error}`);
+        }
     });
 
     // Halt command
     let haltDisposable = vscode.commands.registerCommand(
         "extension.haltCommand",
-        () => {
-            vscode.window.showInformationMessage("Halt command triggered!");
-            const terminal = getOrCreateTerminal();
-            terminal.show();
-            terminal.sendText("swd-debugger halt");
+        async () => {
+            try {
+                outputChannel.appendLine('⏸️ Halt command triggered');
+                outputChannel.show();
+                await executeSwdDebuggerCommand('halt', 'Target processor halted successfully!');
+            } catch (error) {
+                outputChannel.appendLine(`❌ Halt command failed: ${error}`);
+            }
         }
     );
 
     // Resume command
     let resumeDisposable = vscode.commands.registerCommand(
         "extension.resumeCommand",
-        () => {
-            vscode.window.showInformationMessage("Resume command triggered!");
-            const terminal = getOrCreateTerminal();
-            terminal.show();
-            terminal.sendText("swd-debugger resume");
+        async () => {
+            try {
+                outputChannel.appendLine('▶️ Resume command triggered');
+                outputChannel.show();
+                await executeSwdDebuggerCommand('resume', 'Target processor resumed successfully!');
+            } catch (error) {
+                outputChannel.appendLine(`❌ Resume command failed: ${error}`);
+            }
         }
     );
 
     // Erase command
     let eraseDisposable = vscode.commands.registerCommand(
         "extension.eraseCommand",
-        () => {
-            vscode.window.showInformationMessage("Erase command triggered!");
-            const terminal = getOrCreateTerminal();
-            terminal.show();
-            terminal.sendText("swd-debugger erase 0x08000000 0x0801FFFF");
+        async () => {
+            try {
+                outputChannel.appendLine('🗑️ Erase command triggered');
+                outputChannel.show();
+                await executeSwdDebuggerCommand('erase 0x08000000 0x0801FFFF', 'Flash memory erased successfully!');
+            } catch (error) {
+                outputChannel.appendLine(`❌ Erase command failed: ${error}`);
+            }
         }
     );
 
