@@ -20,17 +20,41 @@ let serialManager: SerialManager;
 let cliManager: CliManager;
 let connectionManager: ConnectionManager;
 let statusBarItem: vscode.StatusBarItem;
+let connectStatusBar: vscode.StatusBarItem;
 
 // Utility functions
 function escapePathForShell(path: string): string {
     return path.replace(/\s/g, '\\ ');
 }
 
-function executeSwdDebuggerCommand(args: string, successMessage: string): Promise<void> {
+function executeSwdDebuggerCommand(args: string, successMessage: string, requiresPort: boolean = true): Promise<void> {
     return new Promise((resolve, reject) => {
         const executablePath = cliManager.getExecutablePath();
         const escapedPath = escapePathForShell(executablePath);
-        const command = `${escapedPath} ${args}`;
+
+        // Check if a port is selected and add --port parameter
+        const selectedPort = connectionManager.getSelectedPort();
+
+        // Validate port requirement
+        if (requiresPort && !selectedPort) {
+            const errorMessage = 'No port connected. Please select a port first using the Connect button.';
+            outputChannel.appendLine(`❌ ${errorMessage}`);
+            vscode.window.showErrorMessage(errorMessage, 'Connect Port').then(selection => {
+                if (selection === 'Connect Port') {
+                    vscode.commands.executeCommand('extension.connectCommand');
+                }
+            });
+            reject(new Error(errorMessage));
+            return;
+        }
+
+        let command: string;
+
+        if (selectedPort) {
+            command = `${escapedPath} --port ${selectedPort} ${args}`;
+        } else {
+            command = `${escapedPath} ${args}`;
+        }
 
         outputChannel.appendLine(`🔧 Executing: ${command}`);
 
@@ -165,9 +189,32 @@ export async function activate(context: vscode.ExtensionContext) {
             try {
                 outputChannel.appendLine('🔌 Connect command triggered');
                 outputChannel.show();
+
+                // Check if already connected and offer disconnect option
+                if (connectionManager.isPortSelected()) {
+                    const currentPort = connectionManager.getPortStatusText();
+                    const action = await vscode.window.showQuickPick([
+                        { label: '🔌 Select Different Port', description: 'Choose a new serial port' },
+                        { label: '🔌 Disconnect', description: `Disconnect from ${currentPort}` }
+                    ], {
+                        placeHolder: `Currently connected to ${currentPort}`,
+                        title: 'Port Connection'
+                    });
+
+                    if (action?.label.includes('Disconnect')) {
+                        connectionManager.disconnect();
+                        updateConnectStatusBar();
+                        return;
+                    } else if (!action?.label.includes('Different')) {
+                        return; // User cancelled
+                    }
+                }
+
                 const selectedPort = await connectionManager.showPortSelection();
                 if (selectedPort) {
                     outputChannel.appendLine(`📍 Selected port: ${selectedPort}`);
+                    // Update connect status bar to show selected port
+                    updateConnectStatusBar();
                 } else {
                     outputChannel.appendLine('❌ No port selected');
                 }
@@ -226,7 +273,7 @@ export async function activate(context: vscode.ExtensionContext) {
     eraseStatusBar.tooltip = "Erase flash memory";
     eraseStatusBar.show();
 
-    const connectStatusBar = vscode.window.createStatusBarItem(
+    connectStatusBar = vscode.window.createStatusBarItem(
         vscode.StatusBarAlignment.Left,
         95
     );
@@ -921,6 +968,24 @@ function updateStatusBar(text: string): void {
         statusBarItem.text = `$(chip) Port11: ${text}`;
         statusBarItem.tooltip = 'Port11 Debugger - Click to show panel';
         statusBarItem.show();
+    }
+}
+
+function updateConnectStatusBar(): void {
+    if (connectStatusBar) {
+        const selectedPort = connectionManager.getSelectedPort();
+        const selectedPortInfo = connectionManager.getSelectedPortInfo();
+
+        if (selectedPort) {
+            const deviceType = selectedPortInfo?.deviceType !== 'Unknown' && selectedPortInfo?.deviceType
+                ? ` (${selectedPortInfo.deviceType})`
+                : '';
+            connectStatusBar.text = `$(plug) ${selectedPort}${deviceType}`;
+            connectStatusBar.tooltip = `Connected to: ${connectionManager.getPortStatusText()}\nClick to change port`;
+        } else {
+            connectStatusBar.text = "$(plug) Connect";
+            connectStatusBar.tooltip = "Connect to a serial port";
+        }
     }
 }
 

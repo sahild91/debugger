@@ -15,6 +15,8 @@ export interface SerialPort {
 
 export class ConnectionManager {
     private outputChannel: vscode.OutputChannel;
+    private selectedPort: string | null = null;
+    private selectedPortInfo: SerialPort | null = null;
 
     constructor(outputChannel: vscode.OutputChannel) {
         this.outputChannel = outputChannel;
@@ -251,22 +253,27 @@ export class ConnectionManager {
             });
 
             if (selected) {
-                const selectedPort = selected.port;
+                const selectedPortInfo = selected.port;
+
+                // Store the selected port information
+                this.selectedPort = selectedPortInfo.path;
+                this.selectedPortInfo = selectedPortInfo;
+
                 const deviceInfo = [
-                    `Port: ${selectedPort.path}`,
-                    selectedPort.deviceType !== 'Unknown' && `Type: ${selectedPort.deviceType}`,
-                    selectedPort.manufacturer && `Manufacturer: ${selectedPort.manufacturer}`,
-                    selectedPort.vendorId && selectedPort.productId && `VID:PID ${selectedPort.vendorId}:${selectedPort.productId}`
+                    `Port: ${selectedPortInfo.path}`,
+                    selectedPortInfo.deviceType !== 'Unknown' && `Type: ${selectedPortInfo.deviceType}`,
+                    selectedPortInfo.manufacturer && `Manufacturer: ${selectedPortInfo.manufacturer}`,
+                    selectedPortInfo.vendorId && selectedPortInfo.productId && `VID:PID ${selectedPortInfo.vendorId}:${selectedPortInfo.productId}`
                 ].filter(Boolean).join('\n');
 
                 vscode.window.showInformationMessage(`Connected to:\n${deviceInfo}`);
-                this.outputChannel.appendLine(`🔌 Connected to port: ${selectedPort.path}`);
+                this.outputChannel.appendLine(`🔌 Connected to port: ${selectedPortInfo.path}`);
 
-                if (selectedPort.deviceType !== 'Unknown') {
-                    this.outputChannel.appendLine(`📱 Device type: ${selectedPort.deviceType}`);
+                if (selectedPortInfo.deviceType !== 'Unknown') {
+                    this.outputChannel.appendLine(`📱 Device type: ${selectedPortInfo.deviceType}`);
                 }
 
-                return selectedPort.path;
+                return selectedPortInfo.path;
             }
 
             return undefined;
@@ -276,5 +283,36 @@ export class ConnectionManager {
             this.outputChannel.appendLine(`❌ ${errorMessage}`);
             return undefined;
         }
+    }
+
+    getSelectedPort(): string | null {
+        return this.selectedPort;
+    }
+
+    getSelectedPortInfo(): SerialPort | null {
+        return this.selectedPortInfo;
+    }
+
+    isPortSelected(): boolean {
+        return this.selectedPort !== null;
+    }
+
+    disconnect(): void {
+        if (this.selectedPort) {
+            this.outputChannel.appendLine(`🔌 Disconnected from port: ${this.selectedPort}`);
+            vscode.window.showInformationMessage(`Disconnected from ${this.selectedPort}`);
+        }
+        this.selectedPort = null;
+        this.selectedPortInfo = null;
+    }
+
+    getPortStatusText(): string {
+        if (this.selectedPort) {
+            const deviceType = this.selectedPortInfo?.deviceType !== 'Unknown'
+                ? ` (${this.selectedPortInfo?.deviceType})`
+                : '';
+            return `${this.selectedPort}${deviceType}`;
+        }
+        return 'No port selected';
     }
 }
