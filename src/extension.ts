@@ -201,7 +201,7 @@ export async function activate(context: vscode.ExtensionContext) {
             try {
                 outputChannel.appendLine('🗑️ Erase command triggered');
                 outputChannel.show();
-                await executeSwdDebuggerCommand('erase 0x08000000 0x0801FFFF', 'Flash memory erased successfully!');
+                await executeSwdDebuggerCommand('erase 0x00000000 0x0001FFFF', 'Flash memory erased successfully!');
             } catch (error) {
                 outputChannel.appendLine(`❌ Erase command failed: ${error}`);
             }
