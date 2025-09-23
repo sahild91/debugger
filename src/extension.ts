@@ -51,12 +51,24 @@ function executeSwdDebuggerCommand(args: string, successMessage: string, require
         let command: string;
 
         if (selectedPort) {
-            command = `${escapedPath} --port ${selectedPort} ${args}`;
+            // Use quotes around the executable path for Windows compatibility
+            if (process.platform === 'win32') {
+                command = `"${executablePath}" --port ${selectedPort} ${args}`;
+            } else {
+                command = `${escapedPath} --port ${selectedPort} ${args}`;
+            }
         } else {
-            command = `${escapedPath} ${args}`;
+            if (process.platform === 'win32') {
+                command = `"${executablePath}" ${args}`;
+            } else {
+                command = `${escapedPath} ${args}`;
+            }
         }
 
         outputChannel.appendLine(`🔧 Executing: ${command}`);
+        outputChannel.appendLine(`📝 Debug - executable: ${executablePath}`);
+        outputChannel.appendLine(`📝 Debug - selectedPort: ${selectedPort}`);
+        outputChannel.appendLine(`📝 Debug - args: ${args}`);
 
         exec(command, (error, stdout, stderr) => {
             const combinedOutput = stdout + stderr;
