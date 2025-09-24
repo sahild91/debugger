@@ -565,17 +565,18 @@ export class SysConfigManager {
       if (platform.startsWith("win32")) {
         installCommand = installerPath;
         installArgs = ["--mode", "unattended", "--prefix", this.sysConfigPath];
-      } else {
-        // Linux
-        installCommand = "sh";
+      } else { // Linux
+        this.outputChannel.appendLine('Making SysConfig installer executable...');
+        fs.chmodSync(installerPath, '755'); // Make the .run file executable
+
+        installCommand = installerPath; // The command IS the installer file itself
         installArgs = [
-          installerPath,
-          "--mode",
-          "unattended",
-          "--prefix",
-          this.sysConfigPath,
+            "--mode",
+            "unattended",
+            "--prefix",
+            this.sysConfigPath,
         ];
-      }
+     }
 
       this.outputChannel.appendLine(
         `Install command: ${installCommand} ${installArgs.join(" ")}`

@@ -412,7 +412,7 @@ export class ToolchainManager {
                 
                 installCommand = installerPath;
                 installArgs = [
-                    '--mode', 'silent',
+                    '--mode', 'unattended',
                     '--prefix', this.toolchainPath
                 ];
             } else {
