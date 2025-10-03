@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
+import { exec } from 'child_process';
 import { WebviewProvider } from './webview/webviewProvider';
 import { SDKManager } from './managers/sdkManager';
 import { ToolchainManager } from './managers/toolchainManager';
 import { SysConfigManager } from './managers/sysconfigManager';
 import { SerialManager } from './managers/serialManager';
+import { CliManager } from './managers/cliManager';
+import { ConnectionManager } from './managers/connectionManager';
 import { BuildCommand } from './commands/buildCommand';
 import { FlashCommand } from './commands/flashCommand';
 import { DebugCommand } from './commands/debugCommand';
@@ -14,7 +17,114 @@ let sdkManager: SDKManager;
 let toolchainManager: ToolchainManager;
 let sysConfigManager: SysConfigManager;
 let serialManager: SerialManager;
+let cliManager: CliManager;
+let connectionManager: ConnectionManager;
 let statusBarItem: vscode.StatusBarItem;
+let connectStatusBar: vscode.StatusBarItem;
+
+// Utility functions
+function escapePathForShell(path: string): string {
+    return path.replace(/\s/g, '\\ ');
+}
+
+function getAbsolutePath(relativePath: string): string {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+    if (!workspaceFolder) {
+        throw new Error('No workspace folder open');
+    }
+    return vscode.Uri.joinPath(vscode.Uri.file(workspaceFolder), relativePath).fsPath;
+}
+
+function executeSwdDebuggerCommand(args: string, successMessage: string, requiresPort: boolean = true): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const executablePath = cliManager.getExecutablePath();
+        const escapedPath = escapePathForShell(executablePath);
+
+        // Check if a port is selected and add --port parameter
+        const selectedPort = connectionManager.getSelectedPort();
+
+        // Validate port requirement
+        if (requiresPort && !selectedPort) {
+            const errorMessage = 'No port connected. Please select a port first using the Connect button.';
+            outputChannel.appendLine(`❌ ${errorMessage}`);
+            vscode.window.showErrorMessage(errorMessage, 'Connect Port').then(selection => {
+                if (selection === 'Connect Port') {
+                    vscode.commands.executeCommand('extension.connectCommand');
+                }
+            });
+            reject(new Error(errorMessage));
+            return;
+        }
+
+        let command: string;
+
+        if (selectedPort) {
+            command = `${escapedPath} --port ${selectedPort} ${args}`;
+        } else {
+            command = `${escapedPath} ${args}`;
+        }
+
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+        if (!workspaceFolder) {
+            const errorMessage = 'No workspace folder open. Cannot determine file paths.';
+            outputChannel.appendLine(`❌ ${errorMessage}`);
+            vscode.window.showErrorMessage(errorMessage);
+            reject(new Error(errorMessage));
+            return;
+        }
+
+        const execOptions = {
+            cwd: workspaceFolder 
+        };
+
+        outputChannel.appendLine(`🔧 Executing: ${command}`);
+
+        exec(command, execOptions, (error, stdout, stderr) => {
+            const combinedOutput = stdout + stderr;
+
+            // Check for process-level errors
+            if (error) {
+                const errorMessage = `swd-debugger ${args.split(' ')[0]} failed: ${error.message}`;
+                outputChannel.appendLine(`❌ ${errorMessage}`);
+                if (combinedOutput) {
+                    outputChannel.appendLine(`Output: ${combinedOutput}`);
+                }
+                vscode.window.showErrorMessage(errorMessage);
+                reject(error);
+                return;
+            }
+
+            // Display output
+            if (combinedOutput) {
+                outputChannel.appendLine(`📄 Output: ${combinedOutput}`);
+            }
+
+            // Check for application-level errors in the output
+            const hasError = combinedOutput.includes('ERROR') ||
+                           combinedOutput.includes('Failed to') ||
+                           combinedOutput.includes('Error:') ||
+                           combinedOutput.includes('failed:') ||
+                           combinedOutput.includes('FATAL') ||
+                           combinedOutput.includes('not connected') ||
+                           combinedOutput.includes('No device found') ||
+                           combinedOutput.includes('Permission denied');
+
+            if (hasError) {
+                const operation = args.split(' ')[0];
+                const errorMessage = `swd-debugger ${operation} failed - check output for details`;
+                outputChannel.appendLine(`❌ ${errorMessage}`);
+                vscode.window.showErrorMessage(errorMessage);
+                reject(new Error(errorMessage));
+                return;
+            }
+
+            // Success case
+            outputChannel.appendLine(`✅ ${successMessage}`);
+            vscode.window.showInformationMessage(successMessage);
+            resolve();
+        });
+    });
+}
 
 export async function activate(context: vscode.ExtensionContext) {
     // Initialize output channel for logging
@@ -37,9 +147,168 @@ export async function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine('');
 
     // Initialize status bar item
-    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 101);
     statusBarItem.command = 'port11-debugger.showPanel';
     updateStatusBar('Initializing...');
+    
+    let flashDisposable = vscode.commands.registerCommand("extension.flashCommand", async () => {
+        try {
+            outputChannel.appendLine('🚀 Flash command triggered');
+            outputChannel.show();
+
+            // Get absolute path for the hex file
+            const hexFilePath = getAbsolutePath('build/main.hex');
+            outputChannel.appendLine(`📁 Using hex file: ${hexFilePath}`);
+
+            await executeSwdDebuggerCommand(`flash --file "${hexFilePath}"`, 'Flash operation completed successfully!');
+        } catch (error) {
+            outputChannel.appendLine(`❌ Flash command failed: ${error}`);
+        }
+    });
+
+    // Halt command
+    let haltDisposable = vscode.commands.registerCommand(
+        "extension.haltCommand",
+        async () => {
+            try {
+                outputChannel.appendLine('⏸️ Halt command triggered');
+                outputChannel.show();
+                await executeSwdDebuggerCommand('halt', 'Target processor halted successfully!');
+            } catch (error) {
+                outputChannel.appendLine(`❌ Halt command failed: ${error}`);
+            }
+        }
+    );
+
+    // Resume command
+    let resumeDisposable = vscode.commands.registerCommand(
+        "extension.resumeCommand",
+        async () => {
+            try {
+                outputChannel.appendLine('▶️ Resume command triggered');
+                outputChannel.show();
+                await executeSwdDebuggerCommand('resume', 'Target processor resumed successfully!');
+            } catch (error) {
+                outputChannel.appendLine(`❌ Resume command failed: ${error}`);
+            }
+        }
+    );
+
+    // Erase command
+    let eraseDisposable = vscode.commands.registerCommand(
+        "extension.eraseCommand",
+        async () => {
+            try {
+                outputChannel.appendLine('🗑️ Erase command triggered');
+                outputChannel.show();
+                await executeSwdDebuggerCommand('erase 0x00000000 0x0001FFFF', 'Flash memory erased successfully!');
+            } catch (error) {
+                outputChannel.appendLine(`❌ Erase command failed: ${error}`);
+            }
+        }
+    );
+
+    // Connect command
+    let connectDisposable = vscode.commands.registerCommand(
+        "extension.connectCommand",
+        async () => {
+            try {
+                outputChannel.appendLine('🔌 Connect command triggered');
+                outputChannel.show();
+
+                // Check if already connected and offer disconnect option
+                if (connectionManager.isPortSelected()) {
+                    const currentPort = connectionManager.getPortStatusText();
+                    const action = await vscode.window.showQuickPick([
+                        { label: '🔌 Select Different Port', description: 'Choose a new serial port' },
+                        { label: '🔌 Disconnect', description: `Disconnect from ${currentPort}` }
+                    ], {
+                        placeHolder: `Currently connected to ${currentPort}`,
+                        title: 'Port Connection'
+                    });
+
+                    if (action?.label.includes('Disconnect')) {
+                        connectionManager.disconnect();
+                        updateConnectStatusBar();
+                        return;
+                    } else if (!action?.label.includes('Different')) {
+                        return; // User cancelled
+                    }
+                }
+
+                const selectedPort = await connectionManager.showPortSelection();
+                if (selectedPort) {
+                    outputChannel.appendLine(`📍 Selected port: ${selectedPort}`);
+                    // Update connect status bar to show selected port
+                    updateConnectStatusBar();
+                } else {
+                    outputChannel.appendLine('❌ No port selected');
+                }
+            } catch (error) {
+                outputChannel.appendLine(`❌ Connect command failed: ${error}`);
+            }
+        }
+    );
+
+    context.subscriptions.push(flashDisposable, haltDisposable, resumeDisposable, eraseDisposable, connectDisposable);
+    
+
+    // Create and show the status bar items
+    const buildStatusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        100
+    );
+    buildStatusBar.text = "$(tools) Build";
+    buildStatusBar.command = "extension.buildCommand";
+    buildStatusBar.tooltip = "Build the connected device";
+    buildStatusBar.show();
+
+    const flashStatusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        99
+    );
+    flashStatusBar.text = "$(zap) Flash";
+    flashStatusBar.command = "extension.flashCommand";
+    flashStatusBar.tooltip = "Flash the connected device";
+    flashStatusBar.show();
+
+    const haltStatusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        98
+    );
+    haltStatusBar.text = "$(debug-pause) Halt";
+    haltStatusBar.command = "extension.haltCommand";
+    haltStatusBar.tooltip = "Halt the target processor";
+    haltStatusBar.show();
+
+    const resumeStatusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        97
+    );
+    resumeStatusBar.text = "$(debug-continue) Resume";
+    resumeStatusBar.command = "extension.resumeCommand";
+    resumeStatusBar.tooltip = "Resume the target processor";
+    resumeStatusBar.show();
+
+    const eraseStatusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        96
+    );
+    eraseStatusBar.text = "$(trash) Erase";
+    eraseStatusBar.command = "extension.eraseCommand";
+    eraseStatusBar.tooltip = "Erase flash memory";
+    eraseStatusBar.show();
+
+    connectStatusBar = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        95
+    );
+    connectStatusBar.text = "$(plug) Connect";
+    connectStatusBar.command = "extension.connectCommand";
+    connectStatusBar.tooltip = "Connect to a serial port";
+    connectStatusBar.show();
+
+    context.subscriptions.push(buildStatusBar,flashStatusBar, haltStatusBar, resumeStatusBar, eraseStatusBar, connectStatusBar);
 
     // Initialize managers
     try {
@@ -55,7 +324,20 @@ export async function activate(context: vscode.ExtensionContext) {
 
         serialManager = new SerialManager(outputChannel);
         outputChannel.appendLine('  ✅ Serial Manager initialized');
-        
+
+        connectionManager = new ConnectionManager(outputChannel);
+        outputChannel.appendLine('  ✅ Connection Manager initialized');
+
+        outputChannel.appendLine('🔧 Initializing CLI Manager...');
+        cliManager = new CliManager(context);
+        try {
+            await cliManager.initialize();
+            outputChannel.appendLine('  ✅ CLI Manager initialized and swd-debugger ready');
+        } catch (error) {
+            outputChannel.appendLine(`  ❌ CLI Manager initialization failed: ${error}`);
+            throw error;
+        }
+
         outputChannel.appendLine('🎉 All managers initialized successfully');
         outputChannel.appendLine('');
     } catch (error) {
@@ -103,6 +385,12 @@ export async function activate(context: vscode.ExtensionContext) {
             // Build commands
             vscode.commands.registerCommand('port11-debugger.build', () => buildCommand.execute()),
             vscode.commands.registerCommand('port11-debugger.clean', () => buildCommand.execute({ clean: true })),
+
+            // Status bar build command
+            vscode.commands.registerCommand("extension.buildCommand", () => {
+                vscode.window.showInformationMessage("Build command triggered!");
+                buildCommand.execute();
+            }),
 
             // Flash commands
             vscode.commands.registerCommand('port11-debugger.flash', () => flashCommand.execute()),
@@ -159,7 +447,7 @@ export async function activate(context: vscode.ExtensionContext) {
                         outputChannel.appendLine(`⚠️ Could not load HTML template: ${error}`);
                         
                         // Use fallback HTML with full interface
-                        htmlContent = `
+                        htmlContent = /*html*/ `
                         <!DOCTYPE html>
                         <html lang="en">
                         <head>
@@ -626,9 +914,9 @@ async function refreshStatus(): Promise<void> {
             updateStatusBar(`Ready (${boards.length} boards)`);
         } else {
             const missing = [];
-            if (!sdkInstalled) missing.push('SDK');
-            if (!toolchainInstalled) missing.push('Toolchain');
-            if (!sysConfigInstalled) missing.push('SysConfig');
+            if (!sdkInstalled) {missing.push('SDK');}
+            if (!toolchainInstalled) {missing.push('Toolchain');}
+            if (!sysConfigInstalled) {missing.push('SysConfig');}
             updateStatusBar(`Setup required: ${missing.join(', ')}`);
         }
         
@@ -709,6 +997,24 @@ function updateStatusBar(text: string): void {
     }
 }
 
+function updateConnectStatusBar(): void {
+    if (connectStatusBar) {
+        const selectedPort = connectionManager.getSelectedPort();
+        const selectedPortInfo = connectionManager.getSelectedPortInfo();
+
+        if (selectedPort) {
+            const deviceType = selectedPortInfo?.deviceType !== 'Unknown' && selectedPortInfo?.deviceType
+                ? ` (${selectedPortInfo.deviceType})`
+                : '';
+            connectStatusBar.text = `$(plug) ${selectedPort}${deviceType}`;
+            connectStatusBar.tooltip = `Connected to: ${connectionManager.getPortStatusText()}\nClick to change port`;
+        } else {
+            connectStatusBar.text = "$(plug) Connect";
+            connectStatusBar.tooltip = "Connect to a serial port";
+        }
+    }
+}
+
 // Initialization functions
 
 async function initializeExtension(): Promise<void> {
@@ -754,17 +1060,17 @@ async function checkFirstTimeSetup(): Promise<void> {
         
         if (!sdkInstalled || !toolchainInstalled || !sysConfigInstalled) {
             outputChannel.appendLine('First-time setup detected - missing components:');
-            if (!sdkInstalled) outputChannel.appendLine('  - MSPM0 SDK');
-            if (!toolchainInstalled) outputChannel.appendLine('  - ARM-CGT-CLANG Toolchain');
-            if (!sysConfigInstalled) outputChannel.appendLine('  - TI SysConfig');
+            if (!sdkInstalled) {outputChannel.appendLine('  - MSPM0 SDK');}
+            if (!toolchainInstalled) {outputChannel.appendLine('  - ARM-CGT-CLANG Toolchain');}
+            if (!sysConfigInstalled) {outputChannel.appendLine('  - TI SysConfig');}
             
             const showWelcome = vscode.workspace.getConfiguration('port11-debugger').get('showWelcomeOnStartup', true);
             
             if (showWelcome) {
                 const missingComponents = [];
-                if (!sdkInstalled) missingComponents.push('SDK');
-                if (!toolchainInstalled) missingComponents.push('Toolchain');
-                if (!sysConfigInstalled) missingComponents.push('SysConfig');
+                if (!sdkInstalled) {missingComponents.push('SDK');}
+                if (!toolchainInstalled) {missingComponents.push('Toolchain');}
+                if (!sysConfigInstalled) {missingComponents.push('SysConfig');}
                 
                 const result = await vscode.window.showInformationMessage(
                     `Port11 Debugger: Setup required for MSPM0 development. Missing: ${missingComponents.join(', ')}. Would you like to set up now?`,
