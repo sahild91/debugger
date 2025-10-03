@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { simpleGit, SimpleGit } from 'simple-git';
 
 // Define our own progress handler type since it's not exported in newer versions
@@ -17,7 +18,11 @@ export class SDKManager {
     private outputChannel: vscode.OutputChannel;
     private sdkPath: string;
     private git: SimpleGit;
-    
+
+    // GlobalState keys for persistent storage
+    private readonly SDK_PATH_KEY = 'mspm0.sdkPath';
+    private readonly SDK_LAST_DETECTED_KEY = 'mspm0.sdkLastDetected';
+
     // MSPM0 SDK repository URL
     private readonly SDK_REPO_URL = 'https://github.com/TexasInstruments/mspm0-sdk';
     private readonly SDK_FOLDER_NAME = 'mspm0-sdk';
@@ -29,8 +34,115 @@ export class SDKManager {
         this.git = simpleGit();
     }
 
+    /**
+ * Save SDK path to globalState for persistence
+ */
+    private async saveSdkPath(sdkPath: string): Promise<void> {
+        try {
+            await this.context.globalState.update(this.SDK_PATH_KEY, sdkPath);
+            await this.context.globalState.update(this.SDK_LAST_DETECTED_KEY, new Date().toISOString());
+            this.outputChannel.appendLine(`💾 Saved SDK path to storage: ${sdkPath}`);
+        } catch (error) {
+            this.outputChannel.appendLine(`⚠️  Failed to save SDK path: ${error}`);
+        }
+    }
+
+    /**
+     * Load SDK path from globalState
+     */
+    private async loadSavedSdkPath(): Promise<string | undefined> {
+        const savedPath = this.context.globalState.get<string>(this.SDK_PATH_KEY);
+        if (savedPath && fs.existsSync(savedPath)) {
+            this.outputChannel.appendLine(`📂 Loaded saved SDK path: ${savedPath}`);
+            return savedPath;
+        }
+        return undefined;
+    }
+
+    /**
+ * Search for SDK in common system installation locations
+ */
+    private findSdkInSystemLocations(): string | undefined {
+        this.outputChannel.appendLine('🔍 Searching for MSPM0 SDK in system locations...');
+
+        const systemPaths: string[] = [];
+
+        if (process.platform === 'win32') {
+            systemPaths.push(
+                'C:\\ti\\mspm0-sdk',
+                'C:\\ti\\mspm0_sdk_2_10_00_05',
+                'C:\\ti\\mspm0_sdk_2_00_01_00',
+                'C:\\Program Files\\Texas Instruments\\mspm0-sdk',
+                'C:\\Program Files (x86)\\Texas Instruments\\mspm0-sdk'
+            );
+        } else if (process.platform === 'darwin') {
+            systemPaths.push(
+                '/Applications/ti/mspm0-sdk',
+                '/opt/ti/mspm0-sdk',
+                path.join(os.homedir(), 'ti', 'mspm0-sdk')
+            );
+        } else {
+            systemPaths.push(
+                '/opt/ti/mspm0-sdk',
+                '/usr/local/ti/mspm0-sdk',
+                path.join(os.homedir(), 'ti', 'mspm0-sdk')
+            );
+        }
+
+        for (const searchPath of systemPaths) {
+            this.outputChannel.appendLine(`   Checking: ${searchPath}`);
+
+            if (fs.existsSync(searchPath)) {
+                // Validate it's a proper SDK installation
+                const expectedPaths = ['source', 'examples', 'kernel'];
+                const isValid = expectedPaths.every(p => fs.existsSync(path.join(searchPath, p)));
+
+                if (isValid) {
+                    this.outputChannel.appendLine(`   ✅ Valid SDK found: ${searchPath}`);
+                    return searchPath;
+                }
+            }
+        }
+
+        this.outputChannel.appendLine('   ❌ No SDK found in system locations');
+        return undefined;
+    }
+
+    /**
+ * Get SDK path with intelligent search:
+ * 1. Check saved path in globalState
+ * 2. Check extension storage
+ * 3. Search system locations
+ */
+    private async discoverSdkPath(): Promise<string> {
+        // Priority 1: Check saved path
+        const savedPath = await this.loadSavedSdkPath();
+        if (savedPath) {
+            this.sdkPath = savedPath;
+            return savedPath;
+        }
+
+        // Priority 2: Check extension storage
+        if (fs.existsSync(this.sdkPath)) {
+            await this.saveSdkPath(this.sdkPath);
+            return this.sdkPath;
+        }
+
+        // Priority 3: Search system locations
+        const systemPath = this.findSdkInSystemLocations();
+        if (systemPath) {
+            this.sdkPath = systemPath;
+            await this.saveSdkPath(systemPath);
+            return systemPath;
+        }
+
+        return this.sdkPath;
+    }
+
     async isSDKInstalled(): Promise<boolean> {
         try {
+            await this.discoverSdkPath();
+
             if (!fs.existsSync(this.sdkPath)) {
                 return false;
             }
@@ -45,12 +157,12 @@ export class SDKManager {
             // Check if it has the expected MSPM0 structure for building
             const expectedPaths = [
                 'source',
-                'examples', 
+                'examples',
                 'kernel'
             ];
 
             const hasRequiredStructure = expectedPaths.every(p => fs.existsSync(path.join(this.sdkPath, p)));
-            
+
             if (!hasRequiredStructure) {
                 this.outputChannel.appendLine('SDK directory missing required structure for building');
                 return false;
@@ -63,7 +175,7 @@ export class SDKManager {
             ];
 
             const hasBuildFiles = criticalBuildFiles.some(p => fs.existsSync(path.join(this.sdkPath, p)));
-            
+
             if (!hasBuildFiles) {
                 this.outputChannel.appendLine('Warning: SDK may be incomplete - missing some build components');
                 // Return true anyway if basic structure exists - partial SDK might still work
@@ -134,6 +246,8 @@ export class SDKManager {
             const version = await this.getSDKVersion();
             this.outputChannel.appendLine(`MSPM0 SDK installed successfully. Version: ${version}`);
 
+            await this.saveSdkPath(this.sdkPath);
+
             progressCallback?.({
                 stage: 'complete',
                 progress: 100,
@@ -143,7 +257,7 @@ export class SDKManager {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             this.outputChannel.appendLine(`SDK installation failed: ${errorMessage}`);
-            
+
             progressCallback?.({
                 stage: 'error',
                 progress: 0,
@@ -176,7 +290,7 @@ export class SDKManager {
             });
 
             const git = simpleGit(this.sdkPath);
-            
+
             progressCallback?.({
                 stage: 'updating',
                 progress: 50,
@@ -194,10 +308,10 @@ export class SDKManager {
                 });
 
                 await git.pull();
-                
+
                 const version = await this.getSDKVersion();
                 this.outputChannel.appendLine(`MSPM0 SDK updated successfully. New version: ${version}`);
-                
+
                 progressCallback?.({
                     stage: 'complete',
                     progress: 100,
@@ -214,7 +328,7 @@ export class SDKManager {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             this.outputChannel.appendLine(`SDK update failed: ${errorMessage}`);
-            
+
             progressCallback?.({
                 stage: 'error',
                 progress: 0,
@@ -234,7 +348,7 @@ export class SDKManager {
             // Try to get version from git
             const git = simpleGit(this.sdkPath);
             const log = await git.log(['-1', '--oneline']);
-            
+
             if (log.latest) {
                 return log.latest.hash.substring(0, 8);
             }

@@ -11,7 +11,7 @@
     <header class="header">
         <div class="header-content">
             <h1>
-                <div class="header-icon">⚡</div>
+                <span class="header-icon">⚡</span>
                 Port11 Debugger
             </h1>
             <p>MSPM0 Development Environment</p>
@@ -19,10 +19,10 @@
     </header>
 
     <div class="container">
-        <!-- System Status -->
-        <section id="status-section" class="section">
+        <!-- Setup Status Section -->
+        <section id="setup-section" class="section">
             <div class="section-header">
-                <h2>System Status</h2>
+                <h2>Setup Status</h2>
                 <button id="refresh-status-btn" class="btn btn-secondary btn-small">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/>
@@ -59,62 +59,43 @@
                     <div class="status-details" id="sysconfig-details">Checking installation...</div>
                     <div class="status-version" id="sysconfig-version"></div>
                 </div>
+
+                <div class="status-card" id="debugger-status">
+                    <div class="status-header">
+                        <div class="status-title">SWD Debugger</div>
+                        <div class="status-icon" id="debugger-icon">○</div>
+                    </div>
+                    <div class="status-details" id="debugger-details">Checking installation...</div>
+                    <div class="status-version" id="debugger-version"></div>
+                </div>
             </div>
-        </section>
 
-        <!-- Quick Actions -->
-        <section id="actions-section" class="section">
-            <div class="section-header">
-                <h2>Quick Actions</h2>
+            <!-- Setup Progress (Hidden by default) -->
+            <div id="setup-progress" class="progress-section" style="display: none;">
+                <div class="progress-header">
+                    <span id="progress-stage">Setting up...</span>
+                    <span id="progress-percentage">0%</span>
+                </div>
+                <div class="progress">
+                    <div class="progress-bar" id="progress-bar" style="width: 0%"></div>
+                </div>
+                <div class="progress-text" id="progress-text">Initializing...</div>
             </div>
-            
-            <div class="actions-grid">
-                <button id="build-btn" class="action-btn">
-                    <div class="action-icon build-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12.89 3L14.85 3.4L11.11 21L9.15 20.6L12.89 3M19.59 12L16 8.41V5.58L22.42 12L16 18.41V15.58L19.59 12M1.58 12L8 5.58V8.41L4.41 12L8 15.58V18.41L1.58 12Z"/>
-                        </svg>
-                    </div>
-                    <div class="action-content">
-                        <h3>Build Project</h3>
-                        <p>Compile your code</p>
-                    </div>
-                </button>
 
-                <button id="flash-btn" class="action-btn">
-                    <div class="action-icon flash-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M7,2V13H10V22L17,10H13L17,2H7Z"/>
-                        </svg>
-                    </div>
-                    <div class="action-content">
-                        <h3>Flash Firmware</h3>
-                        <p>Program your board</p>
-                    </div>
+            <!-- Setup Actions -->
+            <div class="setup-actions">
+                <button id="setup-btn" class="btn btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+                        <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/>
+                    </svg>
+                    Run Complete Setup
                 </button>
-
-                <button id="debug-btn" class="action-btn">
-                    <div class="action-icon debug-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M20,8H17.19C16.74,7.22 16.12,6.55 15.37,6.04L17,4.41L15.59,3L13.42,5.17C12.96,5.06 12.49,5 12,5C11.51,5 11.04,5.06 10.58,5.17L8.41,3L7,4.41L8.63,6.04C7.88,6.55 7.26,7.22 6.81,8H4V10H6.09C6.04,10.33 6,10.66 6,11V12H4V14H6V15C6,15.34 6.04,15.67 6.09,16H4V18H6.81C7.85,19.79 9.78,21 12,21C14.22,21 16.15,19.79 17.19,18H20V16H17.91C17.96,15.67 18,15.34 18,15V14H20V12H18V11C18,10.66 17.96,10.33 17.91,10H20V8M16,15A4,4 0 0,1 12,19A4,4 0 0,1 8,15V11A4,4 0 0,1 12,7A4,4 0 0,1 16,11V15M10,9H14V11H10V9M10,13H14V15H10V13Z"/>
-                        </svg>
-                    </div>
-                    <div class="action-content">
-                        <h3>Start Debug</h3>
-                        <p>Debug your firmware</p>
-                    </div>
-                </button>
-
-                <button id="setup-btn" class="action-btn btn-secondary">
-                    <div class="action-icon setup-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.22,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.22,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"/>
-                        </svg>
-                    </div>
-                    <div class="action-content">
-                        <h3>Setup</h3>
-                        <p>Re-run configuration</p>
-                    </div>
+                <button id="settings-btn" class="btn btn-secondary">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M1 2.828c.885-.37 2.154-.769 3.388-.893 1.33-.134 2.458.063 3.112.752v9.746c-.935-.53-2.12-.603-3.213-.493-1.18.12-2.37.461-3.287.811V2.828zm7.5-.141c.654-.689 1.782-.886 3.112-.752 1.234.124 2.503.523 3.388.893v9.923c-.918-.35-2.107-.692-3.287-.81-1.094-.111-2.278-.039-3.213.492V2.687zM8 1.783C7.015.936 5.587.81 4.287.94c-1.514.153-3.042.672-3.994 1.105A.5.5 0 0 0 0 2.5v11a.5.5 0 0 0 .707.455c.882-.4 2.303-.881 3.68-1.02 1.409-.142 2.59.087 3.223.877a.5.5 0 0 0 .78 0c.633-.79 1.814-1.019 3.222-.877 1.378.139 2.8.62 3.681 1.02A.5.5 0 0 0 16 13.5v-11a.5.5 0 0 0-.293-.455c-.952-.433-2.48-.952-3.994-1.105C10.413.809 8.985.936 8 1.783z"/>
+                    </svg>
+                    Extension Settings
                 </button>
             </div>
         </section>
@@ -140,14 +121,99 @@
             </div>
         </section>
 
-        <!-- Progress Section (Hidden by default) -->
-        <section id="progress-section" class="section" style="display: none;">
-            <div class="progress">
-                <div class="progress-bar" id="progress-bar" style="width: 0%"></div>
+        <!-- Debug Viewer Section (Hidden by default, shown when debug session active) -->
+        <section id="debug-section" class="section" style="display: none;">
+            <div class="section-header">
+                <h2>Debug Session</h2>
+                <div class="debug-controls">
+                    <button id="debug-halt-btn" class="btn btn-small" title="Halt">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/>
+                        </svg>
+                    </button>
+                    <button id="debug-resume-btn" class="btn btn-small" title="Resume">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M11.596 8.697l-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z"/>
+                        </svg>
+                    </button>
+                    <button id="debug-step-btn" class="btn btn-small" title="Step">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M8.146 4.854a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L9.707 4H12.5A2.5 2.5 0 0 1 15 6.5v8a.5.5 0 0 1-1 0v-8A1.5 1.5 0 0 0 12.5 5H9.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3zM1 8a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6A.5.5 0 0 1 1 8zm0 2.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5zm0 2.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5z"/>
+                        </svg>
+                    </button>
+                    <button id="debug-stop-btn" class="btn btn-small btn-danger" title="Stop Debug">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                            <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1z"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
-            <div class="progress-text" id="progress-text">Ready</div>
+
+            <!-- Debug Tabs -->
+            <div class="debug-tabs">
+                <button class="debug-tab active" data-tab="registers">Registers</button>
+                <button class="debug-tab" data-tab="memory">Memory</button>
+                <button class="debug-tab" data-tab="stack">Stack</button>
+            </div>
+
+            <!-- Debug Tab Content -->
+            <div class="debug-content">
+                <!-- Registers Tab -->
+                <div id="registers-tab" class="debug-tab-content active">
+                    <div id="registers-list">
+                        <div class="empty-state">
+                            <div class="empty-icon">📊</div>
+                            <p>No debug session active</p>
+                            <small>Use the status bar Debug button to start debugging</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Memory Tab -->
+                <div id="memory-tab" class="debug-tab-content" style="display: none;">
+                    <div class="memory-controls">
+                        <input type="text" id="memory-address" class="input" placeholder="Address (e.g., 0x20000000)">
+                        <input type="number" id="memory-size" class="input" placeholder="Bytes" value="64" min="1" max="1024">
+                        <button id="memory-read-btn" class="btn btn-small">Read</button>
+                    </div>
+                    <div id="memory-viewer">
+                        <div class="empty-state">
+                            <div class="empty-icon">💾</div>
+                            <p>No memory data</p>
+                            <small>Enter an address and click Read</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stack Tab -->
+                <div id="stack-tab" class="debug-tab-content" style="display: none;">
+                    <div id="stack-viewer">
+                        <div class="empty-state">
+                            <div class="empty-icon">📚</div>
+                            <p>Stack view</p>
+                            <small>Stack trace will appear here during debugging</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </section>
     </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <span id="footer-status">Ready</span>
+            <div class="footer-actions">
+                <button id="logs-btn" class="btn-link" title="Show Output">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M5 3a5 5 0 0 0 0 10h6a5 5 0 0 0 0-10H5zm6 9a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/>
+                    </svg>
+                    Output
+                </button>
+            </div>
+        </div>
+    </footer>
 
     <script src="{{scriptUri}}"></script>
 </body>

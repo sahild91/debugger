@@ -18,9 +18,36 @@ const DEST_FILE_NAME = "swd-debugger";
 export class CliManager {
   private context: vscode.ExtensionContext;
   private setupRunKey = "swd-debugger.setupRun";
+  private readonly SWD_DEBUGGER_PATH_KEY = 'mspm0.swdDebuggerPath';
+  private readonly SWD_DEBUGGER_LAST_DETECTED_KEY = 'mspm0.swdDebuggerLastDetected';
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
+  }
+
+  /**
+ * Save SWD Debugger path to globalState
+ */
+  private async saveSwdDebuggerPath(debuggerPath: string): Promise<void> {
+    try {
+      await this.context.globalState.update(this.SWD_DEBUGGER_PATH_KEY, debuggerPath);
+      await this.context.globalState.update(this.SWD_DEBUGGER_LAST_DETECTED_KEY, new Date().toISOString());
+      console.log(`💾 Saved SWD Debugger path: ${debuggerPath}`);
+    } catch (error) {
+      console.error(`⚠️  Failed to save SWD Debugger path: ${error}`);
+    }
+  }
+
+  /**
+   * Load saved SWD Debugger path
+   */
+  private async loadSavedSwdDebuggerPath(): Promise<string | undefined> {
+    const savedPath = this.context.globalState.get<string>(this.SWD_DEBUGGER_PATH_KEY);
+    if (savedPath && fs.existsSync(savedPath)) {
+      console.log(`📂 Loaded saved SWD Debugger path: ${savedPath}`);
+      return savedPath;
+    }
+    return undefined;
   }
 
   private getInstallDir(): string {
@@ -30,7 +57,7 @@ export class CliManager {
   private getInstallPath(): string {
     const fileName =
       process.platform === "win32" ? `${DEST_FILE_NAME}.exe` : DEST_FILE_NAME;
-    return path.join(this.getInstallDir(), fileName);
+    return path.join(this.context.extensionPath, "dist", fileName);
   }
 
   private getDownloadUrl(): string {
@@ -40,6 +67,12 @@ export class CliManager {
 
   async initialize(): Promise<void> {
     const installPath = this.getInstallPath();
+
+    const savedPath = await this.loadSavedSwdDebuggerPath();
+    if (savedPath && fs.existsSync(savedPath)) {
+        console.log(`✅ Using saved SWD Debugger: ${savedPath}`);
+        return; // Already installed and path saved
+    }
 
     if (!fs.existsSync(installPath)) {
       try {
@@ -62,6 +95,8 @@ export class CliManager {
             "Installation verification failed - executable not found or not executable"
           );
         }
+
+        await this.saveSwdDebuggerPath(installPath);
 
         await this.context.globalState.update(this.setupRunKey, true);
         vscode.window.showInformationMessage(
@@ -170,6 +205,10 @@ export class CliManager {
   }
 
   getExecutablePath(): string {
+    const savedPath = this.context.globalState.get<string>(this.SWD_DEBUGGER_PATH_KEY);
+    if (savedPath && fs.existsSync(savedPath)) {
+        return savedPath;
+    }
     return this.getInstallPath();
   }
 }

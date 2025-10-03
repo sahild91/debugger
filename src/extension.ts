@@ -4,7 +4,6 @@ import { WebviewProvider } from './webview/webviewProvider';
 import { SDKManager } from './managers/sdkManager';
 import { ToolchainManager } from './managers/toolchainManager';
 import { SysConfigManager } from './managers/sysconfigManager';
-import { SerialManager } from './managers/serialManager';
 import { CliManager } from './managers/cliManager';
 import { ConnectionManager } from './managers/connectionManager';
 import { BuildCommand } from './commands/buildCommand';
@@ -16,7 +15,6 @@ let webviewProvider: WebviewProvider;
 let sdkManager: SDKManager;
 let toolchainManager: ToolchainManager;
 let sysConfigManager: SysConfigManager;
-let serialManager: SerialManager;
 let cliManager: CliManager;
 let connectionManager: ConnectionManager;
 let statusBarItem: vscode.StatusBarItem;
@@ -322,10 +320,7 @@ export async function activate(context: vscode.ExtensionContext) {
         sysConfigManager = new SysConfigManager(context, outputChannel);
         outputChannel.appendLine('  ✅ SysConfig Manager initialized');
 
-        serialManager = new SerialManager(outputChannel);
-        outputChannel.appendLine('  ✅ Serial Manager initialized');
-
-        connectionManager = new ConnectionManager(outputChannel);
+        connectionManager = new ConnectionManager(context, outputChannel);
         outputChannel.appendLine('  ✅ Connection Manager initialized');
 
         outputChannel.appendLine('🔧 Initializing CLI Manager...');
@@ -352,8 +347,8 @@ export async function activate(context: vscode.ExtensionContext) {
     try {
         outputChannel.appendLine('Initializing command handlers...');
         const buildCommand = new BuildCommand(context, outputChannel, sdkManager, toolchainManager, sysConfigManager);
-        const flashCommand = new FlashCommand(context, outputChannel, serialManager);
-        const debugCommand = new DebugCommand(context, outputChannel, serialManager);
+        const flashCommand = new FlashCommand(context, outputChannel, connectionManager);
+        const debugCommand = new DebugCommand(context, outputChannel, connectionManager);
         outputChannel.appendLine('Command handlers initialized successfully');
 
         // Initialize webview provider
@@ -363,7 +358,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 sdkManager,
                 toolchainManager,
                 sysConfigManager,
-                serialManager
+                connectionManager
             }, buildCommand);
             outputChannel.appendLine('  ✅ Webview provider initialized successfully');
             outputChannel.appendLine('');
@@ -735,8 +730,8 @@ export async function activate(context: vscode.ExtensionContext) {
                                         await webviewProvider.startSetup();
                                         break;
                                     case 'detectBoards':
-                                        // Call serial manager directly
-                                        const boards = await serialManager.detectBoards();
+                                        // Call connection manager directly
+                                        const boards = await connectionManager.detectBoards();
                                         panel.webview.postMessage({
                                             command: 'boardsDetected',
                                             data: { boards }
@@ -901,7 +896,7 @@ async function refreshStatus(): Promise<void> {
         const sysConfigInstalled = await sysConfigManager.isSysConfigInstalled();
         const sysConfigInfo = await sysConfigManager.getSysConfigInfo();
         
-        const boards = await serialManager.detectBoards();
+        const boards = await connectionManager.detectBoards();
         
         outputChannel.appendLine(`Status refresh complete:`);
         outputChannel.appendLine(`  SDK: ${sdkInstalled ? `installed (${sdkVersion})` : 'not installed'}`);
@@ -961,11 +956,11 @@ async function detectBoards(): Promise<void> {
         outputChannel.appendLine('Detecting boards...');
         updateStatusBar('Detecting boards...');
         
-        const boards = await serialManager.detectBoards();
+        const boards = await connectionManager.detectBoards();
         
         outputChannel.appendLine(`Detected ${boards.length} board(s):`);
         boards.forEach((board, index) => {
-            outputChannel.appendLine(`  ${index + 1}. ${board.friendlyName} (${board.port})`);
+            outputChannel.appendLine(`  ${index + 1}. ${board.friendlyName} (${board.path})`);
         });
         
         if (boards.length === 0) {
@@ -1121,7 +1116,7 @@ export function getManagers() {
         sdkManager,
         toolchainManager,
         sysConfigManager,
-        serialManager,
+        connectionManager,
         outputChannel,
         statusBarItem
     };

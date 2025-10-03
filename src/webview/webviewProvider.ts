@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import { SDKManager, SDKSetupProgress } from '../managers/sdkManager';
 import { ToolchainManager, ToolchainSetupProgress } from '../managers/toolchainManager';
 import { SysConfigManager, SysConfigSetupProgress } from '../managers/sysconfigManager';
-import { SerialManager, BoardInfo } from '../managers/serialManager';
+import { ConnectionManager, BoardInfo } from '../managers/connectionManager';
 import { BuildCommand, BuildProgress } from '../commands/buildCommand';
 
 export interface WebviewMessage {
@@ -27,7 +27,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     private sdkManager: SDKManager;
     private toolchainManager: ToolchainManager;
     private sysConfigManager: SysConfigManager;
-    private serialManager: SerialManager;
+    private connectionManager: ConnectionManager;
     private isSetupInProgress = false;
 
     private buildCommand?: BuildCommand;
@@ -40,7 +40,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             sdkManager: SDKManager;
             toolchainManager: ToolchainManager;
             sysConfigManager: SysConfigManager;
-            serialManager: SerialManager;
+            connectionManager: ConnectionManager;
         },
         buildCommand?: BuildCommand
     ) {
@@ -49,7 +49,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         this.sdkManager = managers.sdkManager;
         this.toolchainManager = managers.toolchainManager;
         this.sysConfigManager = managers.sysConfigManager;
-        this.serialManager = managers.serialManager;
+        this.connectionManager = managers.connectionManager;
         this.buildCommand = buildCommand;
 
         if (this.buildCommand) {
@@ -441,11 +441,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     private async detectBoards(): Promise<void> {
         try {
             this.outputChannel.appendLine('Detecting boards...');
-            const boards = await this.serialManager.detectBoards();
+            const boards = await this.connectionManager.detectBoards();
             
             this.outputChannel.appendLine(`Detected ${boards.length} board(s)`);
             boards.forEach((board, index) => {
-                this.outputChannel.appendLine(`  ${index + 1}. ${board.friendlyName} (${board.port})`);
+                this.outputChannel.appendLine(`  ${index + 1}. ${board.friendlyName} (${board.path})`);
             });
 
             this.sendMessage({
@@ -470,10 +470,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             }
 
             this.outputChannel.appendLine(`Connecting to board on ${port}...`);
-            await this.serialManager.connectToBoard(port);
+            await this.connectionManager.connectToBoard(port);
             
-            const boards = await this.serialManager.detectBoards();
-            const connectedBoard = boards.find(b => b.port === port);
+            const boards = await this.connectionManager.detectBoards();
+            const connectedBoard = boards.find(b => b.path === port);
 
             if (connectedBoard) {
                 this.sendMessage({
@@ -500,7 +500,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             }
 
             this.outputChannel.appendLine(`Disconnecting from board on ${port}...`);
-            await this.serialManager.disconnectFromBoard(port);
+            await this.connectionManager.disconnectFromBoard(port);
             
             this.sendMessage({
                 command: 'boardDisconnected',
@@ -718,8 +718,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             const sysConfigInfo = await this.sysConfigManager.getSysConfigInfo();
             const sysConfigInstalled = sysConfigInfo.isInstalled;
             
-            const boards = await this.serialManager.detectBoards();
-            const connectedBoards = await this.serialManager.getConnectedMSPM0Boards();
+            const boards = await this.connectionManager.detectBoards();
+            const connectedBoards = await this.connectionManager.getConnectedMSPM0Boards();
             const boardConnected = connectedBoards.length > 0;
             
             const setupComplete = sdkInstalled && toolchainInstalled && sysConfigInstalled;

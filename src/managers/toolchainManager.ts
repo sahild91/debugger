@@ -23,7 +23,10 @@ export class ToolchainManager {
     private outputChannel: vscode.OutputChannel;
     private toolchainPath: string;
     private downloadUtils: DownloadUtils;
-    
+    private readonly TOOLCHAIN_PATH_KEY = 'mspm0.toolchainPath';
+    private readonly COMPILER_PATH_KEY = 'mspm0.compilerExecutablePath';
+    private readonly TOOLCHAIN_LAST_DETECTED_KEY = 'mspm0.toolchainLastDetected';
+
     // TI ARM-CGT-CLANG toolchain download URLs (v4.0.3.LTS)
     private readonly TOOLCHAIN_URLS = {
         'win32-x64': 'https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-ayxs93eZNN/4.0.3.LTS/ti_cgt_armllvm_4.0.3.LTS_windows-x64_installer.exe',
@@ -40,6 +43,34 @@ export class ToolchainManager {
         this.outputChannel = outputChannel;
         this.toolchainPath = path.join(context.globalStorageUri.fsPath, this.TOOLCHAIN_FOLDER_NAME);
         this.downloadUtils = new DownloadUtils(outputChannel);
+    }
+
+    /**
+ * Save toolchain paths to globalState
+ */
+    private async saveToolchainPath(basePath: string, executablePath?: string): Promise<void> {
+        try {
+            await this.context.globalState.update(this.TOOLCHAIN_PATH_KEY, basePath);
+            if (executablePath) {
+                await this.context.globalState.update(this.COMPILER_PATH_KEY, executablePath);
+            }
+            await this.context.globalState.update(this.TOOLCHAIN_LAST_DETECTED_KEY, new Date().toISOString());
+            this.outputChannel.appendLine(`💾 Saved toolchain path: ${basePath}`);
+        } catch (error) {
+            this.outputChannel.appendLine(`⚠️  Failed to save toolchain path: ${error}`);
+        }
+    }
+
+    /**
+     * Load saved compiler executable path
+     */
+    private async loadSavedCompilerPath(): Promise<string | undefined> {
+        const savedPath = this.context.globalState.get<string>(this.COMPILER_PATH_KEY);
+        if (savedPath && fs.existsSync(savedPath) && this.verifyCompilerExecutable(savedPath)) {
+            this.outputChannel.appendLine(`📂 Loaded saved compiler path: ${savedPath}`);
+            return savedPath;
+        }
+        return undefined;
     }
 
     async isToolchainInstalled(): Promise<boolean> {
@@ -61,14 +92,14 @@ export class ToolchainManager {
 
         try {
             this.outputChannel.appendLine('🔍 Getting ARM-CGT-CLANG toolchain information...');
-            
+
             // Find the compiler using our prioritized search
             const compilerPath = this.getCompilerPath();
-            
+
             if (compilerPath) {
                 // Extract the base path from the compiler path
                 let basePath: string;
-                
+
                 // Handle different directory structures
                 if (compilerPath.includes(this.context.globalStorageUri.fsPath)) {
                     // It's in our extension storage
@@ -85,10 +116,12 @@ export class ToolchainManager {
                     }
                     this.outputChannel.appendLine(`✅ Using system toolchain at: ${basePath}`);
                 }
-                
+
                 // Try to get version information
                 const version = await this.getToolchainVersion(compilerPath);
-                
+
+                await this.saveToolchainPath(basePath, compilerPath);
+
                 return {
                     version,
                     path: basePath,
@@ -98,7 +131,7 @@ export class ToolchainManager {
             }
 
             this.outputChannel.appendLine('❌ No ARM-CGT-CLANG toolchain found');
-            
+
             // Provide specific installation guidance
             this.outputChannel.appendLine('');
             this.outputChannel.appendLine('📋 To install ARM-CGT-CLANG toolchain:');
@@ -110,7 +143,7 @@ export class ToolchainManager {
             this.outputChannel.appendLine('   System TI installations: C:\\ti\\, /opt/ti/, etc.');
             this.outputChannel.appendLine('   System PATH');
             this.outputChannel.appendLine('');
-            
+
             return defaultInfo;
 
         } catch (error) {
@@ -129,7 +162,7 @@ export class ToolchainManager {
         try {
             const platform = PlatformUtils.getCurrentPlatform();
             const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
-            
+
             // Search in common subdirectories for v4.0.3
             const possiblePaths = [
                 path.join(toolchainPath, 'bin', executableName),
@@ -142,7 +175,7 @@ export class ToolchainManager {
                 this.outputChannel.appendLine(`  Checking executable: ${possiblePath}`);
                 if (fs.existsSync(possiblePath)) {
                     this.outputChannel.appendLine(`  ✅ Found compiler executable: ${possiblePath}`);
-                    
+
                     // Try to get version information
                     const version = await this.getToolchainVersion(possiblePath);
 
@@ -172,11 +205,11 @@ export class ToolchainManager {
 
         try {
             const { exec } = require('child_process');
-            
+
             return new Promise((resolve) => {
                 // Query registry for TI installation paths
                 const regQuery = 'reg query "HKEY_LOCAL_MACHINE\\SOFTWARE\\Texas Instruments" /s /f "ti-cgt-armllvm" 2>nul';
-                
+
                 exec(regQuery, (error: any, stdout: string, stderr: any) => {
                     if (error || !stdout) {
                         this.outputChannel.appendLine('No TI registry entries found');
@@ -208,7 +241,7 @@ export class ToolchainManager {
 
     async installToolchain(progressCallback?: (progress: ToolchainSetupProgress) => void): Promise<void> {
         let downloadPath: string | undefined;
-        
+
         try {
             // Check if already installed
             if (await this.isToolchainInstalled()) {
@@ -244,7 +277,7 @@ export class ToolchainManager {
             // Download the toolchain
             const fileName = this.getInstallerFileName(downloadUrl);
             downloadPath = path.join(os.tmpdir(), `toolchain-${Date.now()}-${fileName}`);
-            
+
             await this.downloadUtils.downloadFile(downloadUrl, downloadPath, (progress) => {
                 progressCallback?.({
                     stage: 'downloading',
@@ -295,6 +328,12 @@ export class ToolchainManager {
             }
 
             this.outputChannel.appendLine(`ARM-CGT-CLANG toolchain installed successfully. Version: ${toolchainInfo.version}`);
+            const compilerPath = this.getCompilerPath();
+            if (!compilerPath) {
+                throw new Error('Toolchain installation verification failed');
+            }
+
+            await this.saveToolchainPath(this.toolchainPath, compilerPath);
 
             progressCallback?.({
                 stage: 'complete',
@@ -341,7 +380,7 @@ export class ToolchainManager {
 
     private async installToolchainFromFile(installerPath: string, platform: string): Promise<void> {
         const { spawn } = require('child_process');
-        
+
         return new Promise((resolve, reject) => {
             // Ensure install directory exists
             if (!fs.existsSync(this.toolchainPath)) {
@@ -356,10 +395,10 @@ export class ToolchainManager {
                 this.outputChannel.appendLine('Running Windows installer...');
                 installCommand = installerPath;
                 installArgs = [
-                      "--mode",
-                      "unattended", // Silent installation
-                      "--prefix",
-                      this.toolchainPath, // Installation directory
+                    "--mode",
+                    "unattended", // Silent installation
+                    "--prefix",
+                    this.toolchainPath, // Installation directory
                 ];
             } else if (platform.startsWith('darwin')) {
                 // macOS installer (.app.zip)
@@ -368,48 +407,48 @@ export class ToolchainManager {
 
                 // Step 1: Unzip the installer
                 try {
-                  const { execSync } = require("child_process");
-                  execSync(`unzip -q -o "${installerPath}" -d "${tempDir}"`);
-                  this.outputChannel.appendLine("Extraction complete.");
+                    const { execSync } = require("child_process");
+                    execSync(`unzip -q -o "${installerPath}" -d "${tempDir}"`);
+                    this.outputChannel.appendLine("Extraction complete.");
                 } catch (error) {
-                  return reject(
-                    new Error(`Failed to extract macOS installer: ${error}`)
-                  );
+                    return reject(
+                        new Error(`Failed to extract macOS installer: ${error}`)
+                    );
                 }
 
                 // Step 2: Find the .app file and run it silently
                 this.outputChannel.appendLine(
-                  "Running the macOS .app installer..."
+                    "Running the macOS .app installer..."
                 );
                 const appName = "ti_cgt_armllvm_4.0.3.LTS_osx_installer.app";
                 const appPath = path.join(tempDir, appName);
 
                 if (!fs.existsSync(appPath)) {
-                  return reject(
-                    new Error(`Could not find extracted installer at: ${appPath}`)
-                  );
+                    return reject(
+                        new Error(`Could not find extracted installer at: ${appPath}`)
+                    );
                 }
 
                 // On macOS, we use the 'open' command to run .app bundles.
                 // The arguments for the installer are passed via the --args flag.
                 installCommand = "open";
                 installArgs = [
-                  "-a",
-                  appPath, // Specify the application to open
-                  "-W", // Wait for the application to exit before continuing
-                  "--args", // Pass the following arguments to the application itself
-                  "--mode",
-                  "unattended",
-                  "--prefix",
-                  this.toolchainPath,
+                    "-a",
+                    appPath, // Specify the application to open
+                    "-W", // Wait for the application to exit before continuing
+                    "--args", // Pass the following arguments to the application itself
+                    "--mode",
+                    "unattended",
+                    "--prefix",
+                    this.toolchainPath,
                 ];
             } else if (platform.startsWith('linux')) {
                 // Linux installer (.bin)
                 this.outputChannel.appendLine('Running Linux installer...');
-                
+
                 // Make installer executable
                 fs.chmodSync(installerPath, '755');
-                
+
                 installCommand = installerPath;
                 installArgs = [
                     '--mode', 'unattended',
@@ -446,16 +485,16 @@ export class ToolchainManager {
     }
 
     private executeInstaller(
-        command: string, 
-        args: string[], 
-        resolve: Function, 
-        reject: Function, 
+        command: string,
+        args: string[],
+        resolve: Function,
+        reject: Function,
         platform: string
     ): void {
         const { spawn } = require('child_process');
 
         // Try different execution methods for Windows
-        const executionMethods = platform.startsWith('win32') 
+        const executionMethods = platform.startsWith('win32')
             ? [
                 { name: 'Direct execution', useShell: false },
                 { name: 'Shell execution', useShell: true },
@@ -519,13 +558,13 @@ export class ToolchainManager {
 
                 installProcess.on('error', (error) => {
                     this.outputChannel.appendLine(`${method.name} process error: ${error.message}`);
-                    
+
                     if (error.message.includes('EBUSY')) {
                         this.outputChannel.appendLine('File appears to be locked or in use by another process');
                         this.outputChannel.appendLine('This might be caused by antivirus software or Windows Defender');
                         this.outputChannel.appendLine('Try adding exclusions for the temp and extension directories');
                     }
-                    
+
                     tryNextMethod();
                 });
 
@@ -550,7 +589,7 @@ export class ToolchainManager {
     private async extractToolchain(archivePath: string, extractPath: string): Promise<void> {
         // This method is now primarily for fallback/legacy support
         const { spawn } = require('child_process');
-        
+
         return new Promise((resolve, reject) => {
             // Ensure extract directory exists
             if (!fs.existsSync(extractPath)) {
@@ -576,7 +615,7 @@ export class ToolchainManager {
             }
 
             const extractProcess = spawn(extractCommand, extractArgs);
-            
+
             extractProcess.on('close', (code: any) => {
                 if (code === 0) {
                     resolve();
@@ -593,12 +632,12 @@ export class ToolchainManager {
 
     private async setupExecutablePermissions(): Promise<void> {
         const { spawn } = require('child_process');
-        
+
         return new Promise((resolve, reject) => {
             // Find all files in the bin directory and make them executable
             const binPath = path.join(this.toolchainPath, '**', 'bin');
             const chmodProcess = spawn('find', [this.toolchainPath, '-name', 'bin', '-type', 'd', '-exec', 'chmod', '+x', '{}/*', ';']);
-            
+
             chmodProcess.on('close', (code: any) => {
                 resolve(); // Don't fail on chmod errors, just continue
             });
@@ -612,7 +651,7 @@ export class ToolchainManager {
 
     private async getToolchainVersion(executablePath: string): Promise<string> {
         const { spawn } = require('child_process');
-        
+
         return new Promise((resolve) => {
             const versionProcess = spawn(executablePath, ['--version']);
             let output = '';
@@ -646,19 +685,20 @@ export class ToolchainManager {
     getCompilerPath(): string | undefined {
         try {
             this.outputChannel.appendLine('🔍 Searching for ARM-CGT-CLANG compiler...');
-            
-            // First priority: Check our extension's installation path
+
+            // Priority 0: Check saved path in globalState (make it async or use sync version)
+            const savedPath = this.context.globalState.get<string>(this.COMPILER_PATH_KEY);
+            if (savedPath && fs.existsSync(savedPath) && this.verifyCompilerExecutable(savedPath)) {
+                this.outputChannel.appendLine(`✅ Using saved compiler path: ${savedPath}`);
+                return savedPath;
+            }
+
+            // Existing Priority 1: Check extension storage
             const extensionCompilerPath = this.findCompilerInExtensionStorage();
             if (extensionCompilerPath) {
                 this.outputChannel.appendLine(`✅ Found compiler in extension storage: ${extensionCompilerPath}`);
+                // ADD: Save for next time (use async wrapper)
                 return extensionCompilerPath;
-            }
-
-            // Second priority: Check system-wide TI installations (for user-installed toolchains)
-            const systemCompilerPath = this.findCompilerInSystemLocations();
-            if (systemCompilerPath) {
-                this.outputChannel.appendLine(`✅ Found compiler in system location: ${systemCompilerPath}`);
-                return systemCompilerPath;
             }
 
             // Third priority: Check system PATH
@@ -680,9 +720,9 @@ export class ToolchainManager {
     private findCompilerInExtensionStorage(): string | undefined {
         const platform = PlatformUtils.getCurrentPlatform();
         const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
-        
+
         this.outputChannel.appendLine(`🔍 Checking extension storage: ${this.toolchainPath}`);
-        
+
         if (!fs.existsSync(this.toolchainPath)) {
             this.outputChannel.appendLine(`   ❌ Extension toolchain directory doesn't exist: ${this.toolchainPath}`);
             return undefined;
@@ -692,27 +732,27 @@ export class ToolchainManager {
         const possiblePaths = [
             // Direct in bin directory
             path.join(this.toolchainPath, 'bin', executableName),
-            
+
             // With version folder structure (what TI installers typically create)
             path.join(this.toolchainPath, 'ti-cgt-armllvm_4.0.3.LTS', 'bin', executableName),
             path.join(this.toolchainPath, 'ti-cgt-armllvm_3.2.2.LTS', 'bin', executableName),
             path.join(this.toolchainPath, 'ti-cgt-armllvm_3.2.1.LTS', 'bin', executableName),
             path.join(this.toolchainPath, 'ti-cgt-armllvm_4.0.2.LTS', 'bin', executableName),
-            
+
             // Alternative structures
             path.join(this.toolchainPath, 'tools', 'bin', executableName),
             path.join(this.toolchainPath, 'compiler', 'bin', executableName),
-            
+
             // Direct in root (some installers do this)
             path.join(this.toolchainPath, executableName),
-            
+
             // Windows-specific paths that some TI installers create
             path.join(this.toolchainPath, 'ccs', 'tools', 'compiler', 'ti-cgt-armllvm_4.0.3.LTS', 'bin', executableName),
         ];
 
         for (const compilerPath of possiblePaths) {
             this.outputChannel.appendLine(`   Checking: ${compilerPath}`);
-            
+
             if (fs.existsSync(compilerPath)) {
                 // Verify it's actually executable
                 if (this.verifyCompilerExecutable(compilerPath)) {
@@ -732,7 +772,7 @@ export class ToolchainManager {
     private verifyCompilerExecutable(execPath: string): boolean {
         try {
             const stats = fs.statSync(execPath);
-            
+
             if (!stats.isFile()) {
                 this.outputChannel.appendLine(`      ❌ Not a file: ${execPath}`);
                 return false;
@@ -759,9 +799,9 @@ export class ToolchainManager {
     private findCompilerInSystemLocations(): string | undefined {
         const platform = PlatformUtils.getCurrentPlatform();
         const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
-        
+
         this.outputChannel.appendLine('🔍 Checking system TI installation locations...');
-        
+
         // Define system-wide TI installation paths
         const systemPaths: string[] = [];
 
@@ -771,12 +811,12 @@ export class ToolchainManager {
                 'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_4.0.3.LTS',
                 'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_3.2.2.LTS',
                 'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_3.2.1.LTS',
-                
+
                 // Standalone installations
                 'C:\\ti\\ti-cgt-armllvm_4.0.3.LTS',
                 'C:\\ti\\ti-cgt-armllvm_3.2.2.LTS',
                 'C:\\ti\\ti-cgt-armllvm_3.2.1.LTS',
-                
+
                 // Program Files locations
                 'C:\\Program Files\\Texas Instruments\\ti-cgt-armllvm_4.0.3.LTS',
                 'C:\\Program Files\\Texas Instruments\\ti-cgt-armllvm_3.2.2.LTS',
@@ -807,7 +847,7 @@ export class ToolchainManager {
 
         for (const basePath of systemPaths) {
             this.outputChannel.appendLine(`   Checking system path: ${basePath}`);
-            
+
             if (!fs.existsSync(basePath)) {
                 this.outputChannel.appendLine(`   ❌ Path doesn't exist`);
                 continue;
@@ -815,7 +855,7 @@ export class ToolchainManager {
 
             const compilerPath = path.join(basePath, 'bin', executableName);
             this.outputChannel.appendLine(`   Checking compiler: ${compilerPath}`);
-            
+
             if (fs.existsSync(compilerPath) && this.verifyCompilerExecutable(compilerPath)) {
                 this.outputChannel.appendLine(`   ✅ Valid system compiler found: ${compilerPath}`);
                 return compilerPath;
@@ -830,21 +870,21 @@ export class ToolchainManager {
     private findCompilerInSystemPath(): string | undefined {
         const platform = PlatformUtils.getCurrentPlatform();
         const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
-        
+
         this.outputChannel.appendLine('🔍 Checking system PATH...');
-        
+
         try {
             const { execSync } = require('child_process');
             let command: string;
-            
+
             if (platform.startsWith('win32')) {
                 command = `where ${executableName}`;
             } else {
                 command = `which ${executableName}`;
             }
-            
+
             const result = execSync(command, { encoding: 'utf8', timeout: 5000 }).toString().trim();
-            
+
             if (result && fs.existsSync(result)) {
                 this.outputChannel.appendLine(`   ✅ Found in PATH: ${result}`);
                 return result;
@@ -852,7 +892,7 @@ export class ToolchainManager {
         } catch (error) {
             this.outputChannel.appendLine(`   ❌ Not found in PATH: ${error}`);
         }
-        
+
         return undefined;
     }
 
@@ -870,7 +910,7 @@ export class ToolchainManager {
 
             const platform = PlatformUtils.getCurrentPlatform();
             const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
-            
+
             const possiblePaths = [
                 path.join(this.toolchainPath, 'bin', executableName),
                 path.join(this.toolchainPath, 'ti_cgt_armllvm_3.2.2.LTS', 'bin', executableName),

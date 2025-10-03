@@ -2,11 +2,15 @@
 const vscode = acquireVsCodeApi();
 
 // DOM Elements
-let buildBtn, flashBtn, debugBtn, setupBtn;
-let refreshStatusBtn, detectBoardsBtn;
-let progressSection, progressBar, progressText;
+let setupBtn, refreshStatusBtn, settingsBtn, detectBoardsBtn, logsBtn;
+let progressSection, progressBar, progressText, progressStage, progressPercentage;
 let boardsList;
+let debugSection, debugHaltBtn, debugResumeBtn, debugStepBtn, debugStopBtn;
+let registersList, memoryViewer, stackViewer;
+let memoryAddressInput, memorySizeInput, memoryReadBtn;
 let statusCards = {};
+let debugTabs = [];
+let currentDebugTab = 'registers';
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
@@ -21,22 +25,36 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function initializeElements() {
     // Action buttons
-    buildBtn = document.getElementById('build-btn');
-    flashBtn = document.getElementById('flash-btn');
-    debugBtn = document.getElementById('debug-btn');
     setupBtn = document.getElementById('setup-btn');
-    
-    // Control buttons
     refreshStatusBtn = document.getElementById('refresh-status-btn');
+    settingsBtn = document.getElementById('settings-btn');
     detectBoardsBtn = document.getElementById('detect-boards-btn');
+    logsBtn = document.getElementById('logs-btn');
     
     // Progress elements
-    progressSection = document.getElementById('progress-section');
+    progressSection = document.getElementById('setup-progress');
     progressBar = document.getElementById('progress-bar');
     progressText = document.getElementById('progress-text');
+    progressStage = document.getElementById('progress-stage');
+    progressPercentage = document.getElementById('progress-percentage');
     
     // Lists
     boardsList = document.getElementById('boards-list');
+    
+    // Debug elements
+    debugSection = document.getElementById('debug-section');
+    debugHaltBtn = document.getElementById('debug-halt-btn');
+    debugResumeBtn = document.getElementById('debug-resume-btn');
+    debugStepBtn = document.getElementById('debug-step-btn');
+    debugStopBtn = document.getElementById('debug-stop-btn');
+    
+    registersList = document.getElementById('registers-list');
+    memoryViewer = document.getElementById('memory-viewer');
+    stackViewer = document.getElementById('stack-viewer');
+    
+    memoryAddressInput = document.getElementById('memory-address');
+    memorySizeInput = document.getElementById('memory-size');
+    memoryReadBtn = document.getElementById('memory-read-btn');
     
     // Status cards
     statusCards = {
@@ -57,218 +75,175 @@ function initializeElements() {
             icon: document.getElementById('sysconfig-icon'),
             details: document.getElementById('sysconfig-details'),
             version: document.getElementById('sysconfig-version')
+        },
+        debugger: {
+            card: document.getElementById('debugger-status'),
+            icon: document.getElementById('debugger-icon'),
+            details: document.getElementById('debugger-details'),
+            version: document.getElementById('debugger-version')
         }
     };
+    
+    // Debug tabs
+    debugTabs = document.querySelectorAll('.debug-tab');
 }
 
 function attachEventListeners() {
-    // Action button handlers
-    if (buildBtn) {
-        buildBtn.addEventListener('click', buildProject);
-    }
-    
-    if (flashBtn) {
-        flashBtn.addEventListener('click', flashFirmware);
-    }
-    
-    if (debugBtn) {
-        debugBtn.addEventListener('click', startDebug);
-    }
-    
+    // Setup actions
     if (setupBtn) {
-        setupBtn.addEventListener('click', runSetup);
+        setupBtn.addEventListener('click', () => {
+            console.log('Setup button clicked');
+            vscode.postMessage({ command: 'startSetup' });
+        });
     }
     
-    // Control button handlers
     if (refreshStatusBtn) {
-        refreshStatusBtn.addEventListener('click', refreshStatus);
+        refreshStatusBtn.addEventListener('click', () => {
+            console.log('Refresh status clicked');
+            requestStatus();
+        });
+    }
+    
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', () => {
+            console.log('Settings button clicked');
+            vscode.postMessage({ command: 'openSettings' });
+        });
     }
     
     if (detectBoardsBtn) {
-        detectBoardsBtn.addEventListener('click', detectBoards);
+        detectBoardsBtn.addEventListener('click', () => {
+            console.log('Detect boards clicked');
+            vscode.postMessage({ command: 'detectBoards' });
+        });
     }
-}
-
-// Action handlers
-function buildProject() {
-    vscode.postMessage({ command: 'build' });
-    showProgress('Building project...', 0);
-    disableActions();
-}
-
-function flashFirmware() {
-    vscode.postMessage({ command: 'flash' });
-    showProgress('Flashing firmware...', 0);
-    disableActions();
-}
-
-function startDebug() {
-    vscode.postMessage({ command: 'debug' });
-    showProgress('Starting debug session...', 0);
-    disableActions();
-}
-
-function runSetup() {
-    vscode.postMessage({ command: 'setup' });
-    showProgress('Running setup...', 0);
-    disableActions();
-}
-
-function refreshStatus() {
-    vscode.postMessage({ command: 'refreshStatus' });
-    showProgress('Refreshing status...', 0);
     
-    // Reset all status cards to loading state
-    Object.keys(statusCards).forEach(key => {
-        const card = statusCards[key];
-        if (card.card) {
-            card.card.className = 'status-card';
-            card.icon.textContent = '○';
-            card.icon.className = 'status-icon';
-            card.details.textContent = 'Checking installation...';
-            card.version.textContent = '';
-        }
+    if (logsBtn) {
+        logsBtn.addEventListener('click', () => {
+            console.log('Logs button clicked');
+            vscode.postMessage({ command: 'showLogs' });
+        });
+    }
+    
+    // Debug controls
+    if (debugHaltBtn) {
+        debugHaltBtn.addEventListener('click', () => {
+            vscode.postMessage({ command: 'debugHalt' });
+        });
+    }
+    
+    if (debugResumeBtn) {
+        debugResumeBtn.addEventListener('click', () => {
+            vscode.postMessage({ command: 'debugResume' });
+        });
+    }
+    
+    if (debugStepBtn) {
+        debugStepBtn.addEventListener('click', () => {
+            vscode.postMessage({ command: 'debugStep' });
+        });
+    }
+    
+    if (debugStopBtn) {
+        debugStopBtn.addEventListener('click', () => {
+            vscode.postMessage({ command: 'debugStop' });
+        });
+    }
+    
+    // Memory viewer
+    if (memoryReadBtn) {
+        memoryReadBtn.addEventListener('click', () => {
+            const address = memoryAddressInput.value;
+            const size = parseInt(memorySizeInput.value) || 64;
+            
+            if (address) {
+                vscode.postMessage({ 
+                    command: 'readMemory',
+                    address: address,
+                    size: size
+                });
+            }
+        });
+    }
+    
+    // Debug tabs
+    debugTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            switchDebugTab(tab.getAttribute('data-tab'));
+        });
     });
+    
+    // Listen for messages from extension
+    window.addEventListener('message', handleMessage);
 }
 
-function detectBoards() {
-    vscode.postMessage({ command: 'detectBoards' });
-    showProgress('Detecting boards...', 0);
+function handleMessage(event) {
+    const message = event.data;
+    console.log('📨 Received message:', message.command);
     
-    // Show loading state for boards list
-    if (boardsList) {
-        boardsList.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-icon">🔍</div>
-                <p>Scanning for boards...</p>
-                <small>Please wait while we detect connected devices</small>
-            </div>
-        `;
+    switch (message.command) {
+        case 'updateStatus':
+            updateSystemStatus(message.data);
+            break;
+        case 'setupProgress':
+            updateSetupProgress(message.data);
+            break;
+        case 'setupComplete':
+            hideProgress();
+            updateFooterStatus('Setup complete!');
+            requestStatus();
+            break;
+        case 'setupError':
+            hideProgress();
+            updateFooterStatus('Setup failed');
+            showError(message.data.error);
+            break;
+        case 'boardsDetected':
+            updateBoardsList(message.data.boards);
+            break;
+        case 'debugSessionStarted':
+            showDebugSection();
+            break;
+        case 'debugSessionStopped':
+            hideDebugSection();
+            break;
+        case 'registersUpdate':
+            updateRegisters(message.data.registers);
+            break;
+        case 'memoryData':
+            updateMemoryViewer(message.data);
+            break;
+        case 'error':
+            showError(message.data.message);
+            break;
     }
 }
 
 function requestStatus() {
     vscode.postMessage({ command: 'getStatus' });
-}
-
-// Progress management
-function showProgress(message, progress = 0) {
-    if (progressSection && progressBar && progressText) {
-        progressSection.style.display = 'block';
-        progressText.textContent = message;
-        progressBar.style.width = progress + '%';
-        
-        // Animate progress if not specified
-        if (progress === 0) {
-            animateProgress();
-        }
-    }
-}
-
-function hideProgress() {
-    if (progressSection) {
-        progressSection.style.display = 'none';
-    }
-    enableActions();
-}
-
-function updateProgress(progress, message) {
-    if (progressBar && progressText) {
-        progressBar.style.width = Math.min(100, Math.max(0, progress)) + '%';
-        if (message) {
-            progressText.textContent = message;
-        }
-    }
-}
-
-function animateProgress() {
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress += Math.random() * 10;
-        if (progress > 85) {
-            progress = 85;
-            clearInterval(interval);
-        }
-        if (progressBar) {
-            progressBar.style.width = progress + '%';
-        }
-    }, 300);
-    
-    // Store interval reference for potential cleanup
-    window.progressInterval = interval;
-}
-
-// Action state management
-function disableActions() {
-    const buttons = [buildBtn, flashBtn, debugBtn];
-    buttons.forEach(btn => {
-        if (btn) {
-            btn.disabled = true;
-        }
-    });
-}
-
-function enableActions() {
-    const buttons = [buildBtn, flashBtn, debugBtn];
-    buttons.forEach(btn => {
-        if (btn) {
-            btn.disabled = false;
-        }
-    });
-    
-    // Clear any progress animation
-    if (window.progressInterval) {
-        clearInterval(window.progressInterval);
-        window.progressInterval = null;
-    }
+    updateFooterStatus('Checking status...');
 }
 
 // Status updates
 function updateSystemStatus(status) {
-    updateComponentStatus('sdk', status.sdk);
-    updateComponentStatus('toolchain', status.toolchain);
-    updateComponentStatus('sysconfig', status.sysconfig);
-    
-    // Update global status indicator in header
-    updateGlobalStatus(status);
-    
-    // Update action button states based on overall status
-    updateActionStates(status);
-}
-
-function updateGlobalStatus(status) {
-    const headerElement = document.querySelector('.header-content h1');
-    if (!headerElement) return;
-    
-    const allInstalled = status.sdk?.installed && status.toolchain?.installed && status.sysconfig?.installed;
-    const hasErrors = status.sdk?.error || status.toolchain?.error || status.sysconfig?.error;
-    const hasWarnings = status.sdk?.warning || status.toolchain?.warning || status.sysconfig?.warning;
-    
-    // Remove existing status indicators
-    const existingStatus = headerElement.querySelector('.global-status');
-    if (existingStatus) {
-        existingStatus.remove();
+    if (status.sdk) {
+        updateComponentStatus('sdk', status.sdk);
+    }
+    if (status.toolchain) {
+        updateComponentStatus('toolchain', status.toolchain);
+    }
+    if (status.sysconfig) {
+        updateComponentStatus('sysconfig', status.sysconfig);
+    }
+    if (status.debugger) {
+        updateComponentStatus('debugger', {
+            installed: true,
+            message: 'SWD Debugger ready',
+            version: 'v1.0.0'
+        });
     }
     
-    // Add global status indicator
-    const statusIndicator = document.createElement('div');
-    statusIndicator.className = 'global-status';
-    
-    if (allInstalled && !hasErrors) {
-        statusIndicator.innerHTML = '<span class="status-dot success"></span>Ready for Development';
-        statusIndicator.className += ' success';
-    } else if (hasErrors) {
-        statusIndicator.innerHTML = '<span class="status-dot error"></span>Setup Issues Detected';
-        statusIndicator.className += ' error';
-    } else if (hasWarnings) {
-        statusIndicator.innerHTML = '<span class="status-dot warning"></span>Setup Warnings';
-        statusIndicator.className += ' warning';
-    } else {
-        statusIndicator.innerHTML = '<span class="status-dot pending"></span>Setup Required';
-        statusIndicator.className += ' pending';
-    }
-    
-    headerElement.appendChild(statusIndicator);
+    updateFooterStatus('Ready');
 }
 
 function updateComponentStatus(component, componentStatus) {
@@ -309,23 +284,51 @@ function updateComponentStatus(component, componentStatus) {
     card.version.textContent = componentStatus.version ? `Version: ${componentStatus.version}` : '';
 }
 
-function updateActionStates(status) {
-    // Enable/disable actions based on system status
-    const allInstalled = status.sdk?.installed && status.toolchain?.installed && status.sysconfig?.installed;
+// Progress updates
+function updateSetupProgress(data) {
+    if (!progressSection) return;
     
-    if (buildBtn) {
-        buildBtn.disabled = !allInstalled;
+    progressSection.style.display = 'block';
+    
+    if (progressBar && data.progress !== undefined) {
+        progressBar.style.width = data.progress + '%';
     }
     
-    if (flashBtn) {
-        flashBtn.disabled = !allInstalled;
+    if (progressStage && data.stage) {
+        progressStage.textContent = formatStage(data.stage);
     }
     
-    if (debugBtn) {
-        debugBtn.disabled = !allInstalled;
+    if (progressPercentage && data.progress !== undefined) {
+        progressPercentage.textContent = Math.round(data.progress) + '%';
+    }
+    
+    if (progressText && data.message) {
+        progressText.textContent = data.message;
+    }
+    
+    updateFooterStatus(data.message || 'Setup in progress...');
+}
+
+function hideProgress() {
+    if (progressSection) {
+        progressSection.style.display = 'none';
     }
 }
 
+function formatStage(stage) {
+    const stages = {
+        'downloading': '⬇️ Downloading',
+        'extracting': '📦 Extracting',
+        'installing': '⚙️ Installing',
+        'configuring': '🔧 Configuring',
+        'validating': '✓ Validating',
+        'complete': '✅ Complete',
+        'error': '❌ Error'
+    };
+    return stages[stage] || stage;
+}
+
+// Boards list
 function updateBoardsList(boards) {
     if (!boardsList) return;
     
@@ -340,307 +343,133 @@ function updateBoardsList(boards) {
         return;
     }
     
-    // Create board items
     const boardItems = boards.map(board => `
-        <div class="board-item">
-            <div class="board-icon">${board.name ? board.name.charAt(0).toUpperCase() : 'B'}</div>
-            <div class="board-details">
-                <div class="board-name">${board.name || 'Unknown Board'}</div>
-                <div class="board-info">${board.port || 'Unknown Port'} - ${board.description || 'Board detected'}</div>
+        <div class="board-item ${board.isConnected ? 'connected' : ''}">
+            <div class="board-icon">${board.deviceType === 'MSPM0' ? '🔌' : '📱'}</div>
+            <div class="board-info">
+                <div class="board-name">${board.friendlyName || board.path}</div>
+                <div class="board-details">
+                    ${board.port || board.path}
+                    ${board.manufacturer ? ` • ${board.manufacturer}` : ''}
+                    ${board.vendorId && board.productId ? ` • ${board.vendorId}:${board.productId}` : ''}
+                </div>
             </div>
-            <div class="board-status">${board.status || 'Connected'}</div>
+            ${board.isConnected ? '<div class="board-badge">Connected</div>' : ''}
         </div>
     `).join('');
     
     boardsList.innerHTML = boardItems;
 }
 
-// Message handling from extension
-window.addEventListener('message', event => {
-    const message = event.data;
-    
-    try {
-        switch (message.command) {
-            case 'updateStatus':
-                updateSystemStatus(message.status);
-                break;
-                
-            case 'updateBoards':
-                updateBoardsList(message.boards);
-                hideProgress();
-                break;
-                
-            case 'updateProgress':
-                updateProgress(message.progress, message.message);
-                break;
-                
-            case 'hideProgress':
-                hideProgress();
-                break;
-                
-            case 'showProgress':
-                showProgress(message.message, message.progress);
-                break;
-                
-            case 'showNotification':
-                showNotification(message.text, message.type);
-                break;
-                
-            case 'enableActions':
-                enableActions();
-                break;
-                
-            case 'disableActions':
-                disableActions();
-                break;
+// Debug section
+function showDebugSection() {
+    if (debugSection) {
+        debugSection.style.display = 'block';
+    }
+}
 
-            case 'buildProgress':
-                updateBuildProgress(message.data);
-                break;
-                
-            case 'buildStarted':
-                onBuildStarted(message.data);
-                break;
-                
-            case 'buildCompleted':
-                onBuildCompleted(message.data);
-                break;
-                
-            case 'buildError':
-                onBuildError(message.data);
-                break;
-                
-            case 'buildCancelled':
-                onBuildCancelled(message.data);
-                break;
-                
-            case 'updateBuildState':
-                updateBuildState(message.data);
-                break;
-                
-            default:
-                console.log('Unknown message command:', message.command);
+function hideDebugSection() {
+    if (debugSection) {
+        debugSection.style.display = 'none';
+    }
+}
+
+function switchDebugTab(tabName) {
+    currentDebugTab = tabName;
+    
+    // Update tab buttons
+    debugTabs.forEach(tab => {
+        if (tab.getAttribute('data-tab') === tabName) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
         }
-    } catch (error) {
-        console.error('Error handling message:', error);
-        showNotification('An error occurred while processing the response', 'error');
-    }
-});
-
-function updateBuildProgress(data) {
-    // Update progress bar and status
-    if (progressBar && progressText) {
-        progressBar.style.width = data.percentage + '%';
-        progressText.textContent = `${data.message} (${data.percentage}%)`;
-        
-        if (data.currentFile) {
-            progressText.textContent += ` - ${data.currentFile}`;
-        }
-    }
-    
-    showProgress(data.message, data.percentage);
-}
-
-function onBuildStarted(data) {
-    disableActions();
-    showProgress('Starting build process...', 0);
-    
-    // Show cancel button if available
-    const cancelBtn = document.getElementById('cancel-build-btn');
-    if (cancelBtn) {
-        cancelBtn.style.display = 'inline-block';
-    }
-}
-
-function onBuildCompleted(data) {
-    enableActions();
-    hideProgress();
-    
-    const message = data.success 
-        ? `Build completed successfully in ${(data.buildTime / 1000).toFixed(1)}s`
-        : `Build failed with ${data.errors} errors`;
-    
-    showNotification(message, data.success ? 'success' : 'error');
-    
-    // Hide cancel button
-    const cancelBtn = document.getElementById('cancel-build-btn');
-    if (cancelBtn) {
-        cancelBtn.style.display = 'none';
-    }
-}
-
-function onBuildError(data) {
-    enableActions();
-    hideProgress();
-    showNotification(`Build error: ${data.message}`, 'error');
-}
-
-function onBuildCancelled(data) {
-    enableActions();
-    hideProgress();
-    showNotification('Build cancelled by user', 'warning');
-}
-
-function updateBuildState(data) {
-    // Enable/disable build button
-    const buildBtn = document.getElementById('build-btn');
-    if (buildBtn) {
-        buildBtn.disabled = data.building;
-    }
-    
-    // Show/hide cancel button
-    const cancelBtn = document.getElementById('cancel-build-btn');
-    if (cancelBtn) {
-        cancelBtn.style.display = data.canCancel ? 'inline-block' : 'none';
-    }
-}
-
-// Add cancel build function
-function cancelBuild() {
-    vscode.postMessage({ command: 'cancelBuild' });
-}
-
-// Notification system
-function showNotification(text, type = 'info') {
-    // Remove existing notifications
-    const existingNotifications = document.querySelectorAll('.notification');
-    existingNotifications.forEach(n => n.remove());
-    
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    
-    // Set content
-    notification.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-weight: 600;">${getNotificationIcon(type)}</span>
-            <span>${text}</span>
-        </div>
-    `;
-    
-    // Add to document
-    document.body.appendChild(notification);
-    
-    // Show notification with animation
-    requestAnimationFrame(() => {
-        notification.style.transform = 'translateX(0)';
-        notification.style.opacity = '1';
     });
     
-    // Auto-hide after delay
-    setTimeout(() => {
-        notification.style.transform = 'translateX(100%)';
-        notification.style.opacity = '0';
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.parentNode.removeChild(notification);
-            }
-        }, 300);
-    }, type === 'error' ? 5000 : 3000);
-}
-
-function getNotificationIcon(type) {
-    switch (type) {
-        case 'success': return '✓';
-        case 'error': return '✕';
-        case 'warning': return '⚠';
-        case 'info': 
-        default: return 'ℹ';
+    // Show/hide tab content
+    const tabContents = document.querySelectorAll('.debug-tab-content');
+    tabContents.forEach(content => {
+        content.style.display = 'none';
+    });
+    
+    const activeTab = document.getElementById(`${tabName}-tab`);
+    if (activeTab) {
+        activeTab.style.display = 'block';
     }
 }
 
-// Utility functions
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
-// Error handling
-window.addEventListener('error', function(event) {
-    console.error('JavaScript error:', event.error);
-    showNotification('An unexpected error occurred. Check the logs for details.', 'error');
-});
-
-// Handle page visibility changes
-document.addEventListener('visibilitychange', function() {
-    if (!document.hidden) {
-        // Page became visible, refresh status
-        requestStatus();
-    }
-});
-
-// Add dynamic notification styles
-function addNotificationStyles() {
-    if (document.getElementById('notification-styles')) {
-        return; // Already added
+function updateRegisters(registers) {
+    if (!registersList) return;
+    
+    if (!registers || registers.length === 0) {
+        registersList.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">📊</div>
+                <p>No register data</p>
+                <small>Waiting for debug information...</small>
+            </div>
+        `;
+        return;
     }
     
-    const style = document.createElement('style');
-    style.id = 'notification-styles';
-    style.textContent = `
-        .notification {
-            position: fixed;
-            top: var(--space-lg);
-            right: var(--space-lg);
-            max-width: 300px;
-            padding: var(--space-md);
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
-            color: var(--text-primary);
-            font-size: var(--font-size);
-            box-shadow: var(--shadow-medium);
-            z-index: 1000;
-            transform: translateX(100%);
-            opacity: 0;
-            transition: all 0.3s ease;
-            word-wrap: break-word;
-        }
-        
-        .notification.notification-success {
-            border-left: 3px solid var(--success-color);
-        }
-        
-        .notification.notification-error {
-            border-left: 3px solid var(--error-color);
-        }
-        
-        .notification.notification-warning {
-            border-left: 3px solid var(--warning-color);
-        }
-        
-        .notification.notification-info {
-            border-left: 3px solid var(--info-color);
-        }
-        
-        @media (max-width: 768px) {
-            .notification {
-                left: var(--space-sm);
-                right: var(--space-sm);
-                max-width: none;
-                top: var(--space-sm);
-                transform: translateY(-100%);
-            }
-        }
-    `;
-    document.head.appendChild(style);
+    const registerItems = registers.map(reg => `
+        <div class="register-item">
+            <div class="register-name">${reg.name}</div>
+            <div class="register-value">${reg.value}</div>
+            ${reg.description ? `<div class="register-desc">${reg.description}</div>` : ''}
+        </div>
+    `).join('');
+    
+    registersList.innerHTML = `<div class="register-grid">${registerItems}</div>`;
 }
 
-// Initialize notification styles
-addNotificationStyles();
+function updateMemoryViewer(data) {
+    if (!memoryViewer) return;
+    
+    if (!data || !data.data) {
+        memoryViewer.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">💾</div>
+                <p>No memory data</p>
+                <small>Enter an address and click Read</small>
+            </div>
+        `;
+        return;
+    }
+    
+    // Parse memory data (assuming hex format)
+    const address = data.address;
+    const memoryData = data.data;
+    
+    memoryViewer.innerHTML = `
+        <div class="memory-dump">
+            <div class="memory-header">
+                <span>Address</span>
+                <span>Hex</span>
+                <span>ASCII</span>
+            </div>
+            <div class="memory-content">
+                <code>${formatMemoryDump(address, memoryData)}</code>
+            </div>
+        </div>
+    `;
+}
 
-// Export for testing
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        showNotification,
-        updateSystemStatus,
-        updateBoardsList
-    };
+function formatMemoryDump(baseAddress, data) {
+    // Simple memory dump formatter
+    // This is a placeholder - actual implementation would parse binary data
+    return `${baseAddress}: ${data}`;
+}
+
+// Footer updates
+function updateFooterStatus(status) {
+    const footerStatus = document.getElementById('footer-status');
+    if (footerStatus) {
+        footerStatus.textContent = status;
+    }
+}
+
+function showError(message) {
+    updateFooterStatus(`Error: ${message}`);
+    console.error('Extension error:', message);
 }

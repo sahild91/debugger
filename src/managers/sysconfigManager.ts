@@ -23,7 +23,10 @@ export class SysConfigManager {
     private outputChannel: vscode.OutputChannel;
     private sysConfigPath: string;
     private downloadUtils: DownloadUtils;
-    
+    private readonly SYSCONFIG_PATH_KEY = 'mspm0.sysconfigPath';
+    private readonly SYSCONFIG_CLI_PATH_KEY = 'mspm0.sysconfigCliPath';
+    private readonly SYSCONFIG_LAST_DETECTED_KEY = 'mspm0.sysconfigLastDetected';
+
     // TI SysConfig direct download URLs (v1.24.2.4234)
     private readonly SYSCONFIG_URLS = {
         'win32-x64': 'https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-nsUM6f7Vvb/1.24.2.4234/sysconfig-1.24.2_4234-setup.exe',
@@ -41,6 +44,34 @@ export class SysConfigManager {
         this.outputChannel = outputChannel;
         this.sysConfigPath = path.join(context.globalStorageUri.fsPath, this.SYSCONFIG_FOLDER_NAME);
         this.downloadUtils = new DownloadUtils(outputChannel);
+    }
+
+    /**
+ * Save SysConfig paths to globalState
+ */
+    private async saveSysConfigPath(basePath: string, cliPath?: string): Promise<void> {
+        try {
+            await this.context.globalState.update(this.SYSCONFIG_PATH_KEY, basePath);
+            if (cliPath) {
+                await this.context.globalState.update(this.SYSCONFIG_CLI_PATH_KEY, cliPath);
+            }
+            await this.context.globalState.update(this.SYSCONFIG_LAST_DETECTED_KEY, new Date().toISOString());
+            this.outputChannel.appendLine(`💾 Saved SysConfig path: ${basePath}`);
+        } catch (error) {
+            this.outputChannel.appendLine(`⚠️  Failed to save SysConfig path: ${error}`);
+        }
+    }
+
+    /**
+     * Load saved SysConfig CLI path
+     */
+    private async loadSavedSysConfigCliPath(): Promise<string | undefined> {
+        const savedPath = this.context.globalState.get<string>(this.SYSCONFIG_CLI_PATH_KEY);
+        if (savedPath && fs.existsSync(savedPath)) {
+            this.outputChannel.appendLine(`📂 Loaded saved SysConfig CLI path: ${savedPath}`);
+            return savedPath;
+        }
+        return undefined;
     }
 
     async isSysConfigInstalled(): Promise<boolean> {
@@ -85,12 +116,27 @@ export class SysConfigManager {
 
             this.outputChannel.appendLine('Searching for SysConfig in multiple locations...');
 
+            // Priority 0: Check saved path
+            const savedCliPath = await this.loadSavedSysConfigCliPath();
+            if (savedCliPath) {
+                const savedBasePath = this.context.globalState.get<string>(this.SYSCONFIG_PATH_KEY);
+                if (savedBasePath && fs.existsSync(savedBasePath)) {
+                    const version = await this.getSysConfigVersion(savedCliPath);
+                    return {
+                        version,
+                        path: savedBasePath,
+                        isInstalled: true,
+                        cliPath: savedCliPath
+                    };
+                }
+            }
+
             for (const searchPath of searchPaths) {
                 this.outputChannel.appendLine(`Checking: ${searchPath}`);
-                
+
                 if (fs.existsSync(searchPath)) {
                     this.outputChannel.appendLine(`Found directory: ${searchPath}`);
-                    
+
                     const sysConfigInfo = await this.validateSysConfigAtPath(searchPath);
                     if (sysConfigInfo.isInstalled) {
                         this.outputChannel.appendLine(`✅ Valid SysConfig found at: ${searchPath}`);
@@ -134,7 +180,7 @@ export class SysConfigManager {
 
         try {
             const platform = PlatformUtils.getCurrentPlatform();
-            
+
             // Look for SysConfig CLI executable
             const possibleCliPaths = this.getSysConfigCliPaths(sysConfigPath, platform);
 
@@ -142,7 +188,7 @@ export class SysConfigManager {
                 this.outputChannel.appendLine(`  Checking CLI executable: ${possiblePath}`);
                 if (fs.existsSync(possiblePath)) {
                     this.outputChannel.appendLine(`  ✅ Found SysConfig CLI: ${possiblePath}`);
-                    
+
                     // Try to get version information
                     const version = await this.getSysConfigVersion(possiblePath);
 
@@ -158,7 +204,7 @@ export class SysConfigManager {
             }
 
             return defaultInfo;
-            
+
         } catch (error) {
             this.outputChannel.appendLine(`Error validating SysConfig: ${error}`);
             return defaultInfo;
@@ -201,10 +247,10 @@ export class SysConfigManager {
         try {
             const { spawn } = require('child_process');
             const platform = PlatformUtils.getCurrentPlatform();
-            
+
             return new Promise<string>((resolve) => {
                 let versionProcess: any;
-                
+
                 if (platform.startsWith('win32') && cliPath.endsWith('.bat')) {
                     // On Windows, batch files need to be run through cmd
                     versionProcess = spawn('cmd', ['/c', `"${cliPath}"`, '--version'], {
@@ -269,11 +315,11 @@ export class SysConfigManager {
 
         try {
             const { exec } = require('child_process');
-            
+
             return new Promise((resolve) => {
                 // Query registry for TI SysConfig installation paths
                 const regQuery = 'reg query "HKEY_LOCAL_MACHINE\\SOFTWARE\\Texas Instruments" /s /f "sysconfig" 2>nul';
-                
+
                 exec(regQuery, (error: any, stdout: string, stderr: any) => {
                     if (error || !stdout) {
                         this.outputChannel.appendLine('No SysConfig registry entries found');
@@ -305,7 +351,7 @@ export class SysConfigManager {
 
     async installSysConfig(progressCallback?: (progress: SysConfigSetupProgress) => void): Promise<void> {
         let downloadPath: string | undefined;
-        
+
         try {
             // Check if already installed
             if (await this.isSysConfigInstalled()) {
@@ -341,7 +387,7 @@ export class SysConfigManager {
             // Download SysConfig installer
             const fileName = this.getInstallerFileName(downloadUrl);
             downloadPath = path.join(os.tmpdir(), `sysconfig-${Date.now()}-${fileName}`);
-            
+
             await this.downloadUtils.downloadFile(downloadUrl, downloadPath, (progress) => {
                 progressCallback?.({
                     stage: 'downloading',
@@ -380,7 +426,7 @@ export class SysConfigManager {
             let installationValid = false;
             let validationError = '';
             let sysConfigInfo: SysConfigInfo | null = null;
-            
+
             try {
                 sysConfigInfo = await this.getSysConfigInfo();
                 installationValid = sysConfigInfo.isInstalled;
@@ -403,7 +449,7 @@ export class SysConfigManager {
                     };
                 }
             }
-            
+
             if (!installationValid) {
                 throw new Error(`SysConfig validation failed: ${validationError}`);
             }
@@ -418,6 +464,10 @@ export class SysConfigManager {
             }
 
             this.outputChannel.appendLine(`TI SysConfig installed successfully. Version: ${sysConfigInfo?.version || 'Unknown'}`);
+
+            const cliPath = this.getSysConfigCliPath();
+
+            await this.saveSysConfigPath(this.sysConfigPath, cliPath);
 
             progressCallback?.({
                 stage: 'complete',
@@ -441,9 +491,9 @@ export class SysConfigManager {
 
             // Clean up installation directory on failure - BUT ONLY if validation actually failed
             // Don't delete if the installation succeeded but validation had issues
-            const isActualInstallationFailure = !fs.existsSync(this.sysConfigPath) || 
-                                               !fs.readdirSync(this.sysConfigPath).length;
-                                               
+            const isActualInstallationFailure = !fs.existsSync(this.sysConfigPath) ||
+                !fs.readdirSync(this.sysConfigPath).length;
+
             if (isActualInstallationFailure && fs.existsSync(this.sysConfigPath)) {
                 try {
                     fs.rmSync(this.sysConfigPath, { recursive: true, force: true });
@@ -465,168 +515,168 @@ export class SysConfigManager {
     }
 
     private async installSysConfigFromFile(installerPath: string, platform: string): Promise<void> {
-    const { spawnSync, spawn } = require("child_process");
-        
+        const { spawnSync, spawn } = require("child_process");
+
         return new Promise((resolve, reject) => {
             // Ensure install directory exists
             if (!fs.existsSync(this.sysConfigPath)) {
                 fs.mkdirSync(this.sysConfigPath, { recursive: true });
             }
 
-      if (platform.startsWith("darwin")) {
-        let mountPoint: string | null = null;
-        try {
-          this.outputChannel.appendLine(
-            `Step 1: Mounting DMG: ${installerPath}`
-          );
-          const attachProcess = spawnSync("hdiutil", [
-            "attach",
-            installerPath,
-            "-nobrowse",
-          ]);
+            if (platform.startsWith("darwin")) {
+                let mountPoint: string | null = null;
+                try {
+                    this.outputChannel.appendLine(
+                        `Step 1: Mounting DMG: ${installerPath}`
+                    );
+                    const attachProcess = spawnSync("hdiutil", [
+                        "attach",
+                        installerPath,
+                        "-nobrowse",
+                    ]);
 
-          if (attachProcess.status !== 0) {
-            const stderr = attachProcess.stderr.toString();
-            throw new Error(
-              `Failed to mount DMG. Exit code: ${attachProcess.status}. Stderr: ${stderr}`
-            );
-          }
+                    if (attachProcess.status !== 0) {
+                        const stderr = attachProcess.stderr.toString();
+                        throw new Error(
+                            `Failed to mount DMG. Exit code: ${attachProcess.status}. Stderr: ${stderr}`
+                        );
+                    }
 
-          const attachOutput = attachProcess.stdout.toString();
-          this.outputChannel.appendLine(`Mount output: ${attachOutput}`);
+                    const attachOutput = attachProcess.stdout.toString();
+                    this.outputChannel.appendLine(`Mount output: ${attachOutput}`);
 
-          const mountMatch = attachOutput.match(/\/Volumes\/[^\n\r]+/);
-          if (!mountMatch) {
-            throw new Error(
-              "Could not determine mount point from hdiutil output."
-            );
-          }
-          mountPoint = mountMatch[0].trim();
-          this.outputChannel.appendLine(`DMG mounted at: ${mountPoint}`);
+                    const mountMatch = attachOutput.match(/\/Volumes\/[^\n\r]+/);
+                    if (!mountMatch) {
+                        throw new Error(
+                            "Could not determine mount point from hdiutil output."
+                        );
+                    }
+                    mountPoint = mountMatch[0].trim();
+                    this.outputChannel.appendLine(`DMG mounted at: ${mountPoint}`);
 
-          if (mountPoint) {
-            // Find the installer .app on the mounted volume
-            const appName = fs
-              .readdirSync(mountPoint)
-              .find((file) => file.endsWith(".app"));
-            if (!appName) {
-              throw new Error(
-                "Could not find installer .app file on the mounted volume."
-              );
+                    if (mountPoint) {
+                        // Find the installer .app on the mounted volume
+                        const appName = fs
+                            .readdirSync(mountPoint)
+                            .find((file) => file.endsWith(".app"));
+                        if (!appName) {
+                            throw new Error(
+                                "Could not find installer .app file on the mounted volume."
+                            );
+                        }
+                        const installerAppPath = path.join(mountPoint, appName);
+
+                        this.outputChannel.appendLine(
+                            `Step 2: Running installer from ${installerAppPath}`
+                        );
+
+                        // We don't use the generic `executeInstaller` here because this is a specific sequence.
+                        const installProcess = spawnSync("open", [
+                            "-a",
+                            installerAppPath,
+                            "-W", // Wait for the app to exit
+                            "--args",
+                            "--mode",
+                            "unattended",
+                            "--prefix",
+                            this.sysConfigPath,
+                        ]);
+
+                        if (installProcess.status !== 0) {
+                            const stderr = installProcess.stderr.toString();
+                            throw new Error(
+                                `SysConfig installer failed. Exit code: ${installProcess.status}. Stderr: ${stderr}`
+                            );
+                        }
+
+                        this.outputChannel.appendLine("Installer finished successfully.");
+                        resolve();
+                    } else {
+                        throw new Error("Mount point was unexpectedly null.");
+                    }
+                } catch (error) {
+                    reject(error);
+                } finally {
+                    if (mountPoint) {
+                        this.outputChannel.appendLine(
+                            `Step 3: Unmounting DMG at ${mountPoint}`
+                        );
+                        // Use sync here to ensure it happens before the function truly exits
+                        spawnSync("hdiutil", ["detach", mountPoint], { stdio: "ignore" });
+                    }
+                }
+                return;
             }
-            const installerAppPath = path.join(mountPoint, appName);
+
+            // --- Logic for Windows and Linux ---
+            let installCommand: string;
+            let installArgs: string[];
+
+            if (platform.startsWith("win32")) {
+                installCommand = installerPath;
+                installArgs = ["--mode", "unattended", "--prefix", this.sysConfigPath];
+            } else { // Linux
+                this.outputChannel.appendLine('Making SysConfig installer executable...');
+                fs.chmodSync(installerPath, '755'); // Make the .run file executable
+
+                installCommand = installerPath; // The command IS the installer file itself
+                installArgs = [
+                    "--mode",
+                    "unattended",
+                    "--prefix",
+                    this.sysConfigPath,
+                ];
+            }
 
             this.outputChannel.appendLine(
-              `Step 2: Running installer from ${installerAppPath}`
+                `Install command: ${installCommand} ${installArgs.join(" ")}`
             );
-
-            // We don't use the generic `executeInstaller` here because this is a specific sequence.
-            const installProcess = spawnSync("open", [
-              "-a",
-              installerAppPath,
-              "-W", // Wait for the app to exit
-              "--args",
-              "--mode",
-              "unattended",
-              "--prefix",
-              this.sysConfigPath,
-            ]);
-
-            if (installProcess.status !== 0) {
-              const stderr = installProcess.stderr.toString();
-              throw new Error(
-                `SysConfig installer failed. Exit code: ${installProcess.status}. Stderr: ${stderr}`
-              );
-            }
-
-            this.outputChannel.appendLine("Installer finished successfully.");
-            resolve();
-          } else {
-            throw new Error("Mount point was unexpectedly null.");
-          }
-        } catch (error) {
-          reject(error);
-        } finally {
-          if (mountPoint) {
-            this.outputChannel.appendLine(
-              `Step 3: Unmounting DMG at ${mountPoint}`
+            this.executeInstaller(
+                installCommand,
+                installArgs,
+                resolve,
+                reject,
+                platform
             );
-            // Use sync here to ensure it happens before the function truly exits
-            spawnSync("hdiutil", ["detach", mountPoint], { stdio: "ignore" });
-          }
-        }
-        return;
-      }
-
-      // --- Logic for Windows and Linux ---
-      let installCommand: string;
-      let installArgs: string[];
-
-      if (platform.startsWith("win32")) {
-        installCommand = installerPath;
-        installArgs = ["--mode", "unattended", "--prefix", this.sysConfigPath];
-      } else { // Linux
-        this.outputChannel.appendLine('Making SysConfig installer executable...');
-        fs.chmodSync(installerPath, '755'); // Make the .run file executable
-
-        installCommand = installerPath; // The command IS the installer file itself
-        installArgs = [
-            "--mode",
-            "unattended",
-            "--prefix",
-            this.sysConfigPath,
-        ];
-     }
-
-      this.outputChannel.appendLine(
-        `Install command: ${installCommand} ${installArgs.join(" ")}`
-      );
-      this.executeInstaller(
-        installCommand,
-        installArgs,
-        resolve,
-        reject,
-        platform
-      );
-    });
-  }
+        });
+    }
 
 
     private executeInstaller(
-        command: string, 
-        args: string[], 
-        resolve: Function, 
-        reject: Function, 
+        command: string,
+        args: string[],
+        resolve: Function,
+        reject: Function,
         platform: string
     ): void {
         const { spawn } = require('child_process');
 
         // Try different execution methods for Windows, including different argument formats
-        const executionMethods = platform.startsWith('win32') 
+        const executionMethods = platform.startsWith('win32')
             ? [
-                { 
-                    name: 'Standard unattended install', 
+                {
+                    name: 'Standard unattended install',
                     useShell: false,
                     args: ['--mode', 'unattended', '--prefix', this.sysConfigPath]
                 },
-                { 
-                    name: 'NSIS silent install', 
+                {
+                    name: 'NSIS silent install',
                     useShell: false,
                     args: ['/S', `/D=${this.sysConfigPath}`]
                 },
-                { 
-                    name: 'Shell execution with standard args', 
+                {
+                    name: 'Shell execution with standard args',
                     useShell: true,
                     args: ['--mode', 'unattended', '--prefix', this.sysConfigPath]
                 },
-                { 
-                    name: 'PowerShell execution', 
+                {
+                    name: 'PowerShell execution',
                     usePowerShell: true,
                     args: ['--mode', 'unattended', '--prefix', this.sysConfigPath]
                 }
             ]
-            : [{ 
-                name: 'Direct execution', 
+            : [{
+                name: 'Direct execution',
                 useShell: false,
                 args: args
             }];
@@ -688,13 +738,13 @@ export class SysConfigManager {
 
                 installProcess.on('error', (error: any) => {
                     this.outputChannel.appendLine(`${method.name} process error: ${error.message}`);
-                    
+
                     if (error.message.includes('EBUSY')) {
                         this.outputChannel.appendLine('File appears to be locked or in use by another process');
                         this.outputChannel.appendLine('This might be caused by antivirus software or Windows Defender');
                         this.outputChannel.appendLine('Try adding exclusions for the temp and extension directories');
                     }
-                    
+
                     tryNextMethod();
                 });
 
@@ -755,14 +805,14 @@ export class SysConfigManager {
     getSysConfigCliPath(): string {
         const platform = PlatformUtils.getCurrentPlatform();
         const possiblePaths = this.getSysConfigCliPaths(this.sysConfigPath, platform);
-        
+
         // Return the first existing path
         for (const path of possiblePaths) {
             if (fs.existsSync(path)) {
                 return path;
             }
         }
-        
+
         // Return the most likely path even if it doesn't exist
         return possiblePaths[0];
     }
@@ -780,7 +830,7 @@ export class SysConfigManager {
     async validateSysConfigForBuild(): Promise<boolean> {
         try {
             const cliPath = this.getSysConfigCliPath();
-            
+
             if (!fs.existsSync(cliPath)) {
                 this.outputChannel.appendLine(`SysConfig CLI not found at: ${cliPath}`);
                 return false;
@@ -789,10 +839,10 @@ export class SysConfigManager {
             // Test if CLI is executable
             const { spawn } = require('child_process');
             const platform = PlatformUtils.getCurrentPlatform();
-            
+
             return new Promise((resolve) => {
                 let testProcess: any;
-                
+
                 if (platform.startsWith('win32') && cliPath.endsWith('.bat')) {
                     // On Windows, batch files need to be run through cmd
                     testProcess = spawn('cmd', ['/c', `"${cliPath}"`, '--help'], {

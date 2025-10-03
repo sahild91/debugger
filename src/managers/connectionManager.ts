@@ -10,16 +10,84 @@ export interface SerialPort {
     serialNumber?: string;
     vendorId?: string;
     productId?: string;
-    deviceType?: 'ESP32' | 'Arduino' | 'MCP' | 'Unknown';
+    deviceType?: 'MSPM0' | 'ESP32' | 'Arduino' | 'MCP' | 'Unknown';
+}
+
+// Alias for backward compatibility with other code
+export interface BoardInfo extends SerialPort {
+    friendlyName: string;
+    isConnected: boolean;
 }
 
 export class ConnectionManager {
+    private context: vscode.ExtensionContext;
     private outputChannel: vscode.OutputChannel;
     private selectedPort: string | null = null;
     private selectedPortInfo: SerialPort | null = null;
+    
+    // GlobalState keys for persistent storage
+    private readonly SELECTED_PORT_KEY = 'mspm0.selectedPort';
+    private readonly SELECTED_PORT_INFO_KEY = 'mspm0.selectedPortInfo';
+    private readonly PORT_LAST_SELECTED_KEY = 'mspm0.portLastSelected';
 
-    constructor(outputChannel: vscode.OutputChannel) {
+    constructor(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
+        this.context = context;
         this.outputChannel = outputChannel;
+        
+        // Auto-load saved port on initialization
+        this.loadSavedPort();
+    }
+
+    /**
+     * Save selected port to globalState for persistence
+     */
+    private async saveSelectedPort(port: string, portInfo?: SerialPort): Promise<void> {
+        try {
+            await this.context.globalState.update(this.SELECTED_PORT_KEY, port);
+            if (portInfo) {
+                await this.context.globalState.update(this.SELECTED_PORT_INFO_KEY, portInfo);
+            }
+            await this.context.globalState.update(this.PORT_LAST_SELECTED_KEY, new Date().toISOString());
+            this.outputChannel.appendLine(`💾 Saved selected port: ${port}`);
+        } catch (error) {
+            this.outputChannel.appendLine(`⚠️  Failed to save selected port: ${error}`);
+        }
+    }
+
+    /**
+     * Load saved port from globalState
+     */
+    private async loadSavedPort(): Promise<void> {
+        try {
+            const savedPort = this.context.globalState.get<string>(this.SELECTED_PORT_KEY);
+            const savedPortInfo = this.context.globalState.get<SerialPort>(this.SELECTED_PORT_INFO_KEY);
+            
+            if (savedPort) {
+                // Verify the port still exists
+                const availablePorts = await this.getAvailablePorts();
+                const portExists = availablePorts.find(p => p.path === savedPort);
+                
+                if (portExists) {
+                    this.selectedPort = savedPort;
+                    this.selectedPortInfo = savedPortInfo || portExists;
+                    this.outputChannel.appendLine(`📂 Loaded saved port: ${savedPort}`);
+                } else {
+                    this.outputChannel.appendLine(`⚠️  Saved port ${savedPort} no longer available`);
+                    await this.clearSavedPort();
+                }
+            }
+        } catch (error) {
+            this.outputChannel.appendLine(`⚠️  Failed to load saved port: ${error}`);
+        }
+    }
+
+    /**
+     * Clear saved port (useful for troubleshooting)
+     */
+    private async clearSavedPort(): Promise<void> {
+        await this.context.globalState.update(this.SELECTED_PORT_KEY, undefined);
+        await this.context.globalState.update(this.SELECTED_PORT_INFO_KEY, undefined);
+        await this.context.globalState.update(this.PORT_LAST_SELECTED_KEY, undefined);
     }
 
     async getAvailablePorts(): Promise<SerialPort[]> {
@@ -47,13 +115,8 @@ export class ConnectionManager {
 
         // Get basic port list
         try {
-            const { stdout } = await execAsync('ls /dev/cu.* 2>/dev/null || true');
-            const portPaths = stdout.trim().split('\n').filter(path =>
-                path.includes('usbserial') || path.includes('usbmodem')
-            );
-
-            // Get USB device info for VID/PID
-            const { stdout: usbInfo } = await execAsync('system_profiler SPUSBDataType 2>/dev/null || echo ""');
+            const { stdout } = await execAsync('ls /dev/cu.* /dev/tty.* 2>/dev/null | grep -E "(usbserial|usbmodem|USB)" || true');
+            const portPaths = stdout.trim().split('\n').filter(path => path.trim());
 
             for (const portPath of portPaths) {
                 const port: SerialPort = {
@@ -61,14 +124,20 @@ export class ConnectionManager {
                     deviceType: 'Unknown'
                 };
 
-                // Try to extract device info from system_profiler output
-                const deviceInfo = this.parseUSBInfo(usbInfo, portPath);
-                if (deviceInfo) {
-                    port.manufacturer = deviceInfo.manufacturer;
-                    port.serialNumber = deviceInfo.serialNumber;
-                    port.vendorId = deviceInfo.vendorId;
-                    port.productId = deviceInfo.productId;
-                    port.deviceType = this.identifyDeviceType(deviceInfo.vendorId, deviceInfo.productId);
+                // Try to get device info using system_profiler
+                try {
+                    const { stdout: usbInfo } = await execAsync(`system_profiler SPUSBDataType 2>/dev/null`);
+                    const deviceInfo = this.parseUSBInfo(usbInfo, portPath);
+
+                    if (deviceInfo) {
+                        port.manufacturer = deviceInfo.manufacturer;
+                        port.serialNumber = deviceInfo.serialNumber;
+                        port.vendorId = deviceInfo.vendorId;
+                        port.productId = deviceInfo.productId;
+                        port.deviceType = this.identifyDeviceType(deviceInfo.vendorId, deviceInfo.productId);
+                    }
+                } catch (error) {
+                    // Continue without device info
                 }
 
                 ports.push(port);
@@ -84,8 +153,7 @@ export class ConnectionManager {
         const ports: SerialPort[] = [];
 
         try {
-            // Use PowerShell to get COM port information with VID/PID
-            const command = `powershell -Command "Get-WmiObject -Class Win32_PnPEntity | Where-Object { $_.Caption -match 'COM[0-9]+' } | ForEach-Object { $_.Caption + '|' + $_.DeviceID + '|' + $_.Manufacturer }"`;
+            const command = `powershell -Command "Get-WmiObject -Query \\"SELECT * FROM Win32_SerialPort\\" | ForEach-Object { $_.Caption + '|' + $_.DeviceID + '|' + $_.Manufacturer }"`;
             const { stdout } = await execAsync(command);
 
             const lines = stdout.trim().split('\n');
@@ -208,13 +276,14 @@ export class ConnectionManager {
         return Object.keys(deviceInfo).length > 0 ? deviceInfo : null;
     }
 
-    private identifyDeviceType(vendorId?: string, productId?: string): 'ESP32' | 'Arduino' | 'MCP' | 'Unknown' {
+    private identifyDeviceType(vendorId?: string, productId?: string): 'MSPM0' | 'ESP32' | 'Arduino' | 'MCP' | 'Unknown' {
         if (!vendorId) return 'Unknown';
 
         const vid = vendorId.toUpperCase();
 
-        // Common VID/PID combinations
-        const deviceMap: { [key: string]: 'ESP32' | 'Arduino' | 'MCP' } = {
+        // Device type mapping
+        const deviceMap: { [key: string]: 'MSPM0' | 'ESP32' | 'Arduino' | 'MCP' } = {
+            '0451': 'MSPM0',      // Texas Instruments (MSPM0)
             '10C4': 'ESP32',      // Silicon Labs (used by many ESP32 boards)
             '1A86': 'ESP32',      // QinHeng Electronics (CH340)
             '0403': 'ESP32',      // FTDI (used by some ESP32 boards)
@@ -259,6 +328,9 @@ export class ConnectionManager {
                 this.selectedPort = selectedPortInfo.path;
                 this.selectedPortInfo = selectedPortInfo;
 
+                // Save to globalState
+                await this.saveSelectedPort(selectedPortInfo.path, selectedPortInfo);
+
                 const deviceInfo = [
                     `Port: ${selectedPortInfo.path}`,
                     selectedPortInfo.deviceType !== 'Unknown' && `Type: ${selectedPortInfo.deviceType}`,
@@ -297,22 +369,242 @@ export class ConnectionManager {
         return this.selectedPort !== null;
     }
 
-    disconnect(): void {
+    async disconnect(): Promise<void> {
         if (this.selectedPort) {
             this.outputChannel.appendLine(`🔌 Disconnected from port: ${this.selectedPort}`);
             vscode.window.showInformationMessage(`Disconnected from ${this.selectedPort}`);
         }
         this.selectedPort = null;
         this.selectedPortInfo = null;
+        
+        // Clear from globalState
+        await this.clearSavedPort();
     }
 
     getPortStatusText(): string {
         if (this.selectedPort) {
-            const deviceType = this.selectedPortInfo?.deviceType !== 'Unknown'
+            const deviceType = this.selectedPortInfo?.deviceType !== 'Unknown' && this.selectedPortInfo?.deviceType
                 ? ` (${this.selectedPortInfo?.deviceType})`
                 : '';
             return `${this.selectedPort}${deviceType}`;
         }
         return 'No port selected';
+    }
+
+    // ========================================
+    // MSPM0-Specific Board Detection Methods
+    // (for backward compatibility with SerialManager)
+    // ========================================
+
+    /**
+     * Detect boards and return as BoardInfo format
+     */
+    async detectBoards(): Promise<BoardInfo[]> {
+        try {
+            this.outputChannel.appendLine('🔍 Detecting boards...');
+            const ports = await this.getAvailablePorts();
+            
+            // Convert to BoardInfo format
+            const boards: BoardInfo[] = ports.map(port => ({
+                ...port,
+                friendlyName: this.getBoardFriendlyName(port),
+                isConnected: this.selectedPort === port.path
+            }));
+
+            this.outputChannel.appendLine(`Found ${boards.length} board(s)`);
+            boards.forEach(board => {
+                this.outputChannel.appendLine(`  - ${board.friendlyName}`);
+            });
+
+            return boards;
+        } catch (error) {
+            this.outputChannel.appendLine(`Error detecting boards: ${error}`);
+            return [];
+        }
+    }
+
+    /**
+     * Get only MSPM0 boards
+     */
+    async getConnectedMSPM0Boards(): Promise<BoardInfo[]> {
+        const allBoards = await this.detectBoards();
+        return allBoards.filter(board => this.isMSPM0Board(board));
+    }
+
+    /**
+     * Check if a board is an MSPM0 board
+     */
+    private isMSPM0Board(board: BoardInfo | SerialPort): boolean {
+        const vendorId = board.vendorId?.toLowerCase();
+        return vendorId === '0451' || board.deviceType === 'MSPM0'; // TI vendor ID
+    }
+
+    /**
+     * Get default board (prioritize MSPM0, then any board)
+     */
+    async getDefaultBoard(): Promise<BoardInfo | null> {
+        const mspm0Boards = await this.getConnectedMSPM0Boards();
+        
+        if (mspm0Boards.length === 0) {
+            const allBoards = await this.detectBoards();
+            return allBoards.length > 0 ? allBoards[0] : null;
+        }
+        
+        return mspm0Boards[0];
+    }
+
+    /**
+     * Get friendly board name
+     */
+    private getBoardFriendlyName(port: SerialPort): string {
+        if (port.deviceType === 'MSPM0') {
+            return `TI MSPM0 LaunchPad (${port.path})`;
+        } else if (port.manufacturer && port.deviceType !== 'Unknown') {
+            return `${port.manufacturer} ${port.deviceType} (${port.path})`;
+        } else if (port.manufacturer) {
+            return `${port.manufacturer} (${port.path})`;
+        } else if (port.deviceType !== 'Unknown') {
+            return `${port.deviceType} Device (${port.path})`;
+        }
+        return `Serial Device (${port.path})`;
+    }
+
+    /**
+     * Auto-select port if only one MSPM0 board is available
+     */
+    async autoSelectPort(): Promise<boolean> {
+        try {
+            // If already have a saved port and it's valid, keep it
+            if (this.selectedPort) {
+                const ports = await this.getAvailablePorts();
+                if (ports.find(p => p.path === this.selectedPort)) {
+                    this.outputChannel.appendLine(`✅ Auto-selected saved port: ${this.selectedPort}`);
+                    return true;
+                }
+            }
+
+            // Try to auto-select if only one MSPM0 board
+            const mspm0Boards = await this.getConnectedMSPM0Boards();
+            if (mspm0Boards.length === 1) {
+                this.selectedPort = mspm0Boards[0].path;
+                this.selectedPortInfo = mspm0Boards[0];
+                await this.saveSelectedPort(this.selectedPort, this.selectedPortInfo);
+                this.outputChannel.appendLine(`✅ Auto-selected MSPM0 board: ${this.selectedPort}`);
+                return true;
+            }
+
+            return false;
+        } catch (error) {
+            this.outputChannel.appendLine(`⚠️  Auto-select failed: ${error}`);
+            return false;
+        }
+    }
+
+    // ========================================
+    // Connection Management Methods
+    // (for compatibility with debugCommand, flashCommand)
+    // ========================================
+
+    /**
+     * Connect to a board on a specific port
+     * @param port - Serial port path to connect to
+     * @param options - Optional connection options (baudRate, etc.)
+     */
+    async connectToBoard(port: string, options?: any): Promise<void> {
+        try {
+            this.outputChannel.appendLine(`🔌 Connecting to board on ${port}...`);
+            
+            // Verify the port exists
+            const availablePorts = await this.getAvailablePorts();
+            const portInfo = availablePorts.find(p => p.path === port);
+            
+            if (!portInfo) {
+                throw new Error(`Port ${port} not found. Please check the connection.`);
+            }
+
+            // Set as selected port
+            this.selectedPort = port;
+            this.selectedPortInfo = portInfo;
+
+            // Save to globalState
+            await this.saveSelectedPort(port, portInfo);
+
+            this.outputChannel.appendLine(`✅ Connected to ${port}`);
+            if (portInfo.deviceType !== 'Unknown') {
+                this.outputChannel.appendLine(`   Device type: ${portInfo.deviceType}`);
+            }
+
+            // Note: Actual serial port communication would be handled by the SWD debugger CLI
+            // This method just manages the connection state for the extension
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.outputChannel.appendLine(`❌ Connection failed: ${errorMessage}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Disconnect from a specific board port
+     * @param port - Serial port path to disconnect from
+     */
+    async disconnectFromBoard(port: string): Promise<void> {
+        try {
+            if (this.selectedPort === port) {
+                this.outputChannel.appendLine(`🔌 Disconnecting from ${port}...`);
+                
+                this.selectedPort = null;
+                this.selectedPortInfo = null;
+
+                // Clear from globalState
+                await this.clearSavedPort();
+
+                this.outputChannel.appendLine(`✅ Disconnected from ${port}`);
+            } else {
+                this.outputChannel.appendLine(`⚠️  Port ${port} is not the currently selected port`);
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.outputChannel.appendLine(`❌ Disconnection failed: ${errorMessage}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Check if a specific port is connected (selected)
+     * @param port - Serial port path to check
+     */
+    isConnected(port: string): boolean {
+        return this.selectedPort === port;
+    }
+
+    /**
+     * Get all currently connected (selected) ports
+     * Returns array with the selected port, or empty array if none selected
+     */
+    getConnectedPorts(): string[] {
+        return this.selectedPort ? [this.selectedPort] : [];
+    }
+
+    /**
+     * Get the currently connected board info
+     */
+    getConnectedBoard(): BoardInfo | null {
+        if (this.selectedPort && this.selectedPortInfo) {
+            return {
+                ...this.selectedPortInfo,
+                friendlyName: this.getBoardFriendlyName(this.selectedPortInfo),
+                isConnected: true
+            };
+        }
+        return null;
+    }
+
+    /**
+     * Disconnect from all ports (currently just the selected one)
+     */
+    async disconnectAll(): Promise<void> {
+        if (this.selectedPort) {
+            await this.disconnectFromBoard(this.selectedPort);
+        }
     }
 }

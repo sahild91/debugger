@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
-import { SerialManager, BoardInfo } from '../managers/serialManager';
+import { ConnectionManager, BoardInfo } from '../managers/connectionManager';
 import { PlatformUtils } from '../utils/platformUtils';
 
 export interface DebugSession {
@@ -27,7 +27,7 @@ export interface MemoryReadResult {
 export class DebugCommand {
     private context: vscode.ExtensionContext;
     private outputChannel: vscode.OutputChannel;
-    private serialManager: SerialManager;
+    private connectionManager: ConnectionManager;
     private dapProcess: ChildProcess | null = null;
     private currentSession: DebugSession | null = null;
     private dapBinaryPath: string;
@@ -35,11 +35,11 @@ export class DebugCommand {
     constructor(
         context: vscode.ExtensionContext,
         outputChannel: vscode.OutputChannel,
-        serialManager: SerialManager
+        connectionManager: ConnectionManager
     ) {
         this.context = context;
         this.outputChannel = outputChannel;
-        this.serialManager = serialManager;
+        this.connectionManager = connectionManager;
         this.dapBinaryPath = this.getDAPBinaryPath();
     }
 
@@ -63,8 +63,8 @@ export class DebugCommand {
             }
 
             // Ensure board is connected
-            if (!this.serialManager.isConnected(targetBoard.port)) {
-                await this.serialManager.connectToBoard(targetBoard.port);
+            if (!this.connectionManager.isConnected(targetBoard.path)) {
+                await this.connectionManager.connectToBoard(targetBoard.path);
             }
 
             // Create debug session
@@ -203,17 +203,17 @@ export class DebugCommand {
         }
 
         // Check if there are any boards detected
-        const boards = await this.serialManager.detectBoards();
+        const boards = await this.connectionManager.detectBoards();
         if (boards.length === 0) {
             throw new Error('No boards detected. Please connect a board and try again.');
         }
     }
 
     private async getTargetBoard(preferredPort?: string): Promise<BoardInfo | null> {
-        const boards = await this.serialManager.detectBoards();
+        const boards = await this.connectionManager.detectBoards();
 
         if (preferredPort) {
-            const board = boards.find(b => b.port === preferredPort);
+            const board = boards.find(b => b.path === preferredPort);
             if (board) {
                 return board;
             } else {
@@ -222,19 +222,19 @@ export class DebugCommand {
         }
 
         // Try to get connected MSPM0 board
-        const mspm0Boards = await this.serialManager.getConnectedMSPM0Boards();
+        const mspm0Boards = await this.connectionManager.getConnectedMSPM0Boards();
         if (mspm0Boards.length > 0) {
             return mspm0Boards[0];
         }
 
         // Fall back to default board
-        return await this.serialManager.getDefaultBoard();
+        return await this.connectionManager.getDefaultBoard();
     }
 
     private async initializeDAPConnection(board: BoardInfo): Promise<void> {
         // TODO: Initialize the actual DAP connection
         // For now, this is a placeholder
-        this.outputChannel.appendLine(`Initializing DAP connection to ${board.port}`);
+        this.outputChannel.appendLine(`Initializing DAP connection to ${board.path}`);
         
         // Test DAP binary availability
         try {
@@ -253,7 +253,7 @@ export class DebugCommand {
             }
 
             const fullArgs = [
-                '--port', this.currentSession.board.port,
+                '--port', this.currentSession.board.path,
                 '--baud', '115200',
                 ...args
             ];

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
-import { SerialManager, BoardInfo } from '../managers/serialManager';
+import { ConnectionManager, BoardInfo } from '../managers/connectionManager';
 
 export interface FlashOptions {
     port?: string;
@@ -21,17 +21,17 @@ export interface FlashResult {
 export class FlashCommand {
     private context: vscode.ExtensionContext;
     private outputChannel: vscode.OutputChannel;
-    private serialManager: SerialManager;
+    private connectionManager: ConnectionManager;
     private flashProcess: ChildProcess | null = null;
 
     constructor(
         context: vscode.ExtensionContext,
         outputChannel: vscode.OutputChannel,
-        serialManager: SerialManager
+        connectionManager: ConnectionManager
     ) {
         this.context = context;
         this.outputChannel = outputChannel;
-        this.serialManager = serialManager;
+        this.connectionManager = connectionManager;
     }
 
     async execute(options: FlashOptions = {}): Promise<FlashResult> {
@@ -108,18 +108,18 @@ export class FlashCommand {
         }
 
         // Check if there are any boards detected
-        const boards = await this.serialManager.detectBoards();
+        const boards = await this.connectionManager.detectBoards();
         if (boards.length === 0) {
             throw new Error('No boards detected. Please connect a board and try again.');
         }
     }
 
     private async getTargetBoard(preferredPort?: string): Promise<BoardInfo | null> {
-        const boards = await this.serialManager.detectBoards();
+        const boards = await this.connectionManager.detectBoards();
 
         if (preferredPort) {
             // Look for specific port
-            const board = boards.find(b => b.port === preferredPort);
+            const board = boards.find(b => b.path === preferredPort);
             if (board) {
                 return board;
             } else {
@@ -128,22 +128,22 @@ export class FlashCommand {
         }
 
         // Try to get connected MSPM0 board
-        const mspm0Boards = await this.serialManager.getConnectedMSPM0Boards();
+        const mspm0Boards = await this.connectionManager.getConnectedMSPM0Boards();
         if (mspm0Boards.length > 0) {
             return mspm0Boards[0];
         }
 
         // Fall back to any connected board
-        const connectedPorts = this.serialManager.getConnectedPorts();
+        const connectedPorts = this.connectionManager.getConnectedPorts();
         if (connectedPorts.length > 0) {
-            const connectedBoard = boards.find(b => connectedPorts.includes(b.port));
+            const connectedBoard = boards.find(b => connectedPorts.includes(b.path));
             if (connectedBoard) {
                 return connectedBoard;
             }
         }
 
         // Fall back to default board
-        return await this.serialManager.getDefaultBoard();
+        return await this.connectionManager.getDefaultBoard();
     }
 
     private async findBinaryFile(): Promise<string | null> {
@@ -194,7 +194,7 @@ export class FlashCommand {
             // For MVP, we'll use a simplified flash approach
             // TODO: Implement proper flash tool integration
             
-            this.outputChannel.appendLine(`Flashing ${config.binaryPath} to ${config.board.port}`);
+            this.outputChannel.appendLine(`Flashing ${config.binaryPath} to ${config.board.path}`);
             
             if (config.erase) {
                 this.outputChannel.appendLine('Erasing flash memory...');
@@ -297,7 +297,7 @@ export class FlashCommand {
         // Example arguments for TI UniFlash or similar tool:
         args.push('--mode', 'flash');
         args.push('--interface', 'swd');
-        args.push('--connection', config.board.port);
+        args.push('--connection', config.board.path);
         
         if (config.erase) {
             args.push('--erase', 'all');
