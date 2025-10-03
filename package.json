@@ -1,357 +1,168 @@
 {
   "name": "port11-debugger",
   "displayName": "Port11 Debugger",
-  "description": "Comprehensive VS Code extension for MSPM0 development with integrated build, flash, and debug capabilities",
+  "description": "MSPM0 Development and Debugging Extension",
   "version": "0.1.0",
-  "publisher": "port11",
-  "license": "MIT",
+  "publisher": "Red Nerds",
+  "icon": "resources/icon.png",
   "engines": {
-    "vscode": "^1.74.0",
-    "node": ">=18.0.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Debuggers",
-    "Other",
-    "Programming Languages"
+    "Programming Languages",
+    "Other"
   ],
   "keywords": [
-    "mspm0",
+    "MSPM0",
+    "TI",
     "embedded",
-    "debugging",
-    "arm",
-    "cortex-m",
-    "ti",
-    "texas instruments",
-    "microcontroller",
-    "mcu",
-    "firmware",
-    "swd",
-    "dap"
+    "debugger",
+    "ARM"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/port11/port11-debugger.git"
-  },
-  "bugs": {
-    "url": "https://github.com/port11/port11-debugger/issues"
-  },
-  "homepage": "https://github.com/port11/port11-debugger#readme",
-  "icon": "resources/icon.png",
-  "galleryBanner": {
-    "color": "#1e1e1e",
-    "theme": "dark"
-  },
   "activationEvents": [
-    "onStartupFinished",
-    "workspaceContains:**/*.c",
-    "workspaceContains:**/*.cpp",
-    "workspaceContains:**/*.h",
-    "workspaceContains:**/ti_msp_dl_config.*",
-    "workspaceContains:**/*.syscfg"
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "port11-debugger",
+          "title": "Port11 Debugger",
+          "icon": "$(circuit-board)"
+        }
+      ]
+    },
+    "views": {
+      "port11-debugger": [
+        {
+          "id": "port11.debugView",
+          "name": "Port11 Debugger"
+        }
+      ]
+    },
     "commands": [
       {
-        "command": "port11-debugger.openMainPanel",
-        "title": "Open Main Panel",
-        "category": "Port11",
-        "icon": "$(window)"
-      },
-      {
-        "command": "port11-debugger.setup",
-        "title": "Setup Toolchain",
-        "category": "Port11",
+        "command": "port11-debugger.setupToolchain",
+        "title": "Port11: Setup Toolchain",
         "icon": "$(tools)"
       },
       {
         "command": "port11-debugger.build",
-        "title": "Build Project",
-        "category": "Port11",
-        "icon": "$(gear)"
-      },
-      {
-        "command": "port11-debugger.clean",
-        "title": "Clean Build",
-        "category": "Port11",
-        "icon": "$(trash)"
+        "title": "Port11: Build Project",
+        "icon": "$(tools)"
       },
       {
         "command": "port11-debugger.flash",
-        "title": "Flash Firmware",
-        "category": "Port11",
+        "title": "Port11: Flash Firmware",
         "icon": "$(zap)"
       },
       {
         "command": "port11-debugger.debug.start",
-        "title": "Start Debug Session",
-        "category": "Port11",
+        "title": "Port11: Start Debug Session",
         "icon": "$(debug-start)"
       },
       {
         "command": "port11-debugger.debug.stop",
-        "title": "Stop Debug Session",
-        "category": "Port11",
+        "title": "Port11: Stop Debug Session",
         "icon": "$(debug-stop)"
       },
       {
         "command": "port11-debugger.debug.pause",
-        "title": "Pause Debug Session",
-        "category": "Port11",
+        "title": "Port11: Pause Debug Session",
         "icon": "$(debug-pause)"
       },
       {
         "command": "port11-debugger.debug.resume",
-        "title": "Resume Debug Session",
-        "category": "Port11",
+        "title": "Port11: Resume Debug Session",
         "icon": "$(debug-continue)"
       },
       {
         "command": "port11-debugger.debug.restart",
-        "title": "Restart Debug Session",
-        "category": "Port11",
+        "title": "Port11: Restart Debug Session",
         "icon": "$(debug-restart)"
       },
       {
-        "command": "port11-debugger.showPanel",
-        "title": "Show Port11 Panel",
-        "category": "Port11",
-        "icon": "$(window)"
-      },
-      {
-        "command": "port11-debugger.refreshStatus",
-        "title": "Refresh Status",
-        "category": "Port11",
-        "icon": "$(refresh)"
-      },
-      {
         "command": "port11-debugger.detectBoards",
-        "title": "Detect Boards",
-        "category": "Port11",
+        "title": "Port11: Detect Boards",
         "icon": "$(search)"
       },
       {
-        "command": "port11-debugger.openSettings",
-        "title": "Open Settings",
-        "category": "Port11",
-        "icon": "$(settings-gear)"
+        "command": "port11-debugger.refreshView",
+        "title": "Port11: Refresh View",
+        "icon": "$(refresh)"
       },
       {
         "command": "port11-debugger.showLogs",
-        "title": "Show Extension Logs",
-        "category": "Port11",
+        "title": "Port11: Show Output Logs",
         "icon": "$(output)"
-      },
-      {
-        "command": "extension.connectCommand",
-        "title": "Connect to Serial Port",
-        "category": "Port11",
-        "icon": "$(plug)"
-      }
-    ],
-    "keybindings": [
-      {
-        "command": "port11-debugger.build",
-        "key": "ctrl+shift+b",
-        "mac": "cmd+shift+b",
-        "when": "!terminalFocus"
-      },
-      {
-        "command": "port11-debugger.flash",
-        "key": "ctrl+shift+f",
-        "mac": "cmd+shift+f",
-        "when": "!terminalFocus && !editorTextFocus"
-      },
-      {
-        "command": "port11-debugger.debug.start",
-        "key": "f5",
-        "when": "!inDebugMode && resourceExtname =~ /\\.(c|cpp|h)$/"
-      },
-      {
-        "command": "port11-debugger.debug.stop",
-        "key": "shift+f5",
-        "when": "inDebugMode"
       }
     ],
     "menus": {
-      "commandPalette": [
-        {
-          "command": "port11-debugger.setup",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.build",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.clean",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.flash",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.debug.start",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.debug.stop",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.debug.pause",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.debug.resume",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.debug.restart",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.showPanel",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.detectBoards",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.refreshStatus",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.openSettings",
-          "when": "true"
-        },
-        {
-          "command": "port11-debugger.showLogs",
-          "when": "true"
-        },
-        {
-          "command": "extension.connectCommand",
-          "when": "true"
-        }
-      ],
-      "editor/context": [
-        {
-          "command": "port11-debugger.build",
-          "group": "port11@1",
-          "when": "resourceExtname =~ /\\.(c|cpp|h)$/"
-        },
-        {
-          "command": "port11-debugger.flash",
-          "group": "port11@2",
-          "when": "resourceExtname =~ /\\.(c|cpp|h)$/"
-        },
-        {
-          "command": "port11-debugger.debug.start",
-          "group": "port11@3",
-          "when": "resourceExtname =~ /\\.(c|cpp|h)$/ && !inDebugMode"
-        }
-      ],
-      "explorer/context": [
-        {
-          "command": "port11-debugger.build",
-          "group": "port11@1",
-          "when": "explorerResourceIsFolder || resourceExtname =~ /\\.(c|cpp|h)$/"
-        }
-      ],
       "view/title": [
         {
-          "command": "port11-debugger.refreshStatus",
-          "when": "view == port11-debugger.mainView",
-          "group": "navigation@1"
-        },
-        {
-          "command": "port11-debugger.detectBoards",
-          "when": "view == port11-debugger.mainView",
-          "group": "navigation@2"
-        },
-        {
-          "command": "port11-debugger.openSettings",
-          "when": "view == port11-debugger.mainView",
-          "group": "navigation@3"
+          "command": "port11-debugger.refreshView",
+          "when": "view == port11.debugView",
+          "group": "navigation"
         }
       ],
-      "view/item/context": []
-    },
-    "views": {
-      "explorer": [
+      "commandPalette": [
         {
-          "id": "port11-debugger.mainView",
-          "name": "Port11 Debugger",
-          "when": "true",
-          "icon": "$(chip)",
-          "contextualTitle": "Port11 Debugger"
+          "command": "port11-debugger.setupToolchain"
+        },
+        {
+          "command": "port11-debugger.build"
+        },
+        {
+          "command": "port11-debugger.flash"
+        },
+        {
+          "command": "port11-debugger.debug.start"
+        },
+        {
+          "command": "port11-debugger.debug.stop"
+        },
+        {
+          "command": "port11-debugger.debug.pause"
+        },
+        {
+          "command": "port11-debugger.debug.resume"
+        },
+        {
+          "command": "port11-debugger.debug.restart"
+        },
+        {
+          "command": "port11-debugger.detectBoards"
+        },
+        {
+          "command": "port11-debugger.refreshView"
         }
       ]
     },
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "port11-debugger-container",
-          "title": "Port11 Debugger",
-          "icon": "$(chip)"
-        }
-      ]
-    },
-    "viewsWelcome": [
-      {
-        "view": "port11-debugger.mainView",
-        "contents": "Welcome to Port11 Debugger!\n\nGet started by setting up your development environment.\n\n[Setup Toolchain](command:port11-debugger.setup)\n\n[Show Main Panel](command:port11-debugger.showPanel)\n\nOr open a MSPM0 project folder to begin development."
-      }
-    ],
     "configuration": {
       "title": "Port11 Debugger",
       "properties": {
         "port11-debugger.autoUpdate": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically update MSPM0 SDK and toolchains when newer versions are available"
+          "description": "Automatically check for SDK and toolchain updates"
         },
         "port11-debugger.sdkPath": {
           "type": "string",
-          "default": "",
-          "description": "Custom path to MSPM0 SDK installation (leave empty for automatic management)"
+          "description": "Custom path to MSPM0 SDK (leave empty for auto-install)"
         },
         "port11-debugger.toolchainPath": {
           "type": "string",
-          "default": "",
-          "description": "Custom path to ARM-CGT-CLANG toolchain installation (leave empty for automatic management)"
+          "description": "Custom path to ARM-CGT-CLANG toolchain (leave empty for auto-install)"
         },
-        "port11-debugger.toolchainVersion": {
+        "port11-debugger.sysConfigPath": {
           "type": "string",
-          "default": "4.0.3.LTS",
-          "description": "Specific ARM-CGT-CLANG version to install",
-          "enum": [
-            "4.0.3.LTS",
-            "3.2.2.LTS",
-            "latest"
-          ]
+          "description": "Custom path to TI SysConfig (leave empty for auto-install)"
         },
         "port11-debugger.serialPort": {
           "type": "string",
-          "default": "",
-          "description": "Override auto-detected serial port (e.g., COM3, /dev/ttyUSB0)"
-        },
-        "port11-debugger.serialBaudRate": {
-          "type": "number",
-          "default": 115200,
-          "description": "Serial communication baud rate for board connection",
-          "enum": [
-            9600,
-            19200,
-            38400,
-            57600,
-            115200,
-            230400,
-            460800,
-            921600
-          ]
+          "description": "Override auto-detected serial port"
         },
         "port11-debugger.debugVerbose": {
           "type": "boolean",
@@ -386,7 +197,7 @@
         },
         "port11-debugger.debugTimeout": {
           "type": "number",
-          "default": 1e4,
+          "default": 10000,
           "description": "Timeout in milliseconds for debug operations (DAP commands)",
           "minimum": 1000,
           "maximum": 60000
@@ -403,179 +214,68 @@
           "type": "array",
           "default": [
             "-O2",
-            "-g",
             "-Wall"
           ],
-          "description": "Additional compiler flags for ARM-CGT-CLANG",
+          "description": "Additional compiler flags for build",
           "items": {
             "type": "string"
           }
-        },
-        "port11-debugger.linkerFlags": {
-          "type": "array",
-          "default": [],
-          "description": "Additional linker flags for ARM-CGT-CLANG",
-          "items": {
-            "type": "string"
-          }
-        },
-        "port11-debugger.showWelcomeOnStartup": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show welcome message and setup guide on first startup"
         },
         "port11-debugger.enableStatusBar": {
           "type": "boolean",
           "default": true,
-          "description": "Show Port11 status information in VS Code status bar"
+          "description": "Show Port11 status bar items"
         },
-        "port11-debugger.logLevel": {
-          "type": "string",
-          "default": "info",
-          "description": "Extension logging level",
-          "enum": [
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ]
+        "port11-debugger.showWelcomeOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show welcome message on first startup"
         },
         "port11-debugger.checkForUpdatesOnStartup": {
           "type": "boolean",
           "default": true,
-          "description": "Check for extension and toolchain updates when VS Code starts"
+          "description": "Check for extension updates on startup"
+        },
+        "port11-debugger.logLevel": {
+          "type": "string",
+          "default": "info",
+          "description": "Logging level for output channel",
+          "enum": [
+            "error",
+            "warning",
+            "info",
+            "debug",
+            "trace"
+          ]
         }
       }
-    },
-    "problemMatchers": [
-      {
-        "name": "armclang",
-        "owner": "port11-debugger",
-        "fileLocation": [
-          "relative",
-          "${workspaceFolder}"
-        ],
-        "pattern": [
-          {
-            "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error|info|note):\\s+(.*)$",
-            "file": 1,
-            "line": 2,
-            "column": 3,
-            "severity": 4,
-            "message": 5
-          }
-        ]
-      },
-      {
-        "name": "armlink",
-        "owner": "port11-debugger",
-        "fileLocation": [
-          "relative",
-          "${workspaceFolder}"
-        ],
-        "pattern": [
-          {
-            "regexp": "^(.*)\\((\\d+)\\):\\s+(Error|Warning):\\s+(.*)$",
-            "file": 1,
-            "line": 2,
-            "severity": 3,
-            "message": 4
-          }
-        ]
-      }
-    ],
-    "taskDefinitions": [
-      {
-        "type": "port11-build",
-        "required": [
-          "target"
-        ],
-        "properties": {
-          "target": {
-            "type": "string",
-            "description": "The build target (e.g., debug, release)"
-          },
-          "clean": {
-            "type": "boolean",
-            "description": "Whether to clean before building"
-          },
-          "verbose": {
-            "type": "boolean",
-            "description": "Enable verbose build output"
-          }
-        }
-      },
-      {
-        "type": "port11-flash",
-        "required": [
-          "binary"
-        ],
-        "properties": {
-          "binary": {
-            "type": "string",
-            "description": "Path to the binary file to flash"
-          },
-          "port": {
-            "type": "string",
-            "description": "Serial port to use for flashing"
-          },
-          "verify": {
-            "type": "boolean",
-            "description": "Verify the flash after programming"
-          }
-        }
-      }
-    ],
-    "jsonValidation": [
-      {
-        "fileMatch": "**/port11.config.json",
-        "url": "./schemas/port11-config.schema.json"
-      }
-    ]
+    }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "webpack --mode production",
-    "watch": "webpack --mode development --watch",
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
-    "package": "vsce package",
-    "deploy": "vsce publish"
+    "test": "node ./out/test/runTest.js"
   },
   "devDependencies": {
-    "@types/node": "18.x",
-    "@types/vscode": "^1.74.0",
-    "@typescript-eslint/eslint-plugin": "^6.4.0",
-    "@typescript-eslint/parser": "^6.4.0",
-    "@vscode/test-electron": "^2.3.4",
-    "@vscode/vsce": "^2.19.0",
-    "eslint": "^8.47.0",
-    "glob": "^10.3.3",
-    "mocha": "^10.2.0",
-    "ts-loader": "^9.4.3",
-    "typescript": "^5.1.6",
-    "webpack": "^5.88.0",
-    "webpack-cli": "^5.1.4"
+    "@types/node": "^20.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "@vscode/test-electron": "^2.3.8",
+    "eslint": "^8.54.0",
+    "glob": "^10.3.10",
+    "typescript": "^5.3.2",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4",
+    "ts-loader": "^9.5.1"
   },
   "dependencies": {
-    "@types/jest": "^30.0.0",
-    "@types/mocha": "^10.0.10",
-    "node-fetch": "^3.3.1",
-    "simple-git": "^3.19.1"
-  },
-  "extensionDependencies": [],
-  "extensionKind": [
-    "workspace"
-  ],
-  "capabilities": {
-    "virtualWorkspaces": false,
-    "untrustedWorkspaces": {
-      "supported": "limited",
-      "description": "Extension requires trusted workspace for toolchain installation and hardware access"
-    }
+    "simple-git": "^3.20.0"
   }
 }

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { exec } from 'child_process';
-import { WebviewProvider } from './webview/webviewProvider';
+import { Port11TreeViewProvider } from './views/port11TreeView';
 import { SDKManager } from './managers/sdkManager';
 import { ToolchainManager } from './managers/toolchainManager';
 import { SysConfigManager } from './managers/sysconfigManager';
@@ -11,7 +11,7 @@ import { FlashCommand } from './commands/flashCommand';
 import { DebugCommand } from './commands/debugCommand';
 
 let outputChannel: vscode.OutputChannel;
-let webviewProvider: WebviewProvider;
+let treeViewProvider: Port11TreeViewProvider;
 let sdkManager: SDKManager;
 let toolchainManager: ToolchainManager;
 let sysConfigManager: SysConfigManager;
@@ -71,52 +71,23 @@ function executeSwdDebuggerCommand(args: string, successMessage: string, require
             return;
         }
 
-        const execOptions = {
-            cwd: workspaceFolder 
-        };
+        outputChannel.appendLine(`🚀 Executing: ${command}`);
+        outputChannel.show();
 
-        outputChannel.appendLine(`🔧 Executing: ${command}`);
-
-        exec(command, execOptions, (error, stdout, stderr) => {
-            const combinedOutput = stdout + stderr;
-
-            // Check for process-level errors
+        exec(command, { cwd: workspaceFolder }, (error, stdout, stderr) => {
             if (error) {
-                const errorMessage = `swd-debugger ${args.split(' ')[0]} failed: ${error.message}`;
-                outputChannel.appendLine(`❌ ${errorMessage}`);
-                if (combinedOutput) {
-                    outputChannel.appendLine(`Output: ${combinedOutput}`);
-                }
-                vscode.window.showErrorMessage(errorMessage);
+                outputChannel.appendLine(`❌ Error: ${error.message}`);
+                outputChannel.appendLine(`stderr: ${stderr}`);
+                vscode.window.showErrorMessage(`Command failed: ${error.message}`);
                 reject(error);
                 return;
             }
 
-            // Display output
-            if (combinedOutput) {
-                outputChannel.appendLine(`📄 Output: ${combinedOutput}`);
+            if (stderr) {
+                outputChannel.appendLine(`stderr: ${stderr}`);
             }
 
-            // Check for application-level errors in the output
-            const hasError = combinedOutput.includes('ERROR') ||
-                           combinedOutput.includes('Failed to') ||
-                           combinedOutput.includes('Error:') ||
-                           combinedOutput.includes('failed:') ||
-                           combinedOutput.includes('FATAL') ||
-                           combinedOutput.includes('not connected') ||
-                           combinedOutput.includes('No device found') ||
-                           combinedOutput.includes('Permission denied');
-
-            if (hasError) {
-                const operation = args.split(' ')[0];
-                const errorMessage = `swd-debugger ${operation} failed - check output for details`;
-                outputChannel.appendLine(`❌ ${errorMessage}`);
-                vscode.window.showErrorMessage(errorMessage);
-                reject(new Error(errorMessage));
-                return;
-            }
-
-            // Success case
+            outputChannel.appendLine(`stdout: ${stdout}`);
             outputChannel.appendLine(`✅ ${successMessage}`);
             vscode.window.showInformationMessage(successMessage);
             resolve();
@@ -126,7 +97,7 @@ function executeSwdDebuggerCommand(args: string, successMessage: string, require
 
 export async function activate(context: vscode.ExtensionContext) {
     // Initialize output channel for logging
-    outputChannel = vscode.window.createOutputChannel('Port11 Debugger', 'log');
+    outputChannel = vscode.window.createOutputChannel('Port11 Debugger');
     
     // Show output channel only in debug mode or if specified in settings
     const showLogsOnStartup = vscode.workspace.getConfiguration('port11-debugger').get('showLogsOnStartup', false);
@@ -134,35 +105,25 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.show();
     }
     
-    outputChannel.clear();
-    outputChannel.appendLine('='.repeat(80));
-    outputChannel.appendLine('🚀 PORT11 DEBUGGER EXTENSION STARTING');
-    outputChannel.appendLine('='.repeat(80));
-    outputChannel.appendLine(`⏰ Activation Time: ${new Date().toISOString()}`);
-    outputChannel.appendLine(`📍 VS Code version: ${vscode.version}`);
-    outputChannel.appendLine(`📁 Extension path: ${context.extensionPath}`);
-    outputChannel.appendLine(`💾 Global storage path: ${context.globalStorageUri.fsPath}`);
-    outputChannel.appendLine('');
+    outputChannel.appendLine('Port11 Debugger extension activated');
+    outputChannel.appendLine(`VS Code version: ${vscode.version}`);
+    outputChannel.appendLine(`Extension path: ${context.extensionPath}`);
 
-    // Initialize status bar item
-    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 101);
-    statusBarItem.command = 'port11-debugger.showPanel';
-    updateStatusBar('Initializing...');
-    
-    let flashDisposable = vscode.commands.registerCommand("extension.flashCommand", async () => {
-        try {
-            outputChannel.appendLine('🚀 Flash command triggered');
-            outputChannel.show();
-
-            // Get absolute path for the hex file
-            const hexFilePath = getAbsolutePath('build/main.hex');
-            outputChannel.appendLine(`📁 Using hex file: ${hexFilePath}`);
-
-            await executeSwdDebuggerCommand(`flash --file "${hexFilePath}"`, 'Flash operation completed successfully!');
-        } catch (error) {
-            outputChannel.appendLine(`❌ Flash command failed: ${error}`);
+    // Flash command
+    let flashDisposable = vscode.commands.registerCommand(
+        "extension.flashCommand",
+        async () => {
+            try {
+                outputChannel.appendLine('⚡ Flash command triggered');
+                outputChannel.show();
+                
+                const binPath = getAbsolutePath('build/main.bin');
+                await executeSwdDebuggerCommand(`flash ${binPath}`, 'Flash completed successfully!');
+            } catch (error) {
+                outputChannel.appendLine(`❌ Flash command failed: ${error}`);
+            }
         }
-    });
+    );
 
     // Halt command
     let haltDisposable = vscode.commands.registerCommand(
@@ -171,7 +132,7 @@ export async function activate(context: vscode.ExtensionContext) {
             try {
                 outputChannel.appendLine('⏸️ Halt command triggered');
                 outputChannel.show();
-                await executeSwdDebuggerCommand('halt', 'Target processor halted successfully!');
+                await executeSwdDebuggerCommand('halt', 'Target halted successfully!');
             } catch (error) {
                 outputChannel.appendLine(`❌ Halt command failed: ${error}`);
             }
@@ -185,7 +146,7 @@ export async function activate(context: vscode.ExtensionContext) {
             try {
                 outputChannel.appendLine('▶️ Resume command triggered');
                 outputChannel.show();
-                await executeSwdDebuggerCommand('resume', 'Target processor resumed successfully!');
+                await executeSwdDebuggerCommand('resume', 'Target resumed successfully!');
             } catch (error) {
                 outputChannel.appendLine(`❌ Resume command failed: ${error}`);
             }
@@ -228,6 +189,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     if (action?.label.includes('Disconnect')) {
                         connectionManager.disconnect();
                         updateConnectStatusBar();
+                        treeViewProvider.refresh();
                         return;
                     } else if (!action?.label.includes('Different')) {
                         return; // User cancelled
@@ -239,6 +201,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     outputChannel.appendLine(`📍 Selected port: ${selectedPort}`);
                     // Update connect status bar to show selected port
                     updateConnectStatusBar();
+                    treeViewProvider.refresh();
                 } else {
                     outputChannel.appendLine('❌ No port selected');
                 }
@@ -351,29 +314,37 @@ export async function activate(context: vscode.ExtensionContext) {
         const debugCommand = new DebugCommand(context, outputChannel, connectionManager);
         outputChannel.appendLine('Command handlers initialized successfully');
 
-        // Initialize webview provider
+        // Initialize TreeView Provider
         try {
-            outputChannel.appendLine('🌐 Initializing webview provider...');
-            webviewProvider = new WebviewProvider(context, outputChannel, {
+            outputChannel.appendLine('🌲 Initializing TreeView provider...');
+            treeViewProvider = new Port11TreeViewProvider(context, outputChannel, {
+                connectionManager,
                 sdkManager,
                 toolchainManager,
-                sysConfigManager,
-                connectionManager
-            }, buildCommand);
-            outputChannel.appendLine('  ✅ Webview provider initialized successfully');
+                sysConfigManager
+            });
+            outputChannel.appendLine('  ✅ TreeView provider initialized successfully');
             outputChannel.appendLine('');
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            outputChannel.appendLine(`Failed to initialize webview provider: ${errorMessage}`);
+            outputChannel.appendLine(`Failed to initialize TreeView provider: ${errorMessage}`);
             throw error;
         }
+
+        // Register TreeView
+        const treeView = vscode.window.createTreeView('port11.debugView', {
+            treeDataProvider: treeViewProvider,
+            showCollapseAll: true
+        });
+
+        context.subscriptions.push(treeView);
 
         // Register all commands
         const commands = [
             // Setup and management commands
-            vscode.commands.registerCommand('port11-debugger.setup', () => setupToolchain()),
+            vscode.commands.registerCommand('port11-debugger.setupToolchain', () => setupToolchain()),
             vscode.commands.registerCommand('port11-debugger.refreshStatus', () => refreshStatus()),
-            vscode.commands.registerCommand('port11-debugger.showPanel', () => webviewProvider.show()),
+            vscode.commands.registerCommand('port11-debugger.refreshView', () => treeViewProvider.refresh()),
             vscode.commands.registerCommand('port11-debugger.openSettings', () => openExtensionSettings()),
             vscode.commands.registerCommand('port11-debugger.showLogs', () => outputChannel.show()),
 
@@ -391,443 +362,29 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.commands.registerCommand('port11-debugger.flash', () => flashCommand.execute()),
 
             // Debug commands
-            vscode.commands.registerCommand('port11-debugger.debug.start', (port?: string) => debugCommand.start(port)),
-            vscode.commands.registerCommand('port11-debugger.debug.stop', () => debugCommand.stop()),
+            vscode.commands.registerCommand('port11-debugger.debug.start', async (port?: string) => {
+                await debugCommand.start(port);
+                treeViewProvider.setDebugActive(true);
+            }),
+            vscode.commands.registerCommand('port11-debugger.debug.stop', async () => {
+                await debugCommand.stop();
+                treeViewProvider.setDebugActive(false);
+            }),
             vscode.commands.registerCommand('port11-debugger.debug.pause', () => debugCommand.halt()),
             vscode.commands.registerCommand('port11-debugger.debug.resume', () => debugCommand.resume()),
             vscode.commands.registerCommand('port11-debugger.debug.restart', () => restartDebugSession(debugCommand)),
 
             // Board management commands
-            vscode.commands.registerCommand('port11-debugger.detectBoards', () => detectBoards()),
-            vscode.commands.registerCommand('port11-debugger.openMainPanel', async () => {
-                outputChannel.appendLine('🚀 Creating standalone Port11 Debugger panel...');
-                
-                try {
-                    // Create a webview panel
-                    const panel = vscode.window.createWebviewPanel(
-                        'port11MainPanel',
-                        'Port11 Debugger - Main Panel',
-                        vscode.ViewColumn.One,
-                        {
-                            enableScripts: true,
-                            retainContextWhenHidden: true,
-                            localResourceRoots: [
-                                context.extensionUri,
-                                vscode.Uri.joinPath(context.extensionUri, 'resources')
-                            ]
-                        }
-                    );
-
-                    // Set the HTML content
-                    const scriptUri = panel.webview.asWebviewUri(
-                        vscode.Uri.joinPath(context.extensionUri, 'resources', 'webview', 'main.js')
-                    );
-                    const styleUri = panel.webview.asWebviewUri(
-                        vscode.Uri.joinPath(context.extensionUri, 'resources', 'webview', 'main.css')
-                    );
-
-                    // Try to load HTML template
-                    let htmlContent: string;
-                    try {
-                        const htmlPath = vscode.Uri.joinPath(context.extensionUri, 'resources', 'webview', 'main.html');
-                        const htmlBytes = await vscode.workspace.fs.readFile(htmlPath);
-                        htmlContent = Buffer.from(htmlBytes).toString('utf8');
-                        
-                        // Replace template placeholders
-                        htmlContent = htmlContent.replace(/\{\{styleUri\}\}/g, styleUri.toString());
-                        htmlContent = htmlContent.replace(/\{\{scriptUri\}\}/g, scriptUri.toString());
-                        
-                        outputChannel.appendLine('✅ HTML template loaded from file');
-                    } catch (error) {
-                        outputChannel.appendLine(`⚠️ Could not load HTML template: ${error}`);
-                        
-                        // Use fallback HTML with full interface
-                        htmlContent = /*html*/ `
-                        <!DOCTYPE html>
-                        <html lang="en">
-                        <head>
-                            <meta charset="UTF-8">
-                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                            <title>Port11 Debugger</title>
-                            <link href="${styleUri}" rel="stylesheet">
-                            <style>
-                                body { 
-                                    font-family: var(--vscode-font-family); 
-                                    padding: 20px; 
-                                    color: var(--vscode-foreground);
-                                    background-color: var(--vscode-editor-background);
-                                }
-                                .section { 
-                                    margin-bottom: 30px; 
-                                    padding: 20px; 
-                                    background: var(--vscode-input-background); 
-                                    border: 1px solid var(--vscode-input-border); 
-                                    border-radius: 8px; 
-                                }
-                                .action-btn {
-                                    padding: 12px 24px;
-                                    margin: 8px;
-                                    background: var(--vscode-button-background);
-                                    color: var(--vscode-button-foreground);
-                                    border: none;
-                                    border-radius: 6px;
-                                    cursor: pointer;
-                                    font-size: 14px;
-                                }
-                                .action-btn:hover:not(:disabled) {
-                                    background: var(--vscode-button-hoverBackground);
-                                }
-                                .action-btn:disabled {
-                                    opacity: 0.6;
-                                    cursor: not-allowed;
-                                }
-                                .status-item {
-                                    display: flex;
-                                    align-items: center;
-                                    padding: 15px;
-                                    margin: 10px 0;
-                                    background: var(--vscode-list-hoverBackground);
-                                    border-radius: 6px;
-                                }
-                                .status-icon {
-                                    font-size: 24px;
-                                    margin-right: 15px;
-                                }
-                                .progress-container {
-                                    margin: 20px 0;
-                                    padding: 15px;
-                                    background: var(--vscode-input-background);
-                                    border-radius: 6px;
-                                    display: none;
-                                }
-                                .progress-bar {
-                                    width: 100%;
-                                    height: 8px;
-                                    background: var(--vscode-input-background);
-                                    border-radius: 4px;
-                                    overflow: hidden;
-                                    margin: 10px 0;
-                                }
-                                .progress-fill {
-                                    height: 100%;
-                                    background: var(--vscode-progressBar-background);
-                                    transition: width 0.3s ease;
-                                    width: 0%;
-                                }
-                                #footer-status {
-                                    position: fixed;
-                                    bottom: 20px;
-                                    right: 20px;
-                                    padding: 10px 15px;
-                                    background: var(--vscode-badge-background);
-                                    color: var(--vscode-badge-foreground);
-                                    border-radius: 15px;
-                                    font-size: 12px;
-                                }
-                            </style>
-                        </head>
-                        <body>
-                            <div class="container">
-                                <header style="text-align: center; margin-bottom: 40px;">
-                                    <h1 style="font-size: 28px; margin-bottom: 10px;">🚀 Port11 Debugger</h1>
-                                    <p style="color: var(--vscode-descriptionForeground); font-size: 16px;">MSPM0 Development Environment</p>
-                                </header>
-
-                                <div class="section">
-                                    <h2>📊 System Status</h2>
-                                    <div id="status-grid">
-                                        <div class="status-item" id="status-sdk">
-                                            <div class="status-icon">📦</div>
-                                            <div>
-                                                <h3 style="margin: 0 0 5px 0;">MSPM0 SDK</h3>
-                                                <p id="sdk-status-text" style="margin: 0; color: var(--vscode-descriptionForeground);">Checking...</p>
-                                                <small id="sdk-version" style="color: var(--vscode-descriptionForeground);"></small>
-                                            </div>
-                                        </div>
-
-                                        <div class="status-item" id="status-toolchain">
-                                            <div class="status-icon">🔧</div>
-                                            <div>
-                                                <h3 style="margin: 0 0 5px 0;">ARM-CGT-CLANG</h3>
-                                                <p id="toolchain-status-text" style="margin: 0; color: var(--vscode-descriptionForeground);">Checking...</p>
-                                                <small id="toolchain-version" style="color: var(--vscode-descriptionForeground);"></small>
-                                            </div>
-                                        </div>
-
-                                        <div class="status-item" id="status-board">
-                                            <div class="status-icon">🔌</div>
-                                            <div>
-                                                <h3 style="margin: 0 0 5px 0;">Connected Boards</h3>
-                                                <p id="board-status-text" style="margin: 0; color: var(--vscode-descriptionForeground);">Checking...</p>
-                                                <small id="board-count" style="color: var(--vscode-descriptionForeground);"></small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div id="setup-progress" class="progress-container">
-                                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                                            <h3 id="progress-title">Setting up...</h3>
-                                            <span id="progress-percentage">0%</span>
-                                        </div>
-                                        <div class="progress-bar">
-                                            <div id="progress-fill" class="progress-fill"></div>
-                                        </div>
-                                        <p id="progress-text" style="margin: 10px 0 0 0; color: var(--vscode-descriptionForeground);">Initializing...</p>
-                                    </div>
-                                </div>
-
-                                <div class="section">
-                                    <h2>⚡ Quick Actions</h2>
-                                    <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-                                        <button id="setup-btn" class="action-btn">🔧 Setup Toolchain</button>
-                                        <button id="build-btn" class="action-btn" disabled>🔨 Build Project</button>
-                                        <button id="flash-btn" class="action-btn" disabled>⚡ Flash Firmware</button>
-                                        <button id="debug-btn" class="action-btn" disabled>🐛 Start Debug</button>
-                                    </div>
-                                </div>
-
-                                <div class="section">
-                                    <h2>🔌 Board Management</h2>
-                                    <button id="detect-boards-btn" class="action-btn">🔍 Detect Boards</button>
-                                    <div id="boards-list" style="margin-top: 15px;">
-                                        <p style="text-align: center; color: var(--vscode-descriptionForeground); padding: 20px;">
-                                            Click "Detect Boards" to scan for connected devices
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div id="debug-section" class="section" style="display: none;">
-                                    <h2>🐛 Debug Controls</h2>
-                                    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-                                        <button id="debug-halt-btn" class="action-btn" disabled>⏸️ Halt</button>
-                                        <button id="debug-resume-btn" class="action-btn" disabled>▶️ Resume</button>
-                                        <button id="debug-stop-btn" class="action-btn" disabled>⏹️ Stop</button>
-                                    </div>
-                                    <div id="registers-list">
-                                        <p style="text-align: center; color: var(--vscode-descriptionForeground); padding: 20px;">
-                                            No debug session active
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div id="footer-status">Ready</div>
-
-                            <script>
-                                const vscode = acquireVsCodeApi();
-                                console.log('🚀 Port11 Debugger panel loaded');
-                                
-                                // Set up event listeners
-                                document.getElementById('setup-btn').addEventListener('click', () => {
-                                    console.log('Setup button clicked');
-                                    vscode.postMessage({ command: 'startSetup' });
-                                    showProgress('Starting setup...');
-                                });
-                                
-                                document.getElementById('build-btn').addEventListener('click', () => {
-                                    console.log('Build button clicked');
-                                    vscode.postMessage({ command: 'buildProject' });
-                                });
-                                
-                                document.getElementById('flash-btn').addEventListener('click', () => {
-                                    console.log('Flash button clicked');
-                                    vscode.postMessage({ command: 'flashFirmware' });
-                                });
-                                
-                                document.getElementById('debug-btn').addEventListener('click', () => {
-                                    console.log('Debug button clicked');
-                                    vscode.postMessage({ command: 'startDebug' });
-                                });
-                                
-                                document.getElementById('detect-boards-btn').addEventListener('click', () => {
-                                    console.log('Detect boards clicked');
-                                    vscode.postMessage({ command: 'detectBoards' });
-                                    updateFooterStatus('Detecting boards...');
-                                });
-                                
-                                // Helper functions
-                                function showProgress(message) {
-                                    const progressContainer = document.getElementById('setup-progress');
-                                    const progressText = document.getElementById('progress-text');
-                                    
-                                    if (progressContainer && progressText) {
-                                        progressContainer.style.display = 'block';
-                                        progressText.textContent = message;
-                                    }
-                                }
-                                
-                                function updateFooterStatus(status) {
-                                    const footer = document.getElementById('footer-status');
-                                    if (footer) {
-                                        footer.textContent = status;
-                                    }
-                                }
-                                
-                                // Request initial status
-                                vscode.postMessage({ command: 'getStatus' });
-                                updateFooterStatus('Panel loaded - Ready');
-                                
-                                // Listen for messages from extension
-                                window.addEventListener('message', event => {
-                                    const message = event.data;
-                                    console.log('📨 Received message:', message);
-                                    
-                                    switch (message.command) {
-                                        case 'updateStatus':
-                                            console.log('Status updated:', message.data);
-                                            break;
-                                        case 'setupProgress':
-                                            if (message.data) {
-                                                updateSetupProgress(message.data.progress, message.data.message);
-                                            }
-                                            break;
-                                        case 'setupComplete':
-                                            hideProgress();
-                                            updateFooterStatus('Setup complete!');
-                                            break;
-                                        case 'error':
-                                            updateFooterStatus('Error: ' + message.data?.message);
-                                            break;
-                                    }
-                                });
-                                
-                                function updateSetupProgress(percentage, message) {
-                                    const progressFill = document.getElementById('progress-fill');
-                                    const progressText = document.getElementById('progress-text');
-                                    const progressPercentage = document.getElementById('progress-percentage');
-                                    
-                                    if (progressFill) progressFill.style.width = percentage + '%';
-                                    if (progressText) progressText.textContent = message;
-                                    if (progressPercentage) progressPercentage.textContent = percentage + '%';
-                                    
-                                    showProgress(message);
-                                }
-                                
-                                function hideProgress() {
-                                    const progressContainer = document.getElementById('setup-progress');
-                                    if (progressContainer) {
-                                        progressContainer.style.display = 'none';
-                                    }
-                                }
-                            </script>
-                            <script src="${scriptUri}"></script>
-                        </body>
-                        </html>`;
-                    }
-
-                    panel.webview.html = htmlContent;
-
-                    // Handle messages from webview
-                    panel.webview.onDidReceiveMessage(
-                        async message => {
-                            outputChannel.appendLine(`📨 Panel received message: ${message.command}`);
-                            
-                            try {
-                                // Forward messages to the webview provider's message handler
-                                // You'll need to make the handleMessage method public or create a forwarder
-                                switch (message.command) {
-                                    case 'startSetup':
-                                        await webviewProvider.startSetup();
-                                        break;
-                                    case 'detectBoards':
-                                        // Call connection manager directly
-                                        const boards = await connectionManager.detectBoards();
-                                        panel.webview.postMessage({
-                                            command: 'boardsDetected',
-                                            data: { boards }
-                                        });
-                                        break;
-                                    case 'getStatus':
-                                        // Get status and send to panel
-                                        const sdkInstalled = await sdkManager.isSDKInstalled();
-                                        const toolchainInstalled = await toolchainManager.isToolchainInstalled();
-                                        panel.webview.postMessage({
-                                            command: 'updateStatus',
-                                            data: { 
-                                                status: { sdkInstalled, toolchainInstalled, boardConnected: false, setupComplete: sdkInstalled && toolchainInstalled }
-                                            }
-                                        });
-                                        break;
-                                    case 'build':
-                                    case 'buildProject':
-                                        outputChannel.appendLine('🔨 Build command triggered from webview');
-                                        
-                                        // Execute the registered build command
-                                        await vscode.commands.executeCommand('port11-debugger.build', message.data || {});
-                                        
-                                        // Send acknowledgment back to webview
-                                        panel.webview.postMessage({
-                                            command: 'buildStarted',
-                                            data: { timestamp: Date.now() }
-                                        });
-                                        break;
-                                    
-                                    case 'cancelBuild':
-                                        outputChannel.appendLine('🛑 Cancel build command triggered from webview');
-                                        // Note: You'll need to implement cancel functionality in BuildCommand
-                                        panel.webview.postMessage({
-                                            command: 'buildCancelled',
-                                            data: { timestamp: Date.now() }
-                                        });
-                                        break;
-                                    
-                                    case 'flash':
-                                    case 'flashFirmware':
-                                        outputChannel.appendLine('⚡ Flash command triggered from webview');
-                                        await vscode.commands.executeCommand('port11-debugger.flash', message.data || {});
-                                        break;
-                                    
-                                    case 'debug':
-                                    case 'startDebug':
-                                        outputChannel.appendLine('🐛 Debug command triggered from webview');
-                                        await vscode.commands.executeCommand('port11-debugger.debug', message.data || {});
-                                        break;
-                                    
-                                    case 'showLogs':
-                                        outputChannel.show(true);
-                                        break;
-                                        
-                                    default:
-                                        outputChannel.appendLine(`❓ Unknown panel command: ${message.command}`);
-                                        // Send error back to webview
-                                        panel.webview.postMessage({
-                                            command: 'error',
-                                            data: { message: `Unknown command: ${message.command}` }
-                                        });
-                                }
-                            } catch (error) {
-                                outputChannel.appendLine(`Error handling panel message: ${error}`);
-                                panel.webview.postMessage({
-                                    command: 'error',
-                                    data: { message: String(error) }
-                                });
-                            }
-                        },
-                        undefined,
-                        context.subscriptions
-                    );
-
-                    outputChannel.appendLine('✅ Standalone panel created successfully!');
-                    
-                } catch (error) {
-                    outputChannel.appendLine(`❌ Error creating standalone panel: ${error}`);
-                    vscode.window.showErrorMessage(`Failed to create Port11 panel: ${error}`);
-                }
+            vscode.commands.registerCommand('port11-debugger.detectBoards', async () => {
+                await detectBoards();
+                treeViewProvider.refresh();
             }),
         ];
-
-        // Register webview provider
-        const webviewDisposable = vscode.window.registerWebviewViewProvider(
-            'port11-debugger.panel', 
-            webviewProvider,
-            { webviewOptions: { retainContextWhenHidden: true } }
-        );
 
         // Add all disposables to context
         context.subscriptions.push(
             outputChannel,
             statusBarItem,
-            webviewDisposable,
             ...commands
         );
 
@@ -853,7 +410,6 @@ export async function activate(context: vscode.ExtensionContext) {
 export function deactivate() {
     outputChannel?.appendLine('Port11 Debugger extension deactivated');
     statusBarItem?.dispose();
-    //sysConfigManager?.uninstallSysConfig?.(); // Optional cleanup
     outputChannel?.dispose();
 }
 
@@ -864,14 +420,45 @@ async function setupToolchain(): Promise<void> {
         outputChannel.appendLine('Starting complete toolchain setup (SDK + Toolchain + SysConfig)...');
         updateStatusBar('Setting up toolchain...');
         
-        // Show webview panel
-        webviewProvider.show();
+        // Refresh TreeView before setup
+        treeViewProvider.refresh();
         
-        // Start setup process
-        await webviewProvider.startSetup();
+        // Show progress notification
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "Port11 Setup",
+            cancellable: false
+        }, async (progress) => {
+            progress.report({ message: "Installing components..." });
+            
+            // Install SDK
+            if (!await sdkManager.isSDKInstalled()) {
+                progress.report({ message: "Installing MSPM0 SDK..." });
+                await sdkManager.installSDK();
+            }
+            
+            // Install Toolchain
+            if (!await toolchainManager.isToolchainInstalled()) {
+                progress.report({ message: "Installing ARM-CGT-CLANG..." });
+                await toolchainManager.installToolchain();
+            }
+            
+            // Install SysConfig
+            if (!await sysConfigManager.isSysConfigInstalled()) {
+                progress.report({ message: "Installing TI SysConfig..." });
+                await sysConfigManager.installSysConfig();
+            }
+            
+            progress.report({ message: "Setup complete!" });
+        });
         
         outputChannel.appendLine('Complete toolchain setup completed successfully');
         updateStatusBar('Setup complete');
+        
+        // Refresh TreeView after setup
+        treeViewProvider.refresh();
+        
+        vscode.window.showInformationMessage('Port11 setup completed successfully!');
         
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -904,62 +491,37 @@ async function refreshStatus(): Promise<void> {
         outputChannel.appendLine(`  SysConfig: ${sysConfigInstalled ? `installed (${sysConfigInfo.version})` : 'not installed'}`);
         outputChannel.appendLine(`  Boards: ${boards.length} detected`);
         
-        // Update status bar
-        if (sdkInstalled && toolchainInstalled && sysConfigInstalled) {
-            updateStatusBar(`Ready (${boards.length} boards)`);
-        } else {
-            const missing = [];
-            if (!sdkInstalled) {missing.push('SDK');}
-            if (!toolchainInstalled) {missing.push('Toolchain');}
-            if (!sysConfigInstalled) {missing.push('SysConfig');}
-            updateStatusBar(`Setup required: ${missing.join(', ')}`);
-        }
+        updateStatusBar(sdkInstalled && toolchainInstalled ? 'Ready' : 'Setup required');
         
-        // Refresh webview if visible
-        if (webviewProvider) {
-            // Trigger webview status update
-            outputChannel.appendLine('Webview status refreshed');
-        }
+        // Refresh TreeView
+        treeViewProvider.refresh();
         
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         outputChannel.appendLine(`Status refresh failed: ${errorMessage}`);
-        updateStatusBar('Status error');
-        vscode.window.showWarningMessage(`Status refresh failed: ${errorMessage}`);
     }
 }
 
 async function restartDebugSession(debugCommand: DebugCommand): Promise<void> {
     try {
-        outputChannel.appendLine('Restarting debug session...');
-        
-        // Stop current session if active
         await debugCommand.stop();
-        
-        // Wait a moment before restarting
+        treeViewProvider.setDebugActive(false);
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Start new session
         await debugCommand.start();
-        
-        outputChannel.appendLine('Debug session restarted successfully');
-        
+        treeViewProvider.setDebugActive(true);
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        outputChannel.appendLine(`Debug session restart failed: ${errorMessage}`);
-        vscode.window.showErrorMessage(`Debug restart failed: ${errorMessage}`);
+        vscode.window.showErrorMessage(`Failed to restart debug session: ${errorMessage}`);
     }
 }
 
-async function detectBoards(): Promise<void> {
+async function detectBoards() {
     try {
         outputChannel.appendLine('Detecting boards...');
-        updateStatusBar('Detecting boards...');
-        
         const boards = await connectionManager.detectBoards();
         
-        outputChannel.appendLine(`Detected ${boards.length} board(s):`);
-        boards.forEach((board, index) => {
+        outputChannel.appendLine(`Found ${boards.length} board(s):`);
+        boards.forEach((board: any, index: number) => {
             outputChannel.appendLine(`  ${index + 1}. ${board.friendlyName} (${board.path})`);
         });
         
@@ -1068,7 +630,7 @@ async function checkFirstTimeSetup(): Promise<void> {
                 if (!sysConfigInstalled) {missingComponents.push('SysConfig');}
                 
                 const result = await vscode.window.showInformationMessage(
-                    `Port11 Debugger: Setup required for MSPM0 development. Missing: ${missingComponents.join(', ')}. Would you like to set up now?`,
+                    `Port11 Debugger: Setup required for MSPM0 development.\nMissing: ${missingComponents.join(', ')}. Would you like to set up now?`,
                     { title: 'Setup Now', isCloseAffordance: false },
                     { title: 'Setup Later', isCloseAffordance: false },
                     { title: 'Don\'t Show Again', isCloseAffordance: true }
@@ -1096,20 +658,9 @@ async function checkFirstTimeSetup(): Promise<void> {
 function checkForExtensionUpdates(): void {
     // This is a placeholder for future update checking functionality
     outputChannel.appendLine('Checking for extension updates... (not implemented yet)');
-    
-    // Future implementation could:
-    // 1. Check VS Code marketplace for newer versions
-    // 2. Check GitHub releases for DAP binary updates
-    // 3. Check TI website for newer toolchain/SysConfig versions
-    // 4. Notify user of available updates
 }
 
 // Context and state management
-
-export function getExtensionContext(): vscode.ExtensionContext | undefined {
-    // This would need to be properly implemented to store and return context
-    return undefined;
-}
 
 export function getManagers() {
     return {
@@ -1122,42 +673,6 @@ export function getManagers() {
     };
 }
 
-export function getWebviewProvider(): WebviewProvider {
-    return webviewProvider;
-}
-
-// Error handling and logging utilities
-
-export function logError(error: Error | string, context?: string): void {
-    const errorMessage = error instanceof Error ? error.message : error;
-    const logMessage = context ? `[${context}] ${errorMessage}` : errorMessage;
-    
-    outputChannel.appendLine(`ERROR: ${logMessage}`);
-    
-    if (error instanceof Error && error.stack) {
-        outputChannel.appendLine(`Stack trace: ${error.stack}`);
-    }
-}
-
-export function logWarning(message: string, context?: string): void {
-    const logMessage = context ? `[${context}] ${message}` : message;
-    outputChannel.appendLine(`WARNING: ${logMessage}`);
-}
-
-export function logInfo(message: string, context?: string): void {
-    const logLevel = vscode.workspace.getConfiguration('port11-debugger').get('logLevel', 'info');
-    
-    if (['info', 'debug', 'trace'].includes(logLevel)) {
-        const logMessage = context ? `[${context}] ${message}` : message;
-        outputChannel.appendLine(`INFO: ${logMessage}`);
-    }
-}
-
-export function logDebug(message: string, context?: string): void {
-    const logLevel = vscode.workspace.getConfiguration('port11-debugger').get('logLevel', 'info');
-    
-    if (['debug', 'trace'].includes(logLevel)) {
-        const logMessage = context ? `[${context}] ${message}` : message;
-        outputChannel.appendLine(`DEBUG: ${logMessage}`);
-    }
+export function getTreeViewProvider(): Port11TreeViewProvider {
+    return treeViewProvider;
 }
