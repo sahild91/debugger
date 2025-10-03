@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { exec } from 'child_process';
-import { Port11TreeViewProvider } from './views/port11TreeView';
+import { Port11TreeViewProvider, Port11TreeItem } from './views/port11TreeView';
 import { SDKManager } from './managers/sdkManager';
 import { ToolchainManager } from './managers/toolchainManager';
 import { SysConfigManager } from './managers/sysconfigManager';
@@ -98,16 +98,21 @@ function executeSwdDebuggerCommand(args: string, successMessage: string, require
 export async function activate(context: vscode.ExtensionContext) {
     // Initialize output channel for logging
     outputChannel = vscode.window.createOutputChannel('Port11 Debugger');
-    
+
     // Show output channel only in debug mode or if specified in settings
     const showLogsOnStartup = vscode.workspace.getConfiguration('port11-debugger').get('showLogsOnStartup', false);
     if (showLogsOnStartup) {
         outputChannel.show();
     }
-    
+
     outputChannel.appendLine('Port11 Debugger extension activated');
     outputChannel.appendLine(`VS Code version: ${vscode.version}`);
     outputChannel.appendLine(`Extension path: ${context.extensionPath}`);
+
+    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 101);
+    statusBarItem.command = 'port11-debugger.refreshStatus';
+    statusBarItem.tooltip = 'Port11 Debugger - Click to refresh status';
+    updateStatusBar('Initializing...');
 
     // Flash command
     let flashDisposable = vscode.commands.registerCommand(
@@ -116,7 +121,7 @@ export async function activate(context: vscode.ExtensionContext) {
             try {
                 outputChannel.appendLine('⚡ Flash command triggered');
                 outputChannel.show();
-                
+
                 const binPath = getAbsolutePath('build/main.bin');
                 await executeSwdDebuggerCommand(`flash ${binPath}`, 'Flash completed successfully!');
             } catch (error) {
@@ -212,7 +217,7 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(flashDisposable, haltDisposable, resumeDisposable, eraseDisposable, connectDisposable);
-    
+
 
     // Create and show the status bar items
     const buildStatusBar = vscode.window.createStatusBarItem(
@@ -269,7 +274,7 @@ export async function activate(context: vscode.ExtensionContext) {
     connectStatusBar.tooltip = "Connect to a serial port";
     connectStatusBar.show();
 
-    context.subscriptions.push(buildStatusBar,flashStatusBar, haltStatusBar, resumeStatusBar, eraseStatusBar, connectStatusBar);
+    context.subscriptions.push(buildStatusBar, flashStatusBar, haltStatusBar, resumeStatusBar, eraseStatusBar, connectStatusBar);
 
     // Initialize managers
     try {
@@ -338,6 +343,12 @@ export async function activate(context: vscode.ExtensionContext) {
         });
 
         context.subscriptions.push(treeView);
+
+        treeView.onDidChangeCheckboxState(async (e) => {
+            for (const [item, state] of e.items) {
+                await treeViewProvider.handleCheckboxChange(item as Port11TreeItem, state);
+            }
+        });
 
         // Register all commands
         const commands = [
@@ -419,10 +430,10 @@ async function setupToolchain(): Promise<void> {
     try {
         outputChannel.appendLine('Starting complete toolchain setup (SDK + Toolchain + SysConfig)...');
         updateStatusBar('Setting up toolchain...');
-        
+
         // Refresh TreeView before setup
         treeViewProvider.refresh();
-        
+
         // Show progress notification
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
@@ -430,36 +441,36 @@ async function setupToolchain(): Promise<void> {
             cancellable: false
         }, async (progress) => {
             progress.report({ message: "Installing components..." });
-            
+
             // Install SDK
             if (!await sdkManager.isSDKInstalled()) {
                 progress.report({ message: "Installing MSPM0 SDK..." });
                 await sdkManager.installSDK();
             }
-            
+
             // Install Toolchain
             if (!await toolchainManager.isToolchainInstalled()) {
                 progress.report({ message: "Installing ARM-CGT-CLANG..." });
                 await toolchainManager.installToolchain();
             }
-            
+
             // Install SysConfig
             if (!await sysConfigManager.isSysConfigInstalled()) {
                 progress.report({ message: "Installing TI SysConfig..." });
                 await sysConfigManager.installSysConfig();
             }
-            
+
             progress.report({ message: "Setup complete!" });
         });
-        
+
         outputChannel.appendLine('Complete toolchain setup completed successfully');
         updateStatusBar('Setup complete');
-        
+
         // Refresh TreeView after setup
         treeViewProvider.refresh();
-        
+
         vscode.window.showInformationMessage('Port11 setup completed successfully!');
-        
+
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         outputChannel.appendLine(`Setup failed: ${errorMessage}`);
@@ -472,30 +483,30 @@ async function refreshStatus(): Promise<void> {
     try {
         outputChannel.appendLine('Refreshing status...');
         updateStatusBar('Refreshing...');
-        
+
         // Check all component statuses
         const sdkInstalled = await sdkManager.isSDKInstalled();
         const sdkVersion = await sdkManager.getSDKVersion();
-        
+
         const toolchainInstalled = await toolchainManager.isToolchainInstalled();
         const toolchainInfo = await toolchainManager.getToolchainInfo();
-        
+
         const sysConfigInstalled = await sysConfigManager.isSysConfigInstalled();
         const sysConfigInfo = await sysConfigManager.getSysConfigInfo();
-        
+
         const boards = await connectionManager.detectBoards();
-        
+
         outputChannel.appendLine(`Status refresh complete:`);
         outputChannel.appendLine(`  SDK: ${sdkInstalled ? `installed (${sdkVersion})` : 'not installed'}`);
         outputChannel.appendLine(`  Toolchain: ${toolchainInstalled ? `installed (${toolchainInfo.version})` : 'not installed'}`);
         outputChannel.appendLine(`  SysConfig: ${sysConfigInstalled ? `installed (${sysConfigInfo.version})` : 'not installed'}`);
         outputChannel.appendLine(`  Boards: ${boards.length} detected`);
-        
+
         updateStatusBar(sdkInstalled && toolchainInstalled ? 'Ready' : 'Setup required');
-        
+
         // Refresh TreeView
         treeViewProvider.refresh();
-        
+
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         outputChannel.appendLine(`Status refresh failed: ${errorMessage}`);
@@ -519,12 +530,12 @@ async function detectBoards() {
     try {
         outputChannel.appendLine('Detecting boards...');
         const boards = await connectionManager.detectBoards();
-        
+
         outputChannel.appendLine(`Found ${boards.length} board(s):`);
         boards.forEach((board: any, index: number) => {
             outputChannel.appendLine(`  ${index + 1}. ${board.friendlyName} (${board.path})`);
         });
-        
+
         if (boards.length === 0) {
             vscode.window.showInformationMessage('No MSPM0 boards detected. Please check connections and drivers.');
             updateStatusBar('No boards found');
@@ -532,7 +543,7 @@ async function detectBoards() {
             vscode.window.showInformationMessage(`Found ${boards.length} MSPM0 board(s). Check output for details.`);
             updateStatusBar(`${boards.length} boards found`);
         }
-        
+
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         outputChannel.appendLine(`Board detection failed: ${errorMessage}`);
@@ -576,7 +587,7 @@ function updateConnectStatusBar(): void {
 
 async function initializeExtension(): Promise<void> {
     outputChannel.appendLine('Starting extension initialization...');
-    
+
     // Check if status bar should be enabled
     const enableStatusBar = vscode.workspace.getConfiguration('port11-debugger').get('enableStatusBar', true);
     if (enableStatusBar) {
@@ -585,7 +596,7 @@ async function initializeExtension(): Promise<void> {
 
     // Check for first-time setup
     await checkFirstTimeSetup();
-    
+
     // Auto-detect boards if enabled
     const autoDetectBoards = vscode.workspace.getConfiguration('port11-debugger').get('autoDetectBoards', true);
     if (autoDetectBoards) {
@@ -595,7 +606,7 @@ async function initializeExtension(): Promise<void> {
             outputChannel.appendLine(`Auto board detection failed: ${error}`);
         }
     }
-    
+
     // Check for updates if enabled
     const checkForUpdates = vscode.workspace.getConfiguration('port11-debugger').get('checkForUpdatesOnStartup', true);
     if (checkForUpdates) {
@@ -604,7 +615,7 @@ async function initializeExtension(): Promise<void> {
 
     // Initial status refresh
     await refreshStatus();
-    
+
     outputChannel.appendLine('Extension initialization completed');
 }
 
@@ -614,34 +625,34 @@ async function checkFirstTimeSetup(): Promise<void> {
         const sdkInstalled = await sdkManager.isSDKInstalled();
         const toolchainInstalled = await toolchainManager.isToolchainInstalled();
         const sysConfigInstalled = await sysConfigManager.isSysConfigInstalled();
-        
+
         if (!sdkInstalled || !toolchainInstalled || !sysConfigInstalled) {
             outputChannel.appendLine('First-time setup detected - missing components:');
-            if (!sdkInstalled) {outputChannel.appendLine('  - MSPM0 SDK');}
-            if (!toolchainInstalled) {outputChannel.appendLine('  - ARM-CGT-CLANG Toolchain');}
-            if (!sysConfigInstalled) {outputChannel.appendLine('  - TI SysConfig');}
-            
+            if (!sdkInstalled) { outputChannel.appendLine('  - MSPM0 SDK'); }
+            if (!toolchainInstalled) { outputChannel.appendLine('  - ARM-CGT-CLANG Toolchain'); }
+            if (!sysConfigInstalled) { outputChannel.appendLine('  - TI SysConfig'); }
+
             const showWelcome = vscode.workspace.getConfiguration('port11-debugger').get('showWelcomeOnStartup', true);
-            
+
             if (showWelcome) {
                 const missingComponents = [];
-                if (!sdkInstalled) {missingComponents.push('SDK');}
-                if (!toolchainInstalled) {missingComponents.push('Toolchain');}
-                if (!sysConfigInstalled) {missingComponents.push('SysConfig');}
-                
+                if (!sdkInstalled) { missingComponents.push('SDK'); }
+                if (!toolchainInstalled) { missingComponents.push('Toolchain'); }
+                if (!sysConfigInstalled) { missingComponents.push('SysConfig'); }
+
                 const result = await vscode.window.showInformationMessage(
                     `Port11 Debugger: Setup required for MSPM0 development.\nMissing: ${missingComponents.join(', ')}. Would you like to set up now?`,
                     { title: 'Setup Now', isCloseAffordance: false },
                     { title: 'Setup Later', isCloseAffordance: false },
                     { title: 'Don\'t Show Again', isCloseAffordance: true }
                 );
-                
+
                 if (result?.title === 'Setup Now') {
                     await setupToolchain();
                 } else if (result?.title === 'Don\'t Show Again') {
                     await vscode.workspace.getConfiguration('port11-debugger').update(
-                        'showWelcomeOnStartup', 
-                        false, 
+                        'showWelcomeOnStartup',
+                        false,
                         vscode.ConfigurationTarget.Global
                     );
                 }

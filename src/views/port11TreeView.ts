@@ -34,7 +34,6 @@ export class Port11TreeViewProvider implements vscode.TreeDataProvider<Port11Tre
     private debugActive: boolean = false;
     private registers: Map<string, string> = new Map();
     private callStack: string[] = [];
-    private breakpoints: Map<string, number[]> = new Map();
 
     constructor(
         context: vscode.ExtensionContext,
@@ -52,6 +51,17 @@ export class Port11TreeViewProvider implements vscode.TreeDataProvider<Port11Tre
         this.sdkManager = managers.sdkManager;
         this.toolchainManager = managers.toolchainManager;
         this.sysConfigManager = managers.sysConfigManager;
+
+        // Listen for breakpoint changes
+        this.setupBreakpointListener();
+    }
+
+    private setupBreakpointListener(): void {
+        // Listen for breakpoint changes
+        vscode.debug.onDidChangeBreakpoints(() => {
+            this.outputChannel.appendLine('Breakpoints changed - refreshing tree view');
+            this.refresh();
+        });
     }
 
     refresh(): void {
@@ -119,7 +129,7 @@ export class Port11TreeViewProvider implements vscode.TreeDataProvider<Port11Tre
             ));
         }
 
-        // Boards
+        // Boards (moved to bottom)
         sections.push(new Port11TreeItem(
             'Boards',
             vscode.TreeItemCollapsibleState.Expanded,
@@ -128,7 +138,7 @@ export class Port11TreeViewProvider implements vscode.TreeDataProvider<Port11Tre
             new vscode.ThemeIcon('device-mobile')
         ));
 
-        // Setup Status
+        // Setup Status (moved to bottom)
         sections.push(new Port11TreeItem(
             'Setup Status',
             vscode.TreeItemCollapsibleState.Collapsed,
@@ -166,37 +176,127 @@ export class Port11TreeViewProvider implements vscode.TreeDataProvider<Port11Tre
     }
 
     private getBreakpointItems(): Port11TreeItem[] {
-        if (this.breakpoints.size === 0) {
+        // Get all breakpoints from VS Code
+        const allBreakpoints = vscode.debug.breakpoints;
+        
+        if (allBreakpoints.length === 0) {
             return [new Port11TreeItem(
                 'No breakpoints set',
                 vscode.TreeItemCollapsibleState.None,
                 'info',
-                {
-                    command: 'workbench.debug.viewlet.action.addFunctionBreakpointAction',
-                    title: 'Add Breakpoint'
-                },
+                undefined,
                 new vscode.ThemeIcon('info')
             )];
         }
 
         const items: Port11TreeItem[] = [];
-        this.breakpoints.forEach((lines, file) => {
-            lines.forEach(line => {
-                items.push(new Port11TreeItem(
-                    `${file}:${line}`,
+        
+        // Group breakpoints by type
+        allBreakpoints.forEach((bp, index) => {
+            if (bp instanceof vscode.SourceBreakpoint) {
+                // Source file breakpoint
+                const location = bp.location;
+                const fileName = vscode.workspace.asRelativePath(location.uri);
+                const line = location.range.start.line + 1; // VS Code lines are 0-based
+                
+                const item = new Port11TreeItem(
+                    `${fileName}:${line}`,
                     vscode.TreeItemCollapsibleState.None,
                     'breakpoint',
                     {
                         command: 'vscode.open',
                         title: 'Go to Breakpoint',
-                        arguments: [vscode.Uri.file(file)]
+                        arguments: [
+                            location.uri,
+                            { selection: new vscode.Range(location.range.start, location.range.end) }
+                        ]
                     },
-                    new vscode.ThemeIcon('debug-breakpoint')
-                ));
-            });
+                    new vscode.ThemeIcon(
+                        bp.enabled ? 'debug-breakpoint' : 'debug-breakpoint-disabled',
+                        bp.enabled ? new vscode.ThemeColor('debugIcon.breakpointForeground') : undefined
+                    )
+                );
+                
+                // Add checkbox for enabling/disabling
+                item.checkboxState = bp.enabled 
+                    ? vscode.TreeItemCheckboxState.Checked 
+                    : vscode.TreeItemCheckboxState.Unchecked;
+                
+                // Store breakpoint index for later use
+                item.id = `breakpoint-${index}`;
+                
+                // Add condition info if present
+                if (bp.condition) {
+                    item.tooltip = `Condition: ${bp.condition}`;
+                    item.description = '(conditional)';
+                }
+                
+                items.push(item);
+            } else if (bp instanceof vscode.FunctionBreakpoint) {
+                // Function breakpoint
+                const item = new Port11TreeItem(
+                    bp.functionName,
+                    vscode.TreeItemCollapsibleState.None,
+                    'function-breakpoint',
+                    undefined,
+                    new vscode.ThemeIcon(
+                        bp.enabled ? 'debug-breakpoint-function' : 'debug-breakpoint-function-disabled'
+                    )
+                );
+                
+                // Add checkbox for enabling/disabling
+                item.checkboxState = bp.enabled 
+                    ? vscode.TreeItemCheckboxState.Checked 
+                    : vscode.TreeItemCheckboxState.Unchecked;
+                
+                // Store breakpoint index for later use
+                item.id = `breakpoint-${index}`;
+                
+                item.description = '(function)';
+                items.push(item);
+            }
         });
 
         return items;
+    }
+
+    // Handle checkbox state changes
+    async handleCheckboxChange(item: Port11TreeItem, newState: vscode.TreeItemCheckboxState): Promise<void> {
+        if (item.contextValue === 'breakpoint' || item.contextValue === 'function-breakpoint') {
+            // Extract the index from the item id
+            const index = parseInt(item.id?.replace('breakpoint-', '') || '0');
+            const breakpoint = vscode.debug.breakpoints[index];
+            
+            if (breakpoint) {
+                // Toggle the enabled state
+                const shouldEnable = newState === vscode.TreeItemCheckboxState.Checked;
+                
+                // Remove the old breakpoint and add it back with new enabled state
+                if (breakpoint instanceof vscode.SourceBreakpoint) {
+                    const newBp = new vscode.SourceBreakpoint(
+                        breakpoint.location,
+                        shouldEnable,
+                        breakpoint.condition,
+                        breakpoint.hitCondition,
+                        breakpoint.logMessage
+                    );
+                    vscode.debug.removeBreakpoints([breakpoint]);
+                    vscode.debug.addBreakpoints([newBp]);
+                } else if (breakpoint instanceof vscode.FunctionBreakpoint) {
+                    const newBp = new vscode.FunctionBreakpoint(
+                        breakpoint.functionName,
+                        shouldEnable,
+                        breakpoint.condition,
+                        breakpoint.hitCondition,
+                        breakpoint.logMessage
+                    );
+                    vscode.debug.removeBreakpoints([breakpoint]);
+                    vscode.debug.addBreakpoints([newBp]);
+                }
+                
+                this.outputChannel.appendLine(`Breakpoint ${shouldEnable ? 'enabled' : 'disabled'}: ${item.label}`);
+            }
+        }
     }
 
     private getCallStackItems(): Port11TreeItem[] {
@@ -365,11 +465,6 @@ export class Port11TreeViewProvider implements vscode.TreeDataProvider<Port11Tre
 
     public updateCallStack(stack: string[]): void {
         this.callStack = stack;
-        this.refresh();
-    }
-
-    public updateBreakpoints(breakpoints: Map<string, number[]>): void {
-        this.breakpoints = breakpoints;
         this.refresh();
     }
 }

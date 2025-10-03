@@ -3,7 +3,7 @@
   "displayName": "Port11 Debugger",
   "description": "MSPM0 Development and Debugging Extension",
   "version": "0.1.0",
-  "publisher": "Red Nerds",
+  "publisher": "Port 11",
   "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.85.0"
@@ -21,7 +21,27 @@
     "ARM"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onView:port11.debugView",
+    "onCommand:port11-debugger.setupToolchain",
+    "onCommand:port11-debugger.detectBoards",
+    "onCommand:port11-debugger.build",
+    "onCommand:port11-debugger.flash",
+    "onCommand:port11-debugger.debug.start",
+    "onCommand:port11-debugger.debug.stop",
+    "onCommand:port11-debugger.debug.pause",
+    "onCommand:port11-debugger.debug.resume",
+    "onCommand:port11-debugger.debug.restart",
+    "onCommand:port11-debugger.refreshStatus",
+    "onCommand:port11-debugger.refreshView",
+    "onCommand:port11-debugger.openSettings",
+    "onCommand:port11-debugger.showLogs",
+    "onCommand:extension.buildCommand",
+    "onCommand:extension.flashCommand",
+    "onCommand:extension.haltCommand",
+    "onCommand:extension.resumeCommand",
+    "onCommand:extension.eraseCommand",
+    "onCommand:extension.connectCommand"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -38,7 +58,8 @@
       "port11-debugger": [
         {
           "id": "port11.debugView",
-          "name": "Port11 Debugger"
+          "name": "Port11 Debugger",
+          "icon": "$(tools)"
         }
       ]
     },
