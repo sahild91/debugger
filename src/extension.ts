@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { exec } from 'child_process';
 import { Port11TreeViewProvider, Port11TreeItem } from './views/port11TreeView';
+import { ConsoleViewProvider } from './views/consoleViewProvider';
 import { SDKManager } from './managers/sdkManager';
 import { ToolchainManager } from './managers/toolchainManager';
 import { SysConfigManager } from './managers/sysconfigManager';
@@ -12,6 +13,7 @@ import { DebugCommand } from './commands/debugCommand';
 
 let outputChannel: vscode.OutputChannel;
 let treeViewProvider: Port11TreeViewProvider;
+let consoleViewProvider: ConsoleViewProvider;
 let sdkManager: SDKManager;
 let toolchainManager: ToolchainManager;
 let sysConfigManager: SysConfigManager;
@@ -96,8 +98,42 @@ function executeSwdDebuggerCommand(args: string, successMessage: string, require
 }
 
 export async function activate(context: vscode.ExtensionContext) {
-    // Initialize output channel for logging
-    outputChannel = vscode.window.createOutputChannel('Port11 Debugger');
+    // Initialize base output channel for logging
+    const baseOutputChannel = vscode.window.createOutputChannel('Port11 Debugger');
+
+    // Create a wrapper that logs to both Output Channel and Console View
+    // This allows all existing code to work without changes
+    outputChannel = {
+        // Core logging methods
+        appendLine: (value: string) => {
+            baseOutputChannel.appendLine(value);
+            // Also send to console view (will be initialized later)
+            consoleViewProvider?.addLog(value);
+        },
+        append: (value: string) => {
+            baseOutputChannel.append(value);
+            // Note: append doesn't add newline, so we send to console only on appendLine
+        },
+
+        // Display methods
+        show: (preserveFocus?: boolean) => baseOutputChannel.show(preserveFocus),
+        hide: () => baseOutputChannel.hide(),
+
+        // Clear method - clears both output channel and console view
+        clear: () => {
+            baseOutputChannel.clear();
+            consoleViewProvider?.clearLogs();
+        },
+
+        // Cleanup
+        dispose: () => baseOutputChannel.dispose(),
+
+        // Properties
+        name: baseOutputChannel.name,
+
+        // Replace method
+        replace: (value: string) => baseOutputChannel.replace(value)
+    } as vscode.OutputChannel;
 
     // Show output channel only in debug mode or if specified in settings
     const showLogsOnStartup = vscode.workspace.getConfiguration('port11-debugger').get('showLogsOnStartup', false);
@@ -349,6 +385,15 @@ export async function activate(context: vscode.ExtensionContext) {
                 await treeViewProvider.handleCheckboxChange(item as Port11TreeItem, state);
             }
         });
+
+        // Initialize and Register Console View Provider
+        outputChannel.appendLine('🖥️ Initializing Console View...');
+        consoleViewProvider = new ConsoleViewProvider(context.extensionUri);
+        context.subscriptions.push(
+            vscode.window.registerWebviewViewProvider('port11.consoleView', consoleViewProvider)
+        );
+        outputChannel.appendLine('  ✅ Console View initialized successfully');
+        outputChannel.appendLine('');
 
         // Register all commands
         const commands = [
