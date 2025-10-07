@@ -62,6 +62,24 @@
           "icon": "$(tools)"
         },
         {
+          "id": "port11.breakpointsView",
+          "name": "Breakpoints",
+          "type": "webview",
+          "icon": "$(debug-breakpoint)"
+        },
+        {
+          "id": "port11.boardsView",
+          "name": "Boards",
+          "type": "webview",
+          "icon": "$(device-mobile)"
+        },
+        {
+          "id": "port11.setupView",
+          "name": "Setup Status",
+          "type": "webview",
+          "icon": "$(gear)"
+        },
+        {
           "id": "port11.consoleView",
           "name": "Console",
           "type": "webview",

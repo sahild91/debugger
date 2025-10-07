@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 import { exec } from 'child_process';
 import { Port11TreeViewProvider, Port11TreeItem } from './views/port11TreeView';
 import { ConsoleViewProvider } from './views/consoleViewProvider';
+import { BreakpointsViewProvider } from './views/breakpointsViewProvider';
+import { BoardsViewProvider } from './views/boardsViewProvider';
+import { SetupViewProvider } from './views/setupViewProvider';
 import { SDKManager } from './managers/sdkManager';
 import { ToolchainManager } from './managers/toolchainManager';
 import { SysConfigManager } from './managers/sysconfigManager';
@@ -14,6 +17,9 @@ import { DebugCommand } from './commands/debugCommand';
 let outputChannel: vscode.OutputChannel;
 let treeViewProvider: Port11TreeViewProvider;
 let consoleViewProvider: ConsoleViewProvider;
+let breakpointsViewProvider: BreakpointsViewProvider;
+let boardsViewProvider: BoardsViewProvider;
+let setupViewProvider: SetupViewProvider;
 let sdkManager: SDKManager;
 let toolchainManager: ToolchainManager;
 let sysConfigManager: SysConfigManager;
@@ -393,6 +399,34 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.window.registerWebviewViewProvider('port11.consoleView', consoleViewProvider)
         );
         outputChannel.appendLine('  ✅ Console View initialized successfully');
+
+        // Initialize and Register Breakpoints View Provider
+        outputChannel.appendLine('🔴 Initializing Breakpoints View...');
+        breakpointsViewProvider = new BreakpointsViewProvider(context.extensionUri, outputChannel);
+        context.subscriptions.push(
+            vscode.window.registerWebviewViewProvider('port11.breakpointsView', breakpointsViewProvider)
+        );
+        outputChannel.appendLine('  ✅ Breakpoints View initialized successfully');
+
+        // Initialize and Register Boards View Provider
+        outputChannel.appendLine('📱 Initializing Boards View...');
+        boardsViewProvider = new BoardsViewProvider(context.extensionUri, connectionManager, outputChannel);
+        context.subscriptions.push(
+            vscode.window.registerWebviewViewProvider('port11.boardsView', boardsViewProvider)
+        );
+        outputChannel.appendLine('  ✅ Boards View initialized successfully');
+
+        // Initialize and Register Setup View Provider
+        outputChannel.appendLine('⚙️ Initializing Setup View...');
+        setupViewProvider = new SetupViewProvider(
+            context.extensionUri,
+            { sdkManager, toolchainManager, sysConfigManager },
+            outputChannel
+        );
+        context.subscriptions.push(
+            vscode.window.registerWebviewViewProvider('port11.setupView', setupViewProvider)
+        );
+        outputChannel.appendLine('  ✅ Setup View initialized successfully');
         outputChannel.appendLine('');
 
         // Register all commands
@@ -511,8 +545,9 @@ async function setupToolchain(): Promise<void> {
         outputChannel.appendLine('Complete toolchain setup completed successfully');
         updateStatusBar('Setup complete');
 
-        // Refresh TreeView after setup
+        // Refresh TreeView and Setup View after setup
         treeViewProvider.refresh();
+        setupViewProvider?.refresh();
 
         vscode.window.showInformationMessage('Port11 setup completed successfully!');
 
@@ -549,8 +584,10 @@ async function refreshStatus(): Promise<void> {
 
         updateStatusBar(sdkInstalled && toolchainInstalled ? 'Ready' : 'Setup required');
 
-        // Refresh TreeView
+        // Refresh TreeView and WebViews
         treeViewProvider.refresh();
+        boardsViewProvider?.refresh();
+        setupViewProvider?.refresh();
 
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -588,6 +625,9 @@ async function detectBoards() {
             vscode.window.showInformationMessage(`Found ${boards.length} MSPM0 board(s). Check output for details.`);
             updateStatusBar(`${boards.length} boards found`);
         }
+
+        // Refresh boards view
+        boardsViewProvider?.refresh();
 
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
