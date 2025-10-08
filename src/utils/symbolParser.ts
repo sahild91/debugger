@@ -283,10 +283,11 @@ export class SymbolParser {
                 const type = info & 0x0F;
                 const bind = info >> 4;
 
-                // We're interested in OBJECT types (variables)
+                // We're interested in OBJECT types (variables) and FUNC types (functions)
                 // Type 1 = STT_OBJECT (data object), Type 2 = STT_FUNC (function)
-                if (type !== 1) {
-                    continue; // Skip non-variable symbols
+                // For debugging purposes, show both variables and functions
+                if (type !== 1 && type !== 2) {
+                    continue; // Skip other symbol types
                 }
 
                 // Skip undefined symbols (shndx = 0)
@@ -320,6 +321,7 @@ export class SymbolParser {
                     name: symbolName,
                     address: this.normalizeAddress(`0x${value.toString(16)}`),
                     scope: scope,
+                    type: type === 2 ? 'function' : 'variable',
                     size: size,
                 });
             }

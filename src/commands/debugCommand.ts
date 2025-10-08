@@ -57,40 +57,80 @@ export class DebugCommand {
             this.outputChannel.appendLine('Starting debug session...');
             this.outputChannel.appendLine('='.repeat(50));
 
-            // Validate prerequisites
-            await this.validatePrerequisites();
-
-            // Get target board
+            // Get target board (if available)
             const targetBoard = await this.getTargetBoard(port);
-            if (!targetBoard) {
-                throw new Error('No target board available for debugging');
+
+            // Check if board is available
+            const boardAvailable = targetBoard !== null;
+
+            // Check if offline debugging is allowed
+            const config = vscode.workspace.getConfiguration('port11-debugger');
+            const allowDebugWithoutBoard = config.get('allowDebugWithoutBoard', true);
+
+            // If no board available and offline mode not allowed, throw error
+            if (!boardAvailable && !allowDebugWithoutBoard) {
+                throw new Error('No board detected. Enable "allowDebugWithoutBoard" setting to debug without hardware.');
             }
 
-            // Ensure board is connected
-            if (!this.connectionManager.isConnected(targetBoard.path)) {
-                await this.connectionManager.connectToBoard(targetBoard.path);
+            // Validate prerequisites - board is optional if allowDebugWithoutBoard is true
+            await this.validatePrerequisites(boardAvailable);
+
+            if (boardAvailable && targetBoard) {
+                this.outputChannel.appendLine(`Target board detected: ${targetBoard.friendlyName}`);
+
+                // Ensure board is connected
+                if (!this.connectionManager.isConnected(targetBoard.path)) {
+                    await this.connectionManager.connectToBoard(targetBoard.path);
+                }
+
+                // Create debug session with board
+                const session: DebugSession = {
+                    id: `debug-${Date.now()}`,
+                    board: targetBoard,
+                    isActive: true,
+                    startTime: new Date()
+                };
+
+                this.currentSession = session;
+                this.outputChannel.appendLine(`Debug session started: ${session.id}`);
+                this.outputChannel.appendLine(`Target board: ${targetBoard.friendlyName}`);
+
+                // Initialize DAP connection
+                await this.initializeDAPConnection(targetBoard);
+
+                // Halt the target to prepare for debugging
+                this.outputChannel.appendLine('Halting target for inspection...');
+                await this.halt();
+
+                return session;
+            } else {
+                // Start debug session without board (simulation/offline mode)
+                this.outputChannel.appendLine('⚠️  No board detected - starting debug in offline mode');
+                this.outputChannel.appendLine('💡 Debug features will be limited without hardware connection');
+
+                // Create a mock board info for offline mode
+                const mockBoard: BoardInfo = {
+                    path: 'offline',
+                    friendlyName: 'Offline Debug Mode',
+                    manufacturer: 'N/A',
+                    serialNumber: 'N/A',
+                    deviceType: 'Unknown',
+                    isConnected: false
+                };
+
+                const session: DebugSession = {
+                    id: `debug-offline-${Date.now()}`,
+                    board: mockBoard,
+                    isActive: true,
+                    startTime: new Date()
+                };
+
+                this.currentSession = session;
+                this.outputChannel.appendLine(`Debug session started in offline mode: ${session.id}`);
+                this.outputChannel.appendLine('✅ Debug views are available for symbol inspection');
+
+                return session;
             }
-
-            // Create debug session
-            const session: DebugSession = {
-                id: `debug-${Date.now()}`,
-                board: targetBoard,
-                isActive: true,
-                startTime: new Date()
-            };
-
-            this.currentSession = session;
-            this.outputChannel.appendLine(`Debug session started: ${session.id}`);
-            this.outputChannel.appendLine(`Target board: ${targetBoard.friendlyName}`);
-
-            // Initialize DAP connection
-            await this.initializeDAPConnection(targetBoard);
-
-            // Halt the target to prepare for debugging
-            this.outputChannel.appendLine('Halting target for inspection...');
-            await this.halt();
-
-            return session;
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -133,6 +173,12 @@ export class DebugCommand {
             throw new Error('No active debug session');
         }
 
+        // Check if in offline mode
+        if (this.currentSession.board.path === 'offline') {
+            this.outputChannel.appendLine('⚠️  Halt command not available in offline mode');
+            return;
+        }
+
         this.outputChannel.appendLine('⏸️  Halting target...');
         try {
             await this.executeDAPCommand(['halt']);
@@ -146,6 +192,12 @@ export class DebugCommand {
     async resume(): Promise<void> {
         if (!this.currentSession?.isActive) {
             throw new Error('No active debug session');
+        }
+
+        // Check if in offline mode
+        if (this.currentSession.board.path === 'offline') {
+            this.outputChannel.appendLine('⚠️  Resume command not available in offline mode');
+            return;
         }
 
         this.outputChannel.appendLine('▶️  Resuming target...');
@@ -183,9 +235,19 @@ export class DebugCommand {
             throw new Error('No active debug session');
         }
 
+        // Check if in offline mode
+        if (this.currentSession.board.path === 'offline') {
+            // Return placeholder data in offline mode
+            return {
+                address,
+                data: '0x00000000',
+                size
+            };
+        }
+
         this.outputChannel.appendLine(`Reading memory at ${address}, size: ${size}`);
         const result = await this.executeDAPCommand(['read', address]);
-        
+
         return {
             address,
             data: result.trim(),
@@ -216,16 +278,18 @@ export class DebugCommand {
         return this.currentSession;
     }
 
-    private async validatePrerequisites(): Promise<void> {
+    private async validatePrerequisites(requireBoard: boolean = true): Promise<void> {
         // Check if swd-debugger CLI is available
         if (!this.cliManager.isCliAvailable()) {
             throw new Error('swd-debugger CLI not available. Please check installation.');
         }
 
-        // Check if there are any boards detected
-        const boards = await this.connectionManager.detectBoards();
-        if (boards.length === 0) {
-            throw new Error('No boards detected. Please connect a board and try again.');
+        // Check if there are any boards detected (optional)
+        if (requireBoard) {
+            const boards = await this.connectionManager.detectBoards();
+            if (boards.length === 0) {
+                throw new Error('No boards detected. Please connect a board and try again.');
+            }
         }
     }
 

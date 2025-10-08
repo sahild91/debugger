@@ -1,9 +1,11 @@
 import * as vscode from "vscode";
 import { VariableInfo, VariablesData } from "../types/variable";
+import { AddressMapper } from "../utils/addressMapper";
 
 /**
  * VariablesViewProvider manages the variables webview panel
  * Displays variable names, addresses, and line numbers in VS Code style
+ * Also shows breakpoint addresses when breakpoints are set
  */
 export class VariablesViewProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
@@ -15,12 +17,19 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
     isValid: false,
   };
   private isDebugActive: boolean = false;
+  private addressMapper: AddressMapper;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     outputChannel: vscode.OutputChannel
   ) {
     this.outputChannel = outputChannel;
+    this.addressMapper = new AddressMapper();
+
+    // Listen for breakpoint changes and refresh
+    vscode.debug.onDidChangeBreakpoints(() => {
+      this.refresh();
+    });
   }
 
   public resolveWebviewView(
@@ -60,6 +69,19 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * Load disassembly for address mapping
+   */
+  public async loadDisassembly(workspaceRoot: string): Promise<void> {
+    const loaded = await this.addressMapper.loadDisassembly(workspaceRoot);
+    if (loaded) {
+      this.outputChannel.appendLine('✅ Address mapper loaded successfully');
+      this.refresh();
+    } else {
+      this.outputChannel.appendLine('⚠️  Could not load disassembly for address mapping');
+    }
+  }
+
+  /**
    * Refresh the webview with current data
    */
   public refresh() {
@@ -67,10 +89,14 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    // Get breakpoint addresses
+    const breakpointAddresses = this.addressMapper.getBreakpointAddresses();
+
     this._view.webview.postMessage({
       type: "update",
       data: this.variablesData,
       isDebugActive: this.isDebugActive,
+      breakpointAddresses: breakpointAddresses,
     });
   }
 
@@ -374,59 +400,53 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
                 window.addEventListener('message', event => {
                     const message = event.data;
                     if (message.type === 'update') {
-                        renderVariables(message.data, message.isDebugActive);
+                        renderVariables(message.data, message.isDebugActive, message.breakpointAddresses);
                     }
                 });
 
-                function renderVariables(data, isDebugActive) {
+                function renderVariables(data, isDebugActive, breakpointAddresses) {
                     const container = document.getElementById('variables-container');
-
-                    if (!isDebugActive || !data || !data.isValid) {
-                        container.innerHTML = \`
-                            <div class="empty-state">
-                                <div class="empty-icon">📋</div>
-                                <div class="empty-title">No Debug Session</div>
-                                <div class="empty-description">Start debugging to see variables</div>
-                            </div>
-                        \`;
-                        return;
-                    }
 
                     let html = '';
 
-                    // Local Variables Section
-                    html += \`
-                        <div class="section-header">
-                            <span class="section-icon">📍</span>
-                            <span>Local Variables</span>
-                            <span class="section-count">\${data.localVariables.length}</span>
-                        </div>
-                    \`;
+                    // Breakpoint Addresses Section (always show if there are breakpoints)
+                    if (breakpointAddresses && breakpointAddresses.length > 0) {
 
-                    if (data.localVariables.length === 0) {
-                        html += '<div class="empty-section">No local variables in current scope</div>';
-                    } else {
-                        data.localVariables.forEach(variable => {
-                            html += renderVariableItem(variable);
+                        breakpointAddresses.forEach(bp => {
+                            const label = bp.functionName ? bp.functionName : \`\${bp.file}:\${bp.line}\`;
+                            html += \`
+                                <div class="variable-item">
+                                    <div class="variable-header">
+                                        <span class="variable-name">\${label}</span>
+                                        <span class="variable-address">\${bp.address}</span>
+                                    </div>
+                                </div>
+                            \`;
                         });
                     }
 
-                    // Global Variables Section
-                    html += \`
-                        <div class="section-header">
-                            <span class="section-icon">🌐</span>
-                            <span>Global & Static Variables</span>
-                            <span class="section-count">\${data.globalVariables.length}</span>
-                        </div>
-                    \`;
-
-                    if (data.globalVariables.length === 0) {
-                        html += '<div class="empty-section">No global variables detected</div>';
-                    } else {
-                        data.globalVariables.forEach(variable => {
-                            html += renderVariableItem(variable);
-                        });
+                    if (!isDebugActive || !data || !data.isValid) {
+                        if (breakpointAddresses && breakpointAddresses.length > 0) {
+                            // If we have breakpoints but no debug session, show just breakpoints
+                            container.innerHTML = html + \`
+                                <div class="empty-state">
+                                    <div class="empty-icon">📋</div>
+                                    <div class="empty-title">No Debug Session</div>
+                                    <div class="empty-description">Start debugging to see variables</div>
+                                </div>
+                            \`;
+                        } else {
+                            container.innerHTML = \`
+                                <div class="empty-state">
+                                    <div class="empty-icon">📋</div>
+                                    <div class="empty-title">No Debug Session</div>
+                                    <div class="empty-description">Start debugging to see variables</div>
+                                </div>
+                            \`;
+                        }
+                        return;
                     }
+
 
                     container.innerHTML = html;
                 }

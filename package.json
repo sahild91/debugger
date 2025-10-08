@@ -231,6 +231,11 @@
           "default": false,
           "description": "Skip automatic downloads, use only cached/manually installed toolchains"
         },
+        "port11-debugger.allowDebugWithoutBoard": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow starting debug session without a connected board (offline debugging)"
+        },
         "port11-debugger.buildOutputLevel": {
           "type": "string",
           "default": "normal",

@@ -504,6 +504,12 @@ export async function activate(context: vscode.ExtensionContext) {
                 await debugCommand.start(port);
                 treeViewProvider.setDebugActive(true);
 
+                // Load disassembly for address mapping
+                const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                if (workspaceFolder && variablesViewProvider) {
+                    await variablesViewProvider.loadDisassembly(workspaceFolder);
+                }
+
                 // Update call stack view with initial data
                 try {
                     const callStack = await debugCommand.getCallStack();
