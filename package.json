@@ -62,6 +62,12 @@
           "icon": "$(tools)"
         },
         {
+          "id": "port11.callStackView",
+          "name": "Call Stack",
+          "type": "webview",
+          "icon": "$(debug-stackframe)"
+        },
+        {
           "id": "port11.breakpointsView",
           "name": "Breakpoints",
           "type": "webview",

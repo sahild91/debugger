@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { ConnectionManager, BoardInfo } from '../managers/connectionManager';
 import { PlatformUtils } from '../utils/platformUtils';
+import { CallStackFrame } from '../types/callStack';
 
 export interface DebugSession {
     id: string;
@@ -409,6 +410,89 @@ export class DebugCommand {
 
         this.outputChannel.appendLine(`Setting breakpoint at ${address}...`);
         // TODO: Implement breakpoint commands when available in DAP CLI
+    }
+
+    /**
+     * Get the current call stack from the debugger
+     * Returns an array of stack frames ordered from current (0) to oldest
+     */
+    async getCallStack(): Promise<CallStackFrame[]> {
+        if (!this.currentSession?.isActive) {
+            return [];
+        }
+
+        try {
+            this.outputChannel.appendLine('Reading call stack...');
+
+            // Execute DAP CLI command to get call stack
+            // Expected command format: dap-cli --port <port> backtrace
+            const result = await this.executeDAPCommand(['backtrace']);
+
+            // Parse the call stack from DAP CLI output
+            const frames = this.parseCallStack(result);
+
+            this.outputChannel.appendLine(`Call stack retrieved: ${frames.length} frames`);
+            return frames;
+
+        } catch (error) {
+            this.outputChannel.appendLine(`Failed to read call stack: ${error}`);
+            return [];
+        }
+    }
+
+    /**
+     * Parse call stack output from DAP CLI
+     * Expected format examples:
+     * - "#0  0x08000234 in delay_ms () at src/main.c:123"
+     * - "#1  0x08000100 in main () at src/main.c:89"
+     * - "#2  0x08000000 in __start ()"
+     */
+    private parseCallStack(output: string): CallStackFrame[] {
+        const frames: CallStackFrame[] = [];
+        const lines = output.split('\n');
+
+        for (const line of lines) {
+            // Match GDB-style backtrace format:
+            // #<index>  <address> in <function> (<args>) at <file>:<line>
+            const match = line.match(/^#(\d+)\s+(?:0x[0-9a-fA-F]+\s+)?(?:in\s+)?(\S+)\s*\([^)]*\)(?:\s+at\s+([^:]+):(\d+))?/);
+
+            if (match) {
+                const index = parseInt(match[1]);
+                const functionName = match[2];
+                const filePath = match[3] || undefined;
+                const lineNumber = match[4] ? parseInt(match[4]) : undefined;
+
+                // Extract address if present
+                const addressMatch = line.match(/0x[0-9a-fA-F]+/);
+                const address = addressMatch ? addressMatch[0] : undefined;
+
+                // Determine if it's external code (no file path)
+                const isExternal = !filePath;
+
+                frames.push({
+                    index: index,
+                    functionName: functionName,
+                    filePath: filePath,
+                    line: lineNumber,
+                    address: address,
+                    isExternal: isExternal,
+                    isCurrent: index === 0, // Frame 0 is always current
+                });
+            } else {
+                // Try simpler format: just function names
+                const simpleMatch = line.match(/^#(\d+)\s+(.+)/);
+                if (simpleMatch) {
+                    frames.push({
+                        index: parseInt(simpleMatch[1]),
+                        functionName: simpleMatch[2].trim(),
+                        isCurrent: parseInt(simpleMatch[1]) === 0,
+                        isExternal: true,
+                    });
+                }
+            }
+        }
+
+        return frames;
     }
 
     dispose(): void {

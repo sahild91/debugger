@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { exec } from 'child_process';
 import { Port11TreeViewProvider, Port11TreeItem } from './views/port11TreeView';
 import { ConsoleViewProvider } from './views/consoleViewProvider';
+import { CallStackViewProvider } from './views/callStackViewProvider';
 import { BreakpointsViewProvider } from './views/breakpointsViewProvider';
 import { BoardsViewProvider } from './views/boardsViewProvider';
 import { SetupViewProvider } from './views/setupViewProvider';
@@ -17,6 +18,7 @@ import { DebugCommand } from './commands/debugCommand';
 let outputChannel: vscode.OutputChannel;
 let treeViewProvider: Port11TreeViewProvider;
 let consoleViewProvider: ConsoleViewProvider;
+let callStackViewProvider: CallStackViewProvider;
 let breakpointsViewProvider: BreakpointsViewProvider;
 let boardsViewProvider: BoardsViewProvider;
 let setupViewProvider: SetupViewProvider;
@@ -164,8 +166,8 @@ export async function activate(context: vscode.ExtensionContext) {
                 outputChannel.appendLine('⚡ Flash command triggered');
                 outputChannel.show();
 
-                const binPath = getAbsolutePath('build/main.bin');
-                await executeSwdDebuggerCommand(`flash ${binPath}`, 'Flash completed successfully!');
+                const binPath = getAbsolutePath('build/main.hex');
+                await executeSwdDebuggerCommand(`flash --file ${binPath}`, 'Flash completed successfully!');
             } catch (error) {
                 outputChannel.appendLine(`❌ Flash command failed: ${error}`);
             }
@@ -400,6 +402,14 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         outputChannel.appendLine('  ✅ Console View initialized successfully');
 
+        // Initialize and Register Call Stack View Provider
+        outputChannel.appendLine('📚 Initializing Call Stack View...');
+        callStackViewProvider = new CallStackViewProvider(context.extensionUri, outputChannel);
+        context.subscriptions.push(
+            vscode.window.registerWebviewViewProvider('port11.callStackView', callStackViewProvider)
+        );
+        outputChannel.appendLine('  ✅ Call Stack View initialized successfully');
+
         // Initialize and Register Breakpoints View Provider
         outputChannel.appendLine('🔴 Initializing Breakpoints View...');
         breakpointsViewProvider = new BreakpointsViewProvider(context.extensionUri, outputChannel);
@@ -455,12 +465,33 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.commands.registerCommand('port11-debugger.debug.start', async (port?: string) => {
                 await debugCommand.start(port);
                 treeViewProvider.setDebugActive(true);
+
+                // Update call stack view with initial data
+                try {
+                    const callStack = await debugCommand.getCallStack();
+                    callStackViewProvider?.updateCallStack(callStack, true);
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to get initial call stack: ${error}`);
+                }
             }),
             vscode.commands.registerCommand('port11-debugger.debug.stop', async () => {
                 await debugCommand.stop();
                 treeViewProvider.setDebugActive(false);
+
+                // Clear call stack view
+                callStackViewProvider?.updateCallStack([], false);
             }),
-            vscode.commands.registerCommand('port11-debugger.debug.pause', () => debugCommand.halt()),
+            vscode.commands.registerCommand('port11-debugger.debug.pause', async () => {
+                await debugCommand.halt();
+
+                // Update call stack when paused
+                try {
+                    const callStack = await debugCommand.getCallStack();
+                    callStackViewProvider?.updateCallStack(callStack, true);
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to update call stack: ${error}`);
+                }
+            }),
             vscode.commands.registerCommand('port11-debugger.debug.resume', () => debugCommand.resume()),
             vscode.commands.registerCommand('port11-debugger.debug.restart', () => restartDebugSession(debugCommand)),
 
