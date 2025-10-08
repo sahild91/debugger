@@ -3,6 +3,7 @@ import { exec } from 'child_process';
 import { Port11TreeViewProvider, Port11TreeItem } from './views/port11TreeView';
 import { ConsoleViewProvider } from './views/consoleViewProvider';
 import { CallStackViewProvider } from './views/callStackViewProvider';
+import { VariablesViewProvider } from './views/variablesViewProvider';
 import { BreakpointsViewProvider } from './views/breakpointsViewProvider';
 import { BoardsViewProvider } from './views/boardsViewProvider';
 import { SetupViewProvider } from './views/setupViewProvider';
@@ -19,6 +20,7 @@ let outputChannel: vscode.OutputChannel;
 let treeViewProvider: Port11TreeViewProvider;
 let consoleViewProvider: ConsoleViewProvider;
 let callStackViewProvider: CallStackViewProvider;
+let variablesViewProvider: VariablesViewProvider;
 let breakpointsViewProvider: BreakpointsViewProvider;
 let boardsViewProvider: BoardsViewProvider;
 let setupViewProvider: SetupViewProvider;
@@ -410,6 +412,14 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         outputChannel.appendLine('  ✅ Call Stack View initialized successfully');
 
+        // Initialize and Register Variables View Provider
+        outputChannel.appendLine('📋 Initializing Variables View...');
+        variablesViewProvider = new VariablesViewProvider(context.extensionUri, outputChannel);
+        context.subscriptions.push(
+            vscode.window.registerWebviewViewProvider('port11.variablesView', variablesViewProvider)
+        );
+        outputChannel.appendLine('  ✅ Variables View initialized successfully');
+
         // Initialize and Register Breakpoints View Provider
         outputChannel.appendLine('🔴 Initializing Breakpoints View...');
         breakpointsViewProvider = new BreakpointsViewProvider(context.extensionUri, outputChannel);
@@ -473,6 +483,14 @@ export async function activate(context: vscode.ExtensionContext) {
                 } catch (error) {
                     outputChannel.appendLine(`Failed to get initial call stack: ${error}`);
                 }
+
+                // Update variables view with initial data
+                try {
+                    const variables = await debugCommand.getVariables();
+                    variablesViewProvider?.updateVariables(variables, true);
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to get initial variables: ${error}`);
+                }
             }),
             vscode.commands.registerCommand('port11-debugger.debug.stop', async () => {
                 await debugCommand.stop();
@@ -480,6 +498,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
                 // Clear call stack view
                 callStackViewProvider?.updateCallStack([], false);
+
+                // Clear variables view
+                variablesViewProvider?.updateVariables({
+                    localVariables: [],
+                    globalVariables: [],
+                    totalCount: 0,
+                    isValid: false
+                }, false);
             }),
             vscode.commands.registerCommand('port11-debugger.debug.pause', async () => {
                 await debugCommand.halt();
@@ -490,6 +516,14 @@ export async function activate(context: vscode.ExtensionContext) {
                     callStackViewProvider?.updateCallStack(callStack, true);
                 } catch (error) {
                     outputChannel.appendLine(`Failed to update call stack: ${error}`);
+                }
+
+                // Update variables when paused
+                try {
+                    const variables = await debugCommand.getVariables();
+                    variablesViewProvider?.updateVariables(variables, true);
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to update variables: ${error}`);
                 }
             }),
             vscode.commands.registerCommand('port11-debugger.debug.resume', () => debugCommand.resume()),

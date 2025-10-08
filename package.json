@@ -68,6 +68,12 @@
           "icon": "$(debug-stackframe)"
         },
         {
+          "id": "port11.variablesView",
+          "name": "Variables",
+          "type": "webview",
+          "icon": "$(symbol-variable)"
+        },
+        {
           "id": "port11.breakpointsView",
           "name": "Breakpoints",
           "type": "webview",

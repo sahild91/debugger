@@ -5,6 +5,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { ConnectionManager, BoardInfo } from '../managers/connectionManager';
 import { PlatformUtils } from '../utils/platformUtils';
 import { CallStackFrame } from '../types/callStack';
+import { VariableInfo, VariablesData } from '../types/variable';
 
 export interface DebugSession {
     id: string;
@@ -493,6 +494,165 @@ export class DebugCommand {
         }
 
         return frames;
+    }
+
+    /**
+     * Get all variables (local and global) from the debugger
+     * Returns variables data grouped by scope
+     */
+    async getVariables(): Promise<VariablesData> {
+        if (!this.currentSession?.isActive) {
+            return {
+                localVariables: [],
+                globalVariables: [],
+                totalCount: 0,
+                isValid: false,
+            };
+        }
+
+        try {
+            this.outputChannel.appendLine('Reading variables...');
+
+            // Execute DAP CLI commands to get local and global variables
+            // Expected command format: dap-cli --port <port> info locals
+            // Expected command format: dap-cli --port <port> info variables
+
+            const localVarsOutput = await this.executeDAPCommand(['info', 'locals']);
+            const globalVarsOutput = await this.executeDAPCommand(['info', 'variables']);
+
+            // Parse the variables from DAP CLI output
+            const localVariables = this.parseVariables(localVarsOutput, 'local');
+            const globalVariables = this.parseVariables(globalVarsOutput, 'global');
+
+            const totalCount = localVariables.length + globalVariables.length;
+
+            this.outputChannel.appendLine(`Variables retrieved: ${localVariables.length} local, ${globalVariables.length} global`);
+
+            return {
+                localVariables,
+                globalVariables,
+                totalCount,
+                isValid: true,
+            };
+
+        } catch (error) {
+            this.outputChannel.appendLine(`Failed to read variables: ${error}`);
+            return {
+                localVariables: [],
+                globalVariables: [],
+                totalCount: 0,
+                isValid: false,
+            };
+        }
+    }
+
+    /**
+     * Parse variables output from DAP CLI
+     * Expected format examples:
+     * - "count = 0x5 at main.c:15"
+     * - "delay_ms = 0x200000A4 at utils.c:8"
+     * - "status = 0x1234 at main.c:20"
+     * - "globalFlag = 0xABCD"
+     * Also supports GDB-style format:
+     * - "count = 5" (with address lookup needed)
+     * - "ptr = 0x200000A4"
+     */
+    private parseVariables(output: string, defaultScope: 'local' | 'global'): VariableInfo[] {
+        const variables: VariableInfo[] = [];
+        const lines = output.split('\n');
+
+        for (const line of lines) {
+            if (!line.trim()) {
+                continue;
+            }
+
+            // Try to match: "varName = 0xADDR at file.c:line"
+            let match = line.match(/^(\w+)\s*=\s*(0x[0-9a-fA-F]+)\s+at\s+([^:]+):(\d+)/i);
+
+            if (match) {
+                const varName = match[1];
+                const address = this.normalizeAddress(match[2]);
+                const filePath = match[3];
+                const lineNumber = parseInt(match[4]);
+
+                variables.push({
+                    name: varName,
+                    address: address,
+                    line: lineNumber,
+                    filePath: filePath,
+                    scope: defaultScope,
+                });
+                continue;
+            }
+
+            // Try to match: "varName = 0xADDR"
+            match = line.match(/^(\w+)\s*=\s*(0x[0-9a-fA-F]+)/i);
+
+            if (match) {
+                const varName = match[1];
+                const address = this.normalizeAddress(match[2]);
+
+                variables.push({
+                    name: varName,
+                    address: address,
+                    scope: defaultScope,
+                });
+                continue;
+            }
+
+            // Try to match GDB format with type: "int count = 5" with separate address info
+            match = line.match(/^(\w+)\s+(\w+)\s*=\s*(.+)/);
+
+            if (match) {
+                const varType = match[1];
+                const varName = match[2];
+                const varValue = match[3].trim();
+
+                // Try to extract address if present
+                const addrMatch = line.match(/0x[0-9a-fA-F]+/i);
+                const address = addrMatch ? this.normalizeAddress(addrMatch[0]) : '0x0';
+
+                variables.push({
+                    name: varName,
+                    address: address,
+                    scope: defaultScope,
+                    type: varType,
+                    value: varValue,
+                });
+                continue;
+            }
+
+            // Simpler format: just "varName = value"
+            match = line.match(/^(\w+)\s*=\s*(.+)/);
+
+            if (match) {
+                const varName = match[1];
+                const varValue = match[2].trim();
+
+                // Try to extract address if present in value
+                const addrMatch = varValue.match(/0x[0-9a-fA-F]+/i);
+                const address = addrMatch ? this.normalizeAddress(addrMatch[0]) : '0x0';
+
+                variables.push({
+                    name: varName,
+                    address: address,
+                    scope: defaultScope,
+                    value: varValue,
+                });
+            }
+        }
+
+        return variables;
+    }
+
+    /**
+     * Normalize memory address to format: 0xABCD (no leading zeros except prefix)
+     */
+    private normalizeAddress(address: string): string {
+        // Remove 0x prefix, convert to uppercase, remove leading zeros, add 0x back
+        const cleanAddr = address.replace(/^0x/i, '').toUpperCase();
+        const noLeadingZeros = cleanAddr.replace(/^0+/, '') || '0';
+        return '0x' + noLeadingZeros;
     }
 
     dispose(): void {
