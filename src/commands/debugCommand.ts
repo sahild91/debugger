@@ -3,9 +3,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { ConnectionManager, BoardInfo } from '../managers/connectionManager';
-import { PlatformUtils } from '../utils/platformUtils';
+import { CliManager } from '../managers/cliManager';
 import { CallStackFrame } from '../types/callStack';
 import { VariableInfo, VariablesData } from '../types/variable';
+import { SymbolParser } from '../utils/symbolParser';
 
 export interface DebugSession {
     id: string;
@@ -30,19 +31,20 @@ export class DebugCommand {
     private context: vscode.ExtensionContext;
     private outputChannel: vscode.OutputChannel;
     private connectionManager: ConnectionManager;
+    private cliManager: CliManager;
     private dapProcess: ChildProcess | null = null;
     private currentSession: DebugSession | null = null;
-    private dapBinaryPath: string;
 
     constructor(
         context: vscode.ExtensionContext,
         outputChannel: vscode.OutputChannel,
-        connectionManager: ConnectionManager
+        connectionManager: ConnectionManager,
+        cliManager: CliManager
     ) {
         this.context = context;
         this.outputChannel = outputChannel;
         this.connectionManager = connectionManager;
-        this.dapBinaryPath = this.getDAPBinaryPath();
+        this.cliManager = cliManager;
     }
 
     async start(port?: string): Promise<DebugSession> {
@@ -80,9 +82,13 @@ export class DebugCommand {
             this.currentSession = session;
             this.outputChannel.appendLine(`Debug session started: ${session.id}`);
             this.outputChannel.appendLine(`Target board: ${targetBoard.friendlyName}`);
-            
-            // Initialize DAP connection (placeholder for now)
+
+            // Initialize DAP connection
             await this.initializeDAPConnection(targetBoard);
+
+            // Halt the target to prepare for debugging
+            this.outputChannel.appendLine('Halting target for inspection...');
+            await this.halt();
 
             return session;
 
@@ -127,8 +133,14 @@ export class DebugCommand {
             throw new Error('No active debug session');
         }
 
-        this.outputChannel.appendLine('Halting target...');
-        await this.executeDAPCommand(['halt']);
+        this.outputChannel.appendLine('⏸️  Halting target...');
+        try {
+            await this.executeDAPCommand(['halt']);
+            this.outputChannel.appendLine('✅ Target halted successfully');
+        } catch (error) {
+            this.outputChannel.appendLine(`❌ Failed to halt: ${error}`);
+            throw error;
+        }
     }
 
     async resume(): Promise<void> {
@@ -136,8 +148,14 @@ export class DebugCommand {
             throw new Error('No active debug session');
         }
 
-        this.outputChannel.appendLine('Resuming target...');
-        await this.executeDAPCommand(['resume']);
+        this.outputChannel.appendLine('▶️  Resuming target...');
+        try {
+            await this.executeDAPCommand(['resume']);
+            this.outputChannel.appendLine('✅ Target resumed successfully');
+        } catch (error) {
+            this.outputChannel.appendLine(`❌ Failed to resume: ${error}`);
+            throw error;
+        }
     }
 
     async readRegister(register: string): Promise<string> {
@@ -199,9 +217,9 @@ export class DebugCommand {
     }
 
     private async validatePrerequisites(): Promise<void> {
-        // Check if DAP binary exists
-        if (!fs.existsSync(this.dapBinaryPath)) {
-            throw new Error(`DAP binary not found: ${this.dapBinaryPath}`);
+        // Check if swd-debugger CLI is available
+        if (!this.cliManager.isCliAvailable()) {
+            throw new Error('swd-debugger CLI not available. Please check installation.');
         }
 
         // Check if there are any boards detected
@@ -234,16 +252,15 @@ export class DebugCommand {
     }
 
     private async initializeDAPConnection(board: BoardInfo): Promise<void> {
-        // TODO: Initialize the actual DAP connection
-        // For now, this is a placeholder
-        this.outputChannel.appendLine(`Initializing DAP connection to ${board.path}`);
-        
-        // Test DAP binary availability
+        this.outputChannel.appendLine(`Initializing debug connection to ${board.path}`);
+
+        // Test swd-debugger CLI availability
         try {
-            await this.executeDAPCommand(['--help']);
-            this.outputChannel.appendLine('DAP CLI is available and responsive');
+            await this.executeDAPCommand(['--version']);
+            this.outputChannel.appendLine('swd-debugger CLI is available and responsive');
         } catch (error) {
-            throw new Error(`DAP CLI initialization failed: ${error}`);
+            // --version might not exist, try without it
+            this.outputChannel.appendLine('swd-debugger CLI initialized (version check skipped)');
         }
     }
 
@@ -254,9 +271,10 @@ export class DebugCommand {
                 return;
             }
 
+            const swdDebuggerPath = this.cliManager.getExecutablePath();
+
             const fullArgs = [
                 '--port', this.currentSession.board.path,
-                '--baud', '115200',
                 ...args
             ];
 
@@ -266,9 +284,9 @@ export class DebugCommand {
                 fullArgs.push('--verbose');
             }
 
-            this.outputChannel.appendLine(`Executing DAP command: ${this.dapBinaryPath} ${fullArgs.join(' ')}`);
+            this.outputChannel.appendLine(`Executing debug command: ${swdDebuggerPath} ${fullArgs.join(' ')}`);
 
-            const dapProcess = spawn(this.dapBinaryPath, fullArgs, {
+            const dapProcess = spawn(swdDebuggerPath, fullArgs, {
                 stdio: ['pipe', 'pipe', 'pipe']
             });
 
@@ -296,29 +314,16 @@ export class DebugCommand {
             });
 
             dapProcess.on('error', (error) => {
-                reject(new Error(`DAP process error: ${error.message}`));
+                reject(new Error(`Debug process error: ${error.message}`));
             });
 
-            // Set timeout for DAP commands
+            // Set timeout for debug commands
+            const timeout = config.get('debugTimeout', 10000);
             setTimeout(() => {
                 dapProcess.kill();
-                reject(new Error('DAP command timed out'));
-            }, 10000); // 10 second timeout
+                reject(new Error('Debug command timed out'));
+            }, timeout);
         });
-    }
-
-    private getDAPBinaryPath(): string {
-        const platform = PlatformUtils.getCurrentPlatform();
-        const executableName = platform.startsWith('win32') ? 'msp_dap_link_via_serial.exe' : 'msp_dap_link_via_serial';
-        
-        // TODO: Once we have the compiled binaries, they will be in:
-        // return path.join(this.context.extensionPath, 'dist', 'bin', platform, executableName);
-        
-        // For now, return a placeholder path
-        const placeholderPath = path.join(this.context.extensionPath, 'dist', 'bin', platform, executableName);
-        this.outputChannel.appendLine(`DAP binary path (placeholder): ${placeholderPath}`);
-        
-        return placeholderPath;
     }
 
     private parseRegisterValue(output: string): string {
@@ -413,6 +418,36 @@ export class DebugCommand {
         // TODO: Implement breakpoint commands when available in DAP CLI
     }
 
+    async stepOver(): Promise<void> {
+        if (!this.currentSession?.isActive) {
+            throw new Error('No active debug session');
+        }
+
+        this.outputChannel.appendLine('⚠️  Step Over not supported by DAP CLI yet');
+        this.outputChannel.appendLine('💡 Use Halt/Resume for basic control, or integrate GDB for stepping');
+        throw new Error('Step commands require GDB/LLDB integration');
+    }
+
+    async stepInto(): Promise<void> {
+        if (!this.currentSession?.isActive) {
+            throw new Error('No active debug session');
+        }
+
+        this.outputChannel.appendLine('⚠️  Step Into not supported by DAP CLI yet');
+        this.outputChannel.appendLine('💡 Use Halt/Resume for basic control, or integrate GDB for stepping');
+        throw new Error('Step commands require GDB/LLDB integration');
+    }
+
+    async stepOut(): Promise<void> {
+        if (!this.currentSession?.isActive) {
+            throw new Error('No active debug session');
+        }
+
+        this.outputChannel.appendLine('⚠️  Step Out not supported by DAP CLI yet');
+        this.outputChannel.appendLine('💡 Use Halt/Resume for basic control, or integrate GDB for stepping');
+        throw new Error('Step commands require GDB/LLDB integration');
+    }
+
     /**
      * Get the current call stack from the debugger
      * Returns an array of stack frames ordered from current (0) to oldest
@@ -423,20 +458,21 @@ export class DebugCommand {
         }
 
         try {
-            this.outputChannel.appendLine('Reading call stack...');
+            this.outputChannel.appendLine('📚 Reading call stack...');
+            this.outputChannel.appendLine('⚠️  Note: Call stack feature requires GDB/LLDB integration (not yet implemented)');
 
-            // Execute DAP CLI command to get call stack
-            // Expected command format: dap-cli --port <port> backtrace
-            const result = await this.executeDAPCommand(['backtrace']);
+            // TODO: Call stack requires:
+            // 1. Read SP (Stack Pointer) register
+            // 2. Read LR (Link Register) for return addresses
+            // 3. Unwind stack frames
+            // 4. Match addresses to symbols from ELF file
+            //
+            // For now, return empty - this needs GDB protocol or DWARF parsing
 
-            // Parse the call stack from DAP CLI output
-            const frames = this.parseCallStack(result);
-
-            this.outputChannel.appendLine(`Call stack retrieved: ${frames.length} frames`);
-            return frames;
+            return [];
 
         } catch (error) {
-            this.outputChannel.appendLine(`Failed to read call stack: ${error}`);
+            this.outputChannel.appendLine(`❌ Failed to read call stack: ${error}`);
             return [];
         }
     }
@@ -511,32 +547,98 @@ export class DebugCommand {
         }
 
         try {
-            this.outputChannel.appendLine('Reading variables...');
+            this.outputChannel.appendLine('📋 Reading variables from debug symbols...');
 
-            // Execute DAP CLI commands to get local and global variables
-            // Expected command format: dap-cli --port <port> info locals
-            // Expected command format: dap-cli --port <port> info variables
+            let localVariables: VariableInfo[] = [];
+            let globalVariables: VariableInfo[] = [];
 
-            const localVarsOutput = await this.executeDAPCommand(['info', 'locals']);
-            const globalVarsOutput = await this.executeDAPCommand(['info', 'variables']);
+            // Try to parse disassembly file if it exists
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (workspaceFolder) {
+                const disasmPath = path.join(workspaceFolder, 'full_disasm.txt');
 
-            // Parse the variables from DAP CLI output
-            const localVariables = this.parseVariables(localVarsOutput, 'local');
-            const globalVariables = this.parseVariables(globalVarsOutput, 'global');
+                if (fs.existsSync(disasmPath)) {
+                    this.outputChannel.appendLine(`Found disassembly file: ${disasmPath}`);
+                    const parsedVars = SymbolParser.parseDisassemblyFile(disasmPath);
+
+                    // Separate by scope
+                    localVariables = parsedVars.filter(v => v.scope === 'local' || v.scope === 'argument');
+                    globalVariables = parsedVars.filter(v => v.scope === 'global' || v.scope === 'static');
+
+                    this.outputChannel.appendLine(`Parsed ${parsedVars.length} variables from disassembly`);
+                } else {
+                    this.outputChannel.appendLine(`💡 Tip: Generate disassembly with: tiarmobjdump -lS build/main.out > full_disasm.txt`);
+                }
+
+                // Try to find and parse ELF file directly
+                const elfPath = SymbolParser.findElfFile(workspaceFolder);
+                if (elfPath && fs.existsSync(elfPath)) {
+                    this.outputChannel.appendLine(`Found ELF file: ${elfPath}`);
+
+                    // Parse ELF symbol table directly
+                    this.outputChannel.appendLine('Parsing ELF symbol table...');
+                    const elfVars = SymbolParser.parseElfSymbols(elfPath);
+
+                    if (elfVars.length > 0) {
+                        this.outputChannel.appendLine(`✅ Found ${elfVars.length} variables in ELF symbol table`);
+
+                        // Separate by scope
+                        localVariables = elfVars.filter(v => v.scope === 'local');
+                        globalVariables = elfVars.filter(v => v.scope === 'global' || v.scope === 'static');
+                    } else {
+                        this.outputChannel.appendLine('⚠️  No variables found in ELF symbol table');
+                    }
+                }
+            }
+
+            // If no variables from symbols, show registers as fallback
+            if (localVariables.length === 0 && globalVariables.length === 0) {
+                this.outputChannel.appendLine('No symbol data available, showing CPU registers...');
+
+                try {
+                    const allRegs = await this.readAllRegisters();
+                    allRegs.forEach(reg => {
+                        localVariables.push({
+                            name: reg.name,
+                            address: '(register)', // Registers don't have memory addresses
+                            scope: 'local',
+                            type: 'register',
+                            value: reg.value
+                        });
+                    });
+                } catch (error) {
+                    this.outputChannel.appendLine(`Could not read registers: ${error}`);
+                }
+            }
+
+            // Read actual memory values for variables with addresses
+            for (const variable of [...localVariables, ...globalVariables]) {
+                // Skip registers and invalid addresses
+                if (variable.address &&
+                    variable.address !== '0x0' &&
+                    variable.address !== '(register)' &&
+                    variable.type !== 'register') {
+                    try {
+                        const memResult = await this.readMemory(variable.address, 4);
+                        variable.value = memResult.data;
+                    } catch (error) {
+                        // Ignore read errors for individual variables
+                    }
+                }
+            }
 
             const totalCount = localVariables.length + globalVariables.length;
-
-            this.outputChannel.appendLine(`Variables retrieved: ${localVariables.length} local, ${globalVariables.length} global`);
+            this.outputChannel.appendLine(`✅ Variables: ${localVariables.length} local, ${globalVariables.length} global`);
 
             return {
                 localVariables,
                 globalVariables,
                 totalCount,
-                isValid: true,
+                isValid: totalCount > 0,
             };
 
         } catch (error) {
-            this.outputChannel.appendLine(`Failed to read variables: ${error}`);
+            this.outputChannel.appendLine(`❌ Failed to read variables: ${error}`);
             return {
                 localVariables: [],
                 globalVariables: [],
