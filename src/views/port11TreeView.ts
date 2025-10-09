@@ -33,7 +33,6 @@ export class Port11TreeViewProvider implements vscode.TreeDataProvider<Port11Tre
     // Debug state
     private debugActive: boolean = false;
     private registers: Map<string, string> = new Map();
-    private callStack: string[] = [];
 
     constructor(
         context: vscode.ExtensionContext,
@@ -84,8 +83,6 @@ export class Port11TreeViewProvider implements vscode.TreeDataProvider<Port11Tre
                 return this.getRegisterItems();
             case 'breakpoints-section':
                 return this.getBreakpointItems();
-            case 'callstack-section':
-                return this.getCallStackItems();
             case 'boards-section':
                 return this.getBoardItems();
             case 'setup-section':
@@ -117,17 +114,6 @@ export class Port11TreeViewProvider implements vscode.TreeDataProvider<Port11Tre
             undefined,
             new vscode.ThemeIcon('debug-breakpoint')
         ));
-
-        // Call Stack (only show when debugging)
-        if (this.debugActive) {
-            sections.push(new Port11TreeItem(
-                'Call Stack',
-                vscode.TreeItemCollapsibleState.Expanded,
-                'callstack-section',
-                undefined,
-                new vscode.ThemeIcon('debug-stackframe')
-            ));
-        }
 
         // Boards (moved to bottom)
         sections.push(new Port11TreeItem(
@@ -299,27 +285,6 @@ export class Port11TreeViewProvider implements vscode.TreeDataProvider<Port11Tre
         }
     }
 
-    private getCallStackItems(): Port11TreeItem[] {
-        if (this.callStack.length === 0) {
-            return [new Port11TreeItem(
-                'No debug session active',
-                vscode.TreeItemCollapsibleState.None,
-                'info',
-                undefined,
-                new vscode.ThemeIcon('info')
-            )];
-        }
-
-        return this.callStack.map((frame, index) => {
-            return new Port11TreeItem(
-                `#${index}: ${frame}`,
-                vscode.TreeItemCollapsibleState.None,
-                'stackframe',
-                undefined,
-                new vscode.ThemeIcon('debug-stackframe')
-            );
-        });
-    }
 
     private async getBoardItems(): Promise<Port11TreeItem[]> {
         try {
@@ -453,18 +418,12 @@ export class Port11TreeViewProvider implements vscode.TreeDataProvider<Port11Tre
         this.debugActive = active;
         if (!active) {
             this.registers.clear();
-            this.callStack = [];
         }
         this.refresh();
     }
 
     public updateRegisters(registers: Map<string, string>): void {
         this.registers = registers;
-        this.refresh();
-    }
-
-    public updateCallStack(stack: string[]): void {
-        this.callStack = stack;
         this.refresh();
     }
 }

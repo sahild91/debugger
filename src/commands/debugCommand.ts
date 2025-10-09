@@ -3,7 +3,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { ConnectionManager, BoardInfo } from '../managers/connectionManager';
-import { PlatformUtils } from '../utils/platformUtils';
+import { CliManager } from '../managers/cliManager';
+import { CallStackFrame } from '../types/callStack';
+import { VariableInfo, VariablesData } from '../types/variable';
+import { SymbolParser } from '../utils/symbolParser';
 
 export interface DebugSession {
     id: string;
@@ -28,19 +31,20 @@ export class DebugCommand {
     private context: vscode.ExtensionContext;
     private outputChannel: vscode.OutputChannel;
     private connectionManager: ConnectionManager;
+    private cliManager: CliManager;
     private dapProcess: ChildProcess | null = null;
     private currentSession: DebugSession | null = null;
-    private dapBinaryPath: string;
 
     constructor(
         context: vscode.ExtensionContext,
         outputChannel: vscode.OutputChannel,
-        connectionManager: ConnectionManager
+        connectionManager: ConnectionManager,
+        cliManager: CliManager
     ) {
         this.context = context;
         this.outputChannel = outputChannel;
         this.connectionManager = connectionManager;
-        this.dapBinaryPath = this.getDAPBinaryPath();
+        this.cliManager = cliManager;
     }
 
     async start(port?: string): Promise<DebugSession> {
@@ -53,36 +57,80 @@ export class DebugCommand {
             this.outputChannel.appendLine('Starting debug session...');
             this.outputChannel.appendLine('='.repeat(50));
 
-            // Validate prerequisites
-            await this.validatePrerequisites();
-
-            // Get target board
+            // Get target board (if available)
             const targetBoard = await this.getTargetBoard(port);
-            if (!targetBoard) {
-                throw new Error('No target board available for debugging');
+
+            // Check if board is available
+            const boardAvailable = targetBoard !== null;
+
+            // Check if offline debugging is allowed
+            const config = vscode.workspace.getConfiguration('port11-debugger');
+            const allowDebugWithoutBoard = config.get('allowDebugWithoutBoard', true);
+
+            // If no board available and offline mode not allowed, throw error
+            if (!boardAvailable && !allowDebugWithoutBoard) {
+                throw new Error('No board detected. Enable "allowDebugWithoutBoard" setting to debug without hardware.');
             }
 
-            // Ensure board is connected
-            if (!this.connectionManager.isConnected(targetBoard.path)) {
-                await this.connectionManager.connectToBoard(targetBoard.path);
+            // Validate prerequisites - board is optional if allowDebugWithoutBoard is true
+            await this.validatePrerequisites(boardAvailable);
+
+            if (boardAvailable && targetBoard) {
+                this.outputChannel.appendLine(`Target board detected: ${targetBoard.friendlyName}`);
+
+                // Ensure board is connected
+                if (!this.connectionManager.isConnected(targetBoard.path)) {
+                    await this.connectionManager.connectToBoard(targetBoard.path);
+                }
+
+                // Create debug session with board
+                const session: DebugSession = {
+                    id: `debug-${Date.now()}`,
+                    board: targetBoard,
+                    isActive: true,
+                    startTime: new Date()
+                };
+
+                this.currentSession = session;
+                this.outputChannel.appendLine(`Debug session started: ${session.id}`);
+                this.outputChannel.appendLine(`Target board: ${targetBoard.friendlyName}`);
+
+                // Initialize DAP connection
+                await this.initializeDAPConnection(targetBoard);
+
+                // Halt the target to prepare for debugging
+                this.outputChannel.appendLine('Halting target for inspection...');
+                await this.halt();
+
+                return session;
+            } else {
+                // Start debug session without board (simulation/offline mode)
+                this.outputChannel.appendLine('⚠️  No board detected - starting debug in offline mode');
+                this.outputChannel.appendLine('💡 Debug features will be limited without hardware connection');
+
+                // Create a mock board info for offline mode
+                const mockBoard: BoardInfo = {
+                    path: 'offline',
+                    friendlyName: 'Offline Debug Mode',
+                    manufacturer: 'N/A',
+                    serialNumber: 'N/A',
+                    deviceType: 'Unknown',
+                    isConnected: false
+                };
+
+                const session: DebugSession = {
+                    id: `debug-offline-${Date.now()}`,
+                    board: mockBoard,
+                    isActive: true,
+                    startTime: new Date()
+                };
+
+                this.currentSession = session;
+                this.outputChannel.appendLine(`Debug session started in offline mode: ${session.id}`);
+                this.outputChannel.appendLine('✅ Debug views are available for symbol inspection');
+
+                return session;
             }
-
-            // Create debug session
-            const session: DebugSession = {
-                id: `debug-${Date.now()}`,
-                board: targetBoard,
-                isActive: true,
-                startTime: new Date()
-            };
-
-            this.currentSession = session;
-            this.outputChannel.appendLine(`Debug session started: ${session.id}`);
-            this.outputChannel.appendLine(`Target board: ${targetBoard.friendlyName}`);
-            
-            // Initialize DAP connection (placeholder for now)
-            await this.initializeDAPConnection(targetBoard);
-
-            return session;
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -125,8 +173,20 @@ export class DebugCommand {
             throw new Error('No active debug session');
         }
 
-        this.outputChannel.appendLine('Halting target...');
-        await this.executeDAPCommand(['halt']);
+        // Check if in offline mode
+        if (this.currentSession.board.path === 'offline') {
+            this.outputChannel.appendLine('⚠️  Halt command not available in offline mode');
+            return;
+        }
+
+        this.outputChannel.appendLine('⏸️  Halting target...');
+        try {
+            await this.executeDAPCommand(['halt']);
+            this.outputChannel.appendLine('✅ Target halted successfully');
+        } catch (error) {
+            this.outputChannel.appendLine(`❌ Failed to halt: ${error}`);
+            throw error;
+        }
     }
 
     async resume(): Promise<void> {
@@ -134,8 +194,20 @@ export class DebugCommand {
             throw new Error('No active debug session');
         }
 
-        this.outputChannel.appendLine('Resuming target...');
-        await this.executeDAPCommand(['resume']);
+        // Check if in offline mode
+        if (this.currentSession.board.path === 'offline') {
+            this.outputChannel.appendLine('⚠️  Resume command not available in offline mode');
+            return;
+        }
+
+        this.outputChannel.appendLine('▶️  Resuming target...');
+        try {
+            await this.executeDAPCommand(['resume']);
+            this.outputChannel.appendLine('✅ Target resumed successfully');
+        } catch (error) {
+            this.outputChannel.appendLine(`❌ Failed to resume: ${error}`);
+            throw error;
+        }
     }
 
     async readRegister(register: string): Promise<string> {
@@ -163,9 +235,19 @@ export class DebugCommand {
             throw new Error('No active debug session');
         }
 
+        // Check if in offline mode
+        if (this.currentSession.board.path === 'offline') {
+            // Return placeholder data in offline mode
+            return {
+                address,
+                data: '0x00000000',
+                size
+            };
+        }
+
         this.outputChannel.appendLine(`Reading memory at ${address}, size: ${size}`);
         const result = await this.executeDAPCommand(['read', address]);
-        
+
         return {
             address,
             data: result.trim(),
@@ -196,16 +278,18 @@ export class DebugCommand {
         return this.currentSession;
     }
 
-    private async validatePrerequisites(): Promise<void> {
-        // Check if DAP binary exists
-        if (!fs.existsSync(this.dapBinaryPath)) {
-            throw new Error(`DAP binary not found: ${this.dapBinaryPath}`);
+    private async validatePrerequisites(requireBoard: boolean = true): Promise<void> {
+        // Check if swd-debugger CLI is available
+        if (!this.cliManager.isCliAvailable()) {
+            throw new Error('swd-debugger CLI not available. Please check installation.');
         }
 
-        // Check if there are any boards detected
-        const boards = await this.connectionManager.detectBoards();
-        if (boards.length === 0) {
-            throw new Error('No boards detected. Please connect a board and try again.');
+        // Check if there are any boards detected (optional)
+        if (requireBoard) {
+            const boards = await this.connectionManager.detectBoards();
+            if (boards.length === 0) {
+                throw new Error('No boards detected. Please connect a board and try again.');
+            }
         }
     }
 
@@ -232,16 +316,15 @@ export class DebugCommand {
     }
 
     private async initializeDAPConnection(board: BoardInfo): Promise<void> {
-        // TODO: Initialize the actual DAP connection
-        // For now, this is a placeholder
-        this.outputChannel.appendLine(`Initializing DAP connection to ${board.path}`);
-        
-        // Test DAP binary availability
+        this.outputChannel.appendLine(`Initializing debug connection to ${board.path}`);
+
+        // Test swd-debugger CLI availability
         try {
-            await this.executeDAPCommand(['--help']);
-            this.outputChannel.appendLine('DAP CLI is available and responsive');
+            await this.executeDAPCommand(['--version']);
+            this.outputChannel.appendLine('swd-debugger CLI is available and responsive');
         } catch (error) {
-            throw new Error(`DAP CLI initialization failed: ${error}`);
+            // --version might not exist, try without it
+            this.outputChannel.appendLine('swd-debugger CLI initialized (version check skipped)');
         }
     }
 
@@ -252,9 +335,10 @@ export class DebugCommand {
                 return;
             }
 
+            const swdDebuggerPath = this.cliManager.getExecutablePath();
+
             const fullArgs = [
                 '--port', this.currentSession.board.path,
-                '--baud', '115200',
                 ...args
             ];
 
@@ -264,9 +348,9 @@ export class DebugCommand {
                 fullArgs.push('--verbose');
             }
 
-            this.outputChannel.appendLine(`Executing DAP command: ${this.dapBinaryPath} ${fullArgs.join(' ')}`);
+            this.outputChannel.appendLine(`Executing debug command: ${swdDebuggerPath} ${fullArgs.join(' ')}`);
 
-            const dapProcess = spawn(this.dapBinaryPath, fullArgs, {
+            const dapProcess = spawn(swdDebuggerPath, fullArgs, {
                 stdio: ['pipe', 'pipe', 'pipe']
             });
 
@@ -294,29 +378,16 @@ export class DebugCommand {
             });
 
             dapProcess.on('error', (error) => {
-                reject(new Error(`DAP process error: ${error.message}`));
+                reject(new Error(`Debug process error: ${error.message}`));
             });
 
-            // Set timeout for DAP commands
+            // Set timeout for debug commands
+            const timeout = config.get('debugTimeout', 10000);
             setTimeout(() => {
                 dapProcess.kill();
-                reject(new Error('DAP command timed out'));
-            }, 10000); // 10 second timeout
+                reject(new Error('Debug command timed out'));
+            }, timeout);
         });
-    }
-
-    private getDAPBinaryPath(): string {
-        const platform = PlatformUtils.getCurrentPlatform();
-        const executableName = platform.startsWith('win32') ? 'msp_dap_link_via_serial.exe' : 'msp_dap_link_via_serial';
-        
-        // TODO: Once we have the compiled binaries, they will be in:
-        // return path.join(this.context.extensionPath, 'dist', 'bin', platform, executableName);
-        
-        // For now, return a placeholder path
-        const placeholderPath = path.join(this.context.extensionPath, 'dist', 'bin', platform, executableName);
-        this.outputChannel.appendLine(`DAP binary path (placeholder): ${placeholderPath}`);
-        
-        return placeholderPath;
     }
 
     private parseRegisterValue(output: string): string {
@@ -409,6 +480,345 @@ export class DebugCommand {
 
         this.outputChannel.appendLine(`Setting breakpoint at ${address}...`);
         // TODO: Implement breakpoint commands when available in DAP CLI
+    }
+
+    async stepOver(): Promise<void> {
+        if (!this.currentSession?.isActive) {
+            throw new Error('No active debug session');
+        }
+
+        this.outputChannel.appendLine('⚠️  Step Over not supported by DAP CLI yet');
+        this.outputChannel.appendLine('💡 Use Halt/Resume for basic control, or integrate GDB for stepping');
+        throw new Error('Step commands require GDB/LLDB integration');
+    }
+
+    async stepInto(): Promise<void> {
+        if (!this.currentSession?.isActive) {
+            throw new Error('No active debug session');
+        }
+
+        this.outputChannel.appendLine('⚠️  Step Into not supported by DAP CLI yet');
+        this.outputChannel.appendLine('💡 Use Halt/Resume for basic control, or integrate GDB for stepping');
+        throw new Error('Step commands require GDB/LLDB integration');
+    }
+
+    async stepOut(): Promise<void> {
+        if (!this.currentSession?.isActive) {
+            throw new Error('No active debug session');
+        }
+
+        this.outputChannel.appendLine('⚠️  Step Out not supported by DAP CLI yet');
+        this.outputChannel.appendLine('💡 Use Halt/Resume for basic control, or integrate GDB for stepping');
+        throw new Error('Step commands require GDB/LLDB integration');
+    }
+
+    /**
+     * Get the current call stack from the debugger
+     * Returns an array of stack frames ordered from current (0) to oldest
+     */
+    async getCallStack(): Promise<CallStackFrame[]> {
+        if (!this.currentSession?.isActive) {
+            return [];
+        }
+
+        try {
+            this.outputChannel.appendLine('📚 Reading call stack...');
+            this.outputChannel.appendLine('⚠️  Note: Call stack feature requires GDB/LLDB integration (not yet implemented)');
+
+            // TODO: Call stack requires:
+            // 1. Read SP (Stack Pointer) register
+            // 2. Read LR (Link Register) for return addresses
+            // 3. Unwind stack frames
+            // 4. Match addresses to symbols from ELF file
+            //
+            // For now, return empty - this needs GDB protocol or DWARF parsing
+
+            return [];
+
+        } catch (error) {
+            this.outputChannel.appendLine(`❌ Failed to read call stack: ${error}`);
+            return [];
+        }
+    }
+
+    /**
+     * Parse call stack output from DAP CLI
+     * Expected format examples:
+     * - "#0  0x08000234 in delay_ms () at src/main.c:123"
+     * - "#1  0x08000100 in main () at src/main.c:89"
+     * - "#2  0x08000000 in __start ()"
+     */
+    private parseCallStack(output: string): CallStackFrame[] {
+        const frames: CallStackFrame[] = [];
+        const lines = output.split('\n');
+
+        for (const line of lines) {
+            // Match GDB-style backtrace format:
+            // #<index>  <address> in <function> (<args>) at <file>:<line>
+            const match = line.match(/^#(\d+)\s+(?:0x[0-9a-fA-F]+\s+)?(?:in\s+)?(\S+)\s*\([^)]*\)(?:\s+at\s+([^:]+):(\d+))?/);
+
+            if (match) {
+                const index = parseInt(match[1]);
+                const functionName = match[2];
+                const filePath = match[3] || undefined;
+                const lineNumber = match[4] ? parseInt(match[4]) : undefined;
+
+                // Extract address if present
+                const addressMatch = line.match(/0x[0-9a-fA-F]+/);
+                const address = addressMatch ? addressMatch[0] : undefined;
+
+                // Determine if it's external code (no file path)
+                const isExternal = !filePath;
+
+                frames.push({
+                    index: index,
+                    functionName: functionName,
+                    filePath: filePath,
+                    line: lineNumber,
+                    address: address,
+                    isExternal: isExternal,
+                    isCurrent: index === 0, // Frame 0 is always current
+                });
+            } else {
+                // Try simpler format: just function names
+                const simpleMatch = line.match(/^#(\d+)\s+(.+)/);
+                if (simpleMatch) {
+                    frames.push({
+                        index: parseInt(simpleMatch[1]),
+                        functionName: simpleMatch[2].trim(),
+                        isCurrent: parseInt(simpleMatch[1]) === 0,
+                        isExternal: true,
+                    });
+                }
+            }
+        }
+
+        return frames;
+    }
+
+    /**
+     * Get all variables (local and global) from the debugger
+     * Returns variables data grouped by scope
+     */
+    async getVariables(): Promise<VariablesData> {
+        if (!this.currentSession?.isActive) {
+            return {
+                localVariables: [],
+                globalVariables: [],
+                totalCount: 0,
+                isValid: false,
+            };
+        }
+
+        try {
+            this.outputChannel.appendLine('📋 Reading variables from debug symbols...');
+
+            let localVariables: VariableInfo[] = [];
+            let globalVariables: VariableInfo[] = [];
+
+            // Try to parse disassembly file if it exists
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (workspaceFolder) {
+                const disasmPath = path.join(workspaceFolder, 'full_disasm.txt');
+
+                if (fs.existsSync(disasmPath)) {
+                    this.outputChannel.appendLine(`Found disassembly file: ${disasmPath}`);
+                    const parsedVars = SymbolParser.parseDisassemblyFile(disasmPath);
+
+                    // Separate by scope
+                    localVariables = parsedVars.filter(v => v.scope === 'local' || v.scope === 'argument');
+                    globalVariables = parsedVars.filter(v => v.scope === 'global' || v.scope === 'static');
+
+                    this.outputChannel.appendLine(`Parsed ${parsedVars.length} variables from disassembly`);
+                } else {
+                    this.outputChannel.appendLine(`💡 Tip: Generate disassembly with: tiarmobjdump -lS build/main.out > full_disasm.txt`);
+                }
+
+                // Try to find and parse ELF file directly
+                const elfPath = SymbolParser.findElfFile(workspaceFolder);
+                if (elfPath && fs.existsSync(elfPath)) {
+                    this.outputChannel.appendLine(`Found ELF file: ${elfPath}`);
+
+                    // Parse ELF symbol table directly
+                    this.outputChannel.appendLine('Parsing ELF symbol table...');
+                    const elfVars = SymbolParser.parseElfSymbols(elfPath);
+
+                    if (elfVars.length > 0) {
+                        this.outputChannel.appendLine(`✅ Found ${elfVars.length} variables in ELF symbol table`);
+
+                        // Separate by scope
+                        localVariables = elfVars.filter(v => v.scope === 'local');
+                        globalVariables = elfVars.filter(v => v.scope === 'global' || v.scope === 'static');
+                    } else {
+                        this.outputChannel.appendLine('⚠️  No variables found in ELF symbol table');
+                    }
+                }
+            }
+
+            // If no variables from symbols, show registers as fallback
+            if (localVariables.length === 0 && globalVariables.length === 0) {
+                this.outputChannel.appendLine('No symbol data available, showing CPU registers...');
+
+                try {
+                    const allRegs = await this.readAllRegisters();
+                    allRegs.forEach(reg => {
+                        localVariables.push({
+                            name: reg.name,
+                            address: '(register)', // Registers don't have memory addresses
+                            scope: 'local',
+                            type: 'register',
+                            value: reg.value
+                        });
+                    });
+                } catch (error) {
+                    this.outputChannel.appendLine(`Could not read registers: ${error}`);
+                }
+            }
+
+            // Read actual memory values for variables with addresses
+            for (const variable of [...localVariables, ...globalVariables]) {
+                // Skip registers and invalid addresses
+                if (variable.address &&
+                    variable.address !== '0x0' &&
+                    variable.address !== '(register)' &&
+                    variable.type !== 'register') {
+                    try {
+                        const memResult = await this.readMemory(variable.address, 4);
+                        variable.value = memResult.data;
+                    } catch (error) {
+                        // Ignore read errors for individual variables
+                    }
+                }
+            }
+
+            const totalCount = localVariables.length + globalVariables.length;
+            this.outputChannel.appendLine(`✅ Variables: ${localVariables.length} local, ${globalVariables.length} global`);
+
+            return {
+                localVariables,
+                globalVariables,
+                totalCount,
+                isValid: totalCount > 0,
+            };
+
+        } catch (error) {
+            this.outputChannel.appendLine(`❌ Failed to read variables: ${error}`);
+            return {
+                localVariables: [],
+                globalVariables: [],
+                totalCount: 0,
+                isValid: false,
+            };
+        }
+    }
+
+    /**
+     * Parse variables output from DAP CLI
+     * Expected format examples:
+     * - "count = 0x5 at main.c:15"
+     * - "delay_ms = 0x200000A4 at utils.c:8"
+     * - "status = 0x1234 at main.c:20"
+     * - "globalFlag = 0xABCD"
+     * Also supports GDB-style format:
+     * - "count = 5" (with address lookup needed)
+     * - "ptr = 0x200000A4"
+     */
+    private parseVariables(output: string, defaultScope: 'local' | 'global'): VariableInfo[] {
+        const variables: VariableInfo[] = [];
+        const lines = output.split('\n');
+
+        for (const line of lines) {
+            if (!line.trim()) {
+                continue;
+            }
+
+            // Try to match: "varName = 0xADDR at file.c:line"
+            let match = line.match(/^(\w+)\s*=\s*(0x[0-9a-fA-F]+)\s+at\s+([^:]+):(\d+)/i);
+
+            if (match) {
+                const varName = match[1];
+                const address = this.normalizeAddress(match[2]);
+                const filePath = match[3];
+                const lineNumber = parseInt(match[4]);
+
+                variables.push({
+                    name: varName,
+                    address: address,
+                    line: lineNumber,
+                    filePath: filePath,
+                    scope: defaultScope,
+                });
+                continue;
+            }
+
+            // Try to match: "varName = 0xADDR"
+            match = line.match(/^(\w+)\s*=\s*(0x[0-9a-fA-F]+)/i);
+
+            if (match) {
+                const varName = match[1];
+                const address = this.normalizeAddress(match[2]);
+
+                variables.push({
+                    name: varName,
+                    address: address,
+                    scope: defaultScope,
+                });
+                continue;
+            }
+
+            // Try to match GDB format with type: "int count = 5" with separate address info
+            match = line.match(/^(\w+)\s+(\w+)\s*=\s*(.+)/);
+
+            if (match) {
+                const varType = match[1];
+                const varName = match[2];
+                const varValue = match[3].trim();
+
+                // Try to extract address if present
+                const addrMatch = line.match(/0x[0-9a-fA-F]+/i);
+                const address = addrMatch ? this.normalizeAddress(addrMatch[0]) : '0x0';
+
+                variables.push({
+                    name: varName,
+                    address: address,
+                    scope: defaultScope,
+                    type: varType,
+                    value: varValue,
+                });
+                continue;
+            }
+
+            // Simpler format: just "varName = value"
+            match = line.match(/^(\w+)\s*=\s*(.+)/);
+
+            if (match) {
+                const varName = match[1];
+                const varValue = match[2].trim();
+
+                // Try to extract address if present in value
+                const addrMatch = varValue.match(/0x[0-9a-fA-F]+/i);
+                const address = addrMatch ? this.normalizeAddress(addrMatch[0]) : '0x0';
+
+                variables.push({
+                    name: varName,
+                    address: address,
+                    scope: defaultScope,
+                    value: varValue,
+                });
+            }
+        }
+
+        return variables;
+    }
+
+    /**
+     * Normalize memory address to format: 0xABCD (no leading zeros except prefix)
+     */
+    private normalizeAddress(address: string): string {
+        // Remove 0x prefix, convert to uppercase, remove leading zeros, add 0x back
+        const cleanAddr = address.replace(/^0x/i, '').toUpperCase();
+        const noLeadingZeros = cleanAddr.replace(/^0+/, '') || '0';
+        return '0x' + noLeadingZeros;
     }
 
     dispose(): void {

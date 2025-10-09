@@ -60,6 +60,42 @@
           "id": "port11.debugView",
           "name": "Port11 Debugger",
           "icon": "$(tools)"
+        },
+        {
+          "id": "port11.callStackView",
+          "name": "Call Stack",
+          "type": "webview",
+          "icon": "$(debug-stackframe)"
+        },
+        {
+          "id": "port11.variablesView",
+          "name": "Variables",
+          "type": "webview",
+          "icon": "$(symbol-variable)"
+        },
+        {
+          "id": "port11.breakpointsView",
+          "name": "Breakpoints",
+          "type": "webview",
+          "icon": "$(debug-breakpoint)"
+        },
+        {
+          "id": "port11.boardsView",
+          "name": "Boards",
+          "type": "webview",
+          "icon": "$(device-mobile)"
+        },
+        {
+          "id": "port11.setupView",
+          "name": "Setup Status",
+          "type": "webview",
+          "icon": "$(gear)"
+        },
+        {
+          "id": "port11.consoleView",
+          "name": "Console",
+          "type": "webview",
+          "icon": "$(terminal)"
         }
       ]
     },
@@ -195,6 +231,11 @@
           "default": false,
           "description": "Skip automatic downloads, use only cached/manually installed toolchains"
         },
+        "port11-debugger.allowDebugWithoutBoard": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow starting debug session without a connected board (offline debugging)"
+        },
         "port11-debugger.buildOutputLevel": {
           "type": "string",
           "default": "normal",
@@ -284,19 +325,23 @@
     "test": "node ./out/test/runTest.js"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.x",
+    "@types/node-fetch": "^2.6.13",
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
     "@typescript-eslint/parser": "^6.13.0",
     "@vscode/test-electron": "^2.3.8",
     "eslint": "^8.54.0",
     "glob": "^10.3.10",
+    "ts-loader": "^9.5.1",
     "typescript": "^5.3.2",
     "webpack": "^5.89.0",
-    "webpack-cli": "^5.1.4",
-    "ts-loader": "^9.5.1"
+    "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "node-fetch": "^2.7.0",
     "simple-git": "^3.20.0"
   }
 }
