@@ -3,10 +3,10 @@ import { exec } from 'child_process';
 import { Port11TreeViewProvider, Port11TreeItem } from './views/port11TreeView';
 import { ConsoleViewProvider } from './views/consoleViewProvider';
 import { CallStackViewProvider } from './views/callStackViewProvider';
-import { VariablesViewProvider } from './views/variablesViewProvider';
-import { BreakpointsViewProvider } from './views/breakpointsViewProvider';
+import { VariablesViewProvider } from './views/breakpointViewProvider';
 import { BoardsViewProvider } from './views/boardsViewProvider';
 import { SetupViewProvider } from './views/setupViewProvider';
+import { DataViewProvider } from './views/dataViewProvider';
 import { SDKManager } from './managers/sdkManager';
 import { ToolchainManager } from './managers/toolchainManager';
 import { SysConfigManager } from './managers/sysconfigManager';
@@ -21,9 +21,9 @@ let treeViewProvider: Port11TreeViewProvider;
 let consoleViewProvider: ConsoleViewProvider;
 let callStackViewProvider: CallStackViewProvider;
 let variablesViewProvider: VariablesViewProvider;
-let breakpointsViewProvider: BreakpointsViewProvider;
 let boardsViewProvider: BoardsViewProvider;
 let setupViewProvider: SetupViewProvider;
+let dataViewProvider: DataViewProvider;
 let sdkManager: SDKManager;
 let toolchainManager: ToolchainManager;
 let sysConfigManager: SysConfigManager;
@@ -442,19 +442,20 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Initialize and Register Variables View Provider
         outputChannel.appendLine('📋 Initializing Variables View...');
-        variablesViewProvider = new VariablesViewProvider(context.extensionUri, outputChannel);
+        const swdDebuggerPath = cliManager.getExecutablePath();
+        variablesViewProvider = new VariablesViewProvider(context.extensionUri, outputChannel, swdDebuggerPath);
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider('port11.variablesView', variablesViewProvider)
         );
         outputChannel.appendLine('  ✅ Variables View initialized successfully');
 
-        // Initialize and Register Breakpoints View Provider
-        outputChannel.appendLine('🔴 Initializing Breakpoints View...');
-        breakpointsViewProvider = new BreakpointsViewProvider(context.extensionUri, outputChannel);
+        // Initialize and Register Data View Provider
+        outputChannel.appendLine('📊 Initializing Data View...');
+        dataViewProvider = new DataViewProvider(context.extensionUri, outputChannel, swdDebuggerPath);
         context.subscriptions.push(
-            vscode.window.registerWebviewViewProvider('port11.breakpointsView', breakpointsViewProvider)
+            vscode.window.registerWebviewViewProvider('port11.dataView', dataViewProvider)
         );
-        outputChannel.appendLine('  ✅ Breakpoints View initialized successfully');
+        outputChannel.appendLine('  ✅ Data View initialized successfully');
 
         // Initialize and Register Boards View Provider
         outputChannel.appendLine('📱 Initializing Boards View...');
@@ -510,6 +511,13 @@ export async function activate(context: vscode.ExtensionContext) {
                     await variablesViewProvider.loadDisassembly(workspaceFolder);
                 }
 
+                // Update device breakpoints from hardware
+                try {
+                    await variablesViewProvider?.updateDeviceBreakpoints();
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to get device breakpoints: ${error}`);
+                }
+
                 // Update call stack view with initial data
                 try {
                     const callStack = await debugCommand.getCallStack();
@@ -543,6 +551,13 @@ export async function activate(context: vscode.ExtensionContext) {
             }),
             vscode.commands.registerCommand('port11-debugger.debug.pause', async () => {
                 await debugCommand.halt();
+
+                // Update registry data when halted
+                try {
+                    await dataViewProvider?.updateRegistryData();
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to update registry data: ${error}`);
+                }
 
                 // Update call stack when paused
                 try {

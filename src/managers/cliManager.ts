@@ -5,12 +5,9 @@ import * as path from "path";
 import * as https from "https";
 
 const DOWNLOAD_URLS = {
-  darwin:
-    "https://res.cloudinary.com/drclxio85/raw/upload/v1758433874/evobi/swd-debugger",
-  win32:
-    "https://res.cloudinary.com/drclxio85/raw/upload/v1758515423/evobi/swd-debugger_win",
-  linux:
-    "https://res.cloudinary.com/drclxio85/raw/upload/v1758433874/evobi/swd-debugger",
+  darwin: "https://storage.googleapis.com/port11/swd-debugger-mac_aarch64",
+  win32: "https://storage.googleapis.com/port11/swd-debugger.exe",
+  linux: "https://storage.googleapis.com/port11/swd-debugger-linux_x86_64",
 };
 
 const DEST_FILE_NAME = "swd-debugger";
@@ -18,20 +15,27 @@ const DEST_FILE_NAME = "swd-debugger";
 export class CliManager {
   private context: vscode.ExtensionContext;
   private setupRunKey = "swd-debugger.setupRun";
-  private readonly SWD_DEBUGGER_PATH_KEY = 'mspm0.swdDebuggerPath';
-  private readonly SWD_DEBUGGER_LAST_DETECTED_KEY = 'mspm0.swdDebuggerLastDetected';
+  private readonly SWD_DEBUGGER_PATH_KEY = "mspm0.swdDebuggerPath";
+  private readonly SWD_DEBUGGER_LAST_DETECTED_KEY =
+    "mspm0.swdDebuggerLastDetected";
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
   }
 
   /**
- * Save SWD Debugger path to globalState
- */
+   * Save SWD Debugger path to globalState
+   */
   private async saveSwdDebuggerPath(debuggerPath: string): Promise<void> {
     try {
-      await this.context.globalState.update(this.SWD_DEBUGGER_PATH_KEY, debuggerPath);
-      await this.context.globalState.update(this.SWD_DEBUGGER_LAST_DETECTED_KEY, new Date().toISOString());
+      await this.context.globalState.update(
+        this.SWD_DEBUGGER_PATH_KEY,
+        debuggerPath
+      );
+      await this.context.globalState.update(
+        this.SWD_DEBUGGER_LAST_DETECTED_KEY,
+        new Date().toISOString()
+      );
       console.log(`💾 Saved SWD Debugger path: ${debuggerPath}`);
     } catch (error) {
       console.error(`⚠️  Failed to save SWD Debugger path: ${error}`);
@@ -42,7 +46,9 @@ export class CliManager {
    * Load saved SWD Debugger path
    */
   private async loadSavedSwdDebuggerPath(): Promise<string | undefined> {
-    const savedPath = this.context.globalState.get<string>(this.SWD_DEBUGGER_PATH_KEY);
+    const savedPath = this.context.globalState.get<string>(
+      this.SWD_DEBUGGER_PATH_KEY
+    );
     if (savedPath && fs.existsSync(savedPath)) {
       console.log(`📂 Loaded saved SWD Debugger path: ${savedPath}`);
       return savedPath;
@@ -70,8 +76,8 @@ export class CliManager {
 
     const savedPath = await this.loadSavedSwdDebuggerPath();
     if (savedPath && fs.existsSync(savedPath)) {
-        console.log(`✅ Using saved SWD Debugger: ${savedPath}`);
-        return; // Already installed and path saved
+      console.log(`✅ Using saved SWD Debugger: ${savedPath}`);
+      return; // Already installed and path saved
     }
 
     if (!fs.existsSync(installPath)) {
@@ -205,9 +211,11 @@ export class CliManager {
   }
 
   getExecutablePath(): string {
-    const savedPath = this.context.globalState.get<string>(this.SWD_DEBUGGER_PATH_KEY);
+    const savedPath = this.context.globalState.get<string>(
+      this.SWD_DEBUGGER_PATH_KEY
+    );
     if (savedPath && fs.existsSync(savedPath)) {
-        return savedPath;
+      return savedPath;
     }
     return this.getInstallPath();
   }

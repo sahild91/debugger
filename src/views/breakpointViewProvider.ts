@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { VariableInfo, VariablesData } from "../types/variable";
 import { AddressMapper } from "../utils/addressMapper";
+import { spawn } from "child_process";
 
 /**
  * VariablesViewProvider manages the variables webview panel
@@ -18,16 +19,31 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
   };
   private isDebugActive: boolean = false;
   private addressMapper: AddressMapper;
+  private swdDebuggerPath: string;
+  private deviceBreakpoints: string[] = [];
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    outputChannel: vscode.OutputChannel
+    outputChannel: vscode.OutputChannel,
+    swdDebuggerPath: string
   ) {
     this.outputChannel = outputChannel;
     this.addressMapper = new AddressMapper();
+    this.swdDebuggerPath = swdDebuggerPath;
 
     // Listen for breakpoint changes and refresh
-    vscode.debug.onDidChangeBreakpoints(() => {
+    vscode.debug.onDidChangeBreakpoints((event) => {
+      // Check if breakpoints were added
+      if (event.added.length > 0) {
+        const totalBreakpoints = vscode.debug.breakpoints.length;
+        if (totalBreakpoints > 4) {
+          // Remove the newly added breakpoint(s)
+          const breakpointsToRemove = event.added;
+          vscode.debug.removeBreakpoints(breakpointsToRemove);
+          vscode.window.showErrorMessage("You can add max 4 addresses");
+          return;
+        }
+      }
       this.refresh();
     });
   }
@@ -52,6 +68,8 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
         this.refresh();
       } else if (message.type === "navigateToVariable") {
         this.navigateToVariable(message.variable);
+      } else if (message.type === "toggleBreakpoint") {
+        this.toggleBreakpoint(message.address, message.enabled);
       }
     });
 
@@ -74,11 +92,57 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
   public async loadDisassembly(workspaceRoot: string): Promise<void> {
     const loaded = await this.addressMapper.loadDisassembly(workspaceRoot);
     if (loaded) {
-      this.outputChannel.appendLine('✅ Address mapper loaded successfully');
+      this.outputChannel.appendLine("✅ Address mapper loaded successfully");
       this.refresh();
     } else {
-      this.outputChannel.appendLine('⚠️  Could not load disassembly for address mapping');
+      this.outputChannel.appendLine(
+        "⚠️  Could not load disassembly for address mapping"
+      );
     }
+  }
+
+  /**
+   * Update device breakpoints by executing swd-debugger bp --list
+   */
+  public async updateDeviceBreakpoints(): Promise<void> {
+    try {
+      this.outputChannel.appendLine("📍 Fetching device breakpoints...");
+      const output = await this.executeSwdCommand(["bp", "--list"]);
+
+      // Parse the output
+      this.deviceBreakpoints = this.parseBreakpointList(output);
+
+      this.outputChannel.appendLine(
+        `✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
+      );
+      this.refresh();
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.outputChannel.appendLine(
+        `❌ Failed to fetch device breakpoints: ${errorMsg}`
+      );
+      this.deviceBreakpoints = [];
+      this.refresh();
+    }
+  }
+
+  /**
+   * Parse breakpoint list output from swd-debugger bp --list
+   */
+  private parseBreakpointList(output: string): string[] {
+    const breakpoints: string[] = [];
+    const lines = output.split("\n");
+
+    for (const line of lines) {
+      // Try to match addresses in format: 0x08000100 or similar
+      const match = line.match(/0x[0-9a-fA-F]+/g);
+      if (match) {
+        breakpoints.push(...match);
+      }
+    }
+
+    // Remove duplicates
+    return [...new Set(breakpoints)];
   }
 
   /**
@@ -97,6 +161,7 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
       data: this.variablesData,
       isDebugActive: this.isDebugActive,
       breakpointAddresses: breakpointAddresses,
+      deviceBreakpoints: this.deviceBreakpoints,
     });
   }
 
@@ -159,6 +224,101 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
     }
 
     return null;
+  }
+
+  /**
+   * Toggle breakpoint on/off and execute corresponding swd-debugger command
+   */
+  private async toggleBreakpoint(address: string, enabled: boolean) {
+    if (!address || address === "N/A") {
+      vscode.window.showWarningMessage(
+        "Address not mapped. Please connect device and run debug again."
+      );
+      this.outputChannel.appendLine(
+        `⚠️  Cannot toggle breakpoint - address not mapped`
+      );
+      return;
+    }
+
+    try {
+      if (enabled) {
+        // Enable breakpoint: swd-debugger bp 0x08000100 ${address}
+        this.outputChannel.appendLine(
+          `📍 Enabling breakpoint at ${address}...`
+        );
+        await this.executeSwdCommand(["bp", address]);
+        this.outputChannel.appendLine(`✅ Breakpoint enabled at ${address}`);
+        vscode.window.showInformationMessage(
+          `Breakpoint enabled at ${address}`
+        );
+      } else {
+        // Disable breakpoint: swd-debugger bp --clear ${address}
+        this.outputChannel.appendLine(
+          `📍 Disabling breakpoint at ${address}...`
+        );
+        await this.executeSwdCommand(["bp", "--clear", address]);
+        this.outputChannel.appendLine(`✅ Breakpoint cleared at ${address}`);
+        vscode.window.showInformationMessage(
+          `Breakpoint cleared at ${address}`
+        );
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.outputChannel.appendLine(
+        `❌ Failed to toggle breakpoint: ${errorMsg}`
+      );
+      vscode.window.showErrorMessage(
+        `Failed to toggle breakpoint: ${errorMsg}`
+      );
+    }
+  }
+
+  /**
+   * Execute swd-debugger command
+   */
+  private async executeSwdCommand(args: string[]): Promise<string> {
+    return new Promise((resolve, reject) => {
+      this.outputChannel.appendLine(
+        `Executing: ${this.swdDebuggerPath} ${args.join(" ")}`
+      );
+
+      const process = spawn(this.swdDebuggerPath, args, {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      let stdout = "";
+      let stderr = "";
+
+      process.stdout.on("data", (data) => {
+        const output = data.toString();
+        stdout += output;
+        this.outputChannel.append(output);
+      });
+
+      process.stderr.on("data", (data) => {
+        const output = data.toString();
+        stderr += output;
+        this.outputChannel.append(output);
+      });
+
+      process.on("close", (code) => {
+        if (code === 0) {
+          resolve(stdout);
+        } else {
+          reject(new Error(`Command failed with exit code ${code}: ${stderr}`));
+        }
+      });
+
+      process.on("error", (error) => {
+        reject(new Error(`Process error: ${error.message}`));
+      });
+
+      // Set timeout for commands
+      setTimeout(() => {
+        process.kill();
+        reject(new Error("Command timed out"));
+      }, 10000);
+    });
   }
 
   /**
@@ -367,6 +527,42 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
                     opacity: 0.7;
                 }
 
+                /* Breakpoint styling */
+                .breakpoint-item {
+                    display: flex;
+                    align-items: center;
+                    padding: 8px 10px;
+                    border-bottom: 1px solid var(--vscode-panel-border);
+                    transition: background-color 0.2s ease;
+                }
+
+                .breakpoint-item:hover {
+                    background-color: var(--vscode-list-hoverBackground);
+                }
+
+                .breakpoint-checkbox {
+                    width: 16px;
+                    height: 16px;
+                    margin-right: 10px;
+                    cursor: pointer;
+                    accent-color: var(--vscode-checkbox-background);
+                }
+
+                .breakpoint-icon {
+                    margin-right: 8px;
+                    font-size: 14px;
+                }
+
+                .breakpoint-label {
+                    flex: 1;
+                    font-size: 12px;
+                    cursor: pointer;
+                }
+
+                .breakpoint-item.disabled {
+                    opacity: 0.5;
+                }
+
                 /* Scrollbar styling */
                 .container::-webkit-scrollbar {
                     width: 10px;
@@ -390,7 +586,7 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
                 <div class="empty-state">
                     <div class="empty-icon">📋</div>
                     <div class="empty-title">No Debug Session</div>
-                    <div class="empty-description">Start debugging to see variables</div>
+                    <div class="empty-description">Start debugging to see Breakpoints</div>
                 </div>
             </div>
 
@@ -400,11 +596,11 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
                 window.addEventListener('message', event => {
                     const message = event.data;
                     if (message.type === 'update') {
-                        renderVariables(message.data, message.isDebugActive, message.breakpointAddresses);
+                        renderVariables(message.data, message.isDebugActive, message.breakpointAddresses, message.deviceBreakpoints);
                     }
                 });
 
-                function renderVariables(data, isDebugActive, breakpointAddresses) {
+                function renderVariables(data, isDebugActive, breakpointAddresses, deviceBreakpoints) {
                     const container = document.getElementById('variables-container');
 
                     let html = '';
@@ -414,12 +610,44 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
 
                         breakpointAddresses.forEach(bp => {
                             const label = bp.functionName ? bp.functionName : \`\${bp.file}:\${bp.line}\`;
+                            const address = bp.address || 'N/A';
+                            const hasAddress = address !== 'N/A';
+                            const disabledClass = !hasAddress ? 'disabled' : '';
+
                             html += \`
-                                <div class="variable-item">
-                                    <div class="variable-header">
-                                        <span class="variable-name">\${label}</span>
-                                        <span class="variable-address">\${bp.address}</span>
-                                    </div>
+                                <div class="breakpoint-item \${disabledClass}">
+                                    <input type="checkbox"
+                                           class="breakpoint-checkbox"
+                                           onchange="toggleBreakpoint('\${address}', this.checked)"
+                                           \${!hasAddress ? 'disabled' : ''}>
+                                    <span class="breakpoint-icon">🔴</span>
+                                    <span class="breakpoint-label">\${label}</span>
+                                    <span class="variable-address">\${address}</span>
+                                </div>
+                            \`;
+                        });
+                    }
+
+                    // Device Breakpoints Section (always show if there are device breakpoints)
+                    if (deviceBreakpoints && deviceBreakpoints.length > 0) {
+                        html += \`
+                            <div class="section-header">
+                                <span class="section-icon">🔷</span>
+                                <span>Device Breakpoints</span>
+                                <span class="section-count">\${deviceBreakpoints.length}</span>
+                            </div>
+                        \`;
+
+                        deviceBreakpoints.forEach(address => {
+                            html += \`
+                                <div class="breakpoint-item">
+                                    <input type="checkbox"
+                                           class="breakpoint-checkbox"
+                                           checked
+                                           onchange="toggleBreakpoint('\${address}', this.checked)">
+                                    <span class="breakpoint-icon">🔷</span>
+                                    <span class="breakpoint-label">Breakpoint</span>
+                                    <span class="variable-address">\${address}</span>
                                 </div>
                             \`;
                         });
@@ -505,6 +733,10 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
 
                 function navigateToVariable(variable) {
                     vscode.postMessage({ type: 'navigateToVariable', variable: variable });
+                }
+
+                function toggleBreakpoint(address, enabled) {
+                    vscode.postMessage({ type: 'toggleBreakpoint', address: address, enabled: enabled });
                 }
 
                 function refreshVariables() {

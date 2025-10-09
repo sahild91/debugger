@@ -57,11 +57,6 @@
     "views": {
       "port11-debugger": [
         {
-          "id": "port11.debugView",
-          "name": "Port11 Debugger",
-          "icon": "$(tools)"
-        },
-        {
           "id": "port11.callStackView",
           "name": "Call Stack",
           "type": "webview",
@@ -69,15 +64,15 @@
         },
         {
           "id": "port11.variablesView",
-          "name": "Variables",
-          "type": "webview",
-          "icon": "$(symbol-variable)"
-        },
-        {
-          "id": "port11.breakpointsView",
           "name": "Breakpoints",
           "type": "webview",
           "icon": "$(debug-breakpoint)"
+        },
+        {
+          "id": "port11.dataView",
+          "name": "Variables",
+          "type": "webview",
+          "icon": "$(symbol-variable)"
         },
         {
           "id": "port11.boardsView",
