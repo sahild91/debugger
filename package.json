@@ -22,7 +22,6 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onView:port11.debugView",
     "onCommand:port11-debugger.setupToolchain",
     "onCommand:port11-debugger.detectBoards",
     "onCommand:port11-debugger.build",
@@ -56,12 +55,6 @@
     },
     "views": {
       "port11-debugger": [
-        {
-          "id": "port11.callStackView",
-          "name": "Call Stack",
-          "type": "webview",
-          "icon": "$(debug-stackframe)"
-        },
         {
           "id": "port11.variablesView",
           "name": "Breakpoints",
@@ -152,13 +145,7 @@
       }
     ],
     "menus": {
-      "view/title": [
-        {
-          "command": "port11-debugger.refreshView",
-          "when": "view == port11.debugView",
-          "group": "navigation"
-        }
-      ],
+      "view/title": [],
       "commandPalette": [
         {
           "command": "port11-debugger.setupToolchain"

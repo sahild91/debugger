@@ -43,7 +43,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
     // Handle messages from webview
     webviewView.webview.onDidReceiveMessage((message) => {
       if (message.type === "refresh") {
-        this.refresh();
+        this.updateRegistryData();
       }
     });
 
@@ -58,7 +58,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
     try {
       this.outputChannel.appendLine('📊 Reading registry data...');
       const output = await this.executeSwdCommand(['read-all']);
-
+      console.log('Registry output:', output);
       // Parse the output
       this.registryData = this.parseRegistryOutput(output);
 
