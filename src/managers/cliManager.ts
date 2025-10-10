@@ -5,9 +5,12 @@ import * as path from "path";
 import * as https from "https";
 
 const DOWNLOAD_URLS = {
-  darwin: "https://storage.googleapis.com/port11/swd-debugger-mac_aarch64",
-  win32: "https://storage.googleapis.com/port11/swd-debugger.exe",
-  linux: "https://storage.googleapis.com/port11/swd-debugger-linux_x86_64",
+  darwin:
+    "https://storage.googleapis.com/port11/swd-debugger-mac_aarch64",
+  win32:
+    "https://storage.googleapis.com/port11/swd-debugger.exe",
+  linux:
+    "https://storage.googleapis.com/port11/swd-debugger-linux_x86_64",
 };
 
 const DEST_FILE_NAME = "swd-debugger";
