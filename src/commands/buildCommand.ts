@@ -714,9 +714,18 @@ export class BuildCommand {
                                 ];
                                 await this.runExternalTool(tiarmobjcopyPath, elfArgs, outDir, 'STEP_7 tiarmobjcopy -> main.elf');
 
+                                // STEP_8: Generate disassembly file for address mapping
+                                const tiarmobjdumpPath = path.join(binDir, `tiarmobjdump${exe}`);
+                                const disasmOut = path.join(config.projectPath, 'full_disasm.txt');
+                                const disasmArgs = ['-ls', outOut];
+
+                                // Run tiarmobjdump with output redirected to file
+                                await this.runToolWithOutputFile(tiarmobjdumpPath, disasmArgs, config.projectPath, 'STEP_8 tiarmobjdump -> full_disasm.txt', disasmOut);
+
                                 this.outputChannel.appendLine(`📦 Artifacts generated:`);
                                 this.outputChannel.appendLine(`   • ${path.relative(config.projectPath, hexOut)}`);
                                 this.outputChannel.appendLine(`   • ${path.relative(config.projectPath, elfOut)}`);
+                                this.outputChannel.appendLine(`   • ${path.relative(config.projectPath, disasmOut)}`);
                             } catch (postErr) {
                                 this.outputChannel.appendLine(`⚠️  Post-link step skipped due to error: ${String(postErr)}`);
                             }
@@ -1166,6 +1175,73 @@ export class BuildCommand {
                     if (stderr.trim()) this.outputChannel.appendLine(stderr.trim());
                     reject(new Error(`${label} failed`));
                 }
+            });
+        });
+    }
+
+    private async runToolWithOutputFile(toolPath: string, args: string[], cwd: string, label: string, outputFile: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            // Remove extraneous surrounding quotes if present
+            const cleanPath = toolPath.replace(/^"(.*)"$/, '$1');
+            this.outputChannel.appendLine(`🔧 Running ${label}:`);
+            this.outputChannel.appendLine(`   Path: ${cleanPath}`);
+            this.outputChannel.appendLine(`   Args: ${args.join(' ')}`);
+            this.outputChannel.appendLine(`   CWD:  ${cwd}`);
+            this.outputChannel.appendLine(`   Output: ${outputFile}`);
+
+            // Create write stream for output file
+            const outputStream = fs.createWriteStream(outputFile);
+
+            const proc = spawn(cleanPath, args, {
+                cwd,
+                stdio: ['ignore', 'pipe', 'pipe'],
+                ...(require('os').platform().startsWith('win32') ? { windowsHide: true, shell: false } : {})
+            });
+
+            let stderr = '';
+
+            // Pipe stdout to file and also display
+            proc.stdout?.on('data', (data) => {
+                outputStream.write(data);
+                const s = data.toString();
+                // Don't log every line to avoid spam, just indicate progress
+                const lines = s.split('\n').filter((l: string) => l.trim());
+                if (lines.length > 0) {
+                    this.outputChannel.appendLine(`  📝 Writing ${lines.length} lines to ${path.basename(outputFile)}...`);
+                }
+            });
+
+            proc.stderr?.on('data', (data) => {
+                const s = data.toString();
+                stderr += s;
+                s.split('\n').forEach((line: string) => {
+                    if (line.trim()) this.outputChannel.appendLine(`  ⚙️ ${line.trim()}`);
+                });
+            });
+
+            proc.on('close', (code) => {
+                outputStream.end();
+                if (code === 0) {
+                    // Check if file was created and has content
+                    try {
+                        const stats = fs.statSync(outputFile);
+                        this.outputChannel.appendLine(`✅ ${label} completed successfully (${stats.size.toLocaleString()} bytes)`);
+                        resolve();
+                    } catch (err) {
+                        this.outputChannel.appendLine(`⚠️  ${label} completed but output file may be empty`);
+                        resolve(); // Don't fail if we can't stat the file
+                    }
+                } else {
+                    this.outputChannel.appendLine(`❌ ${label} failed with exit code ${code}`);
+                    if (stderr.trim()) this.outputChannel.appendLine(stderr.trim());
+                    reject(new Error(`${label} failed`));
+                }
+            });
+
+            proc.on('error', (error) => {
+                outputStream.end();
+                this.outputChannel.appendLine(`❌ ${label} process error: ${error.message}`);
+                reject(error);
             });
         });
     }

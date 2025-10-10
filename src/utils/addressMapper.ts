@@ -14,6 +14,7 @@ export interface SourceLineAddress {
  */
 export class AddressMapper {
     private lineToAddressMap: Map<string, string> = new Map();
+    private functionToAddressMap: Map<string, string> = new Map();
     private disassemblyPath: string | null = null;
 
     /**
@@ -48,6 +49,20 @@ export class AddressMapper {
         let currentFile: string | null = null;
         let currentFunction: string | null = null;
 
+        // First pass: build function name to address map
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+
+            // Match function symbols: 00000260 <DL_GPIO_togglePins>:
+            const funcMatch = line.match(/^([0-9a-fA-F]{8})\s+<([^>]+)>:/);
+            if (funcMatch) {
+                const address = '0x' + funcMatch[1];
+                const functionName = funcMatch[2];
+                this.functionToAddressMap.set(functionName, address);
+            }
+        }
+
+        // Second pass: build line to address map
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
 
@@ -83,16 +98,44 @@ export class AddressMapper {
 
     /**
      * Find the next instruction address after a source line comment
+     * Prioritizes function calls (bl/blx) within the same source line scope
      */
     private findNextInstructionAddress(lines: string[], startIndex: number): string | null {
+        let firstInstructionAddress: string | null = null;
+        let foundFunctionCall: string | null = null;
+
         for (let i = startIndex + 1; i < Math.min(startIndex + 10, lines.length); i++) {
-            // Match instruction lines: "     156: b082             sub    sp, #0x8"
-            const instrMatch = lines[i].match(/^\s+([0-9a-fA-F]+):\s+[0-9a-fA-F]/);
+            const line = lines[i];
+
+            // Stop if we encounter another source line comment
+            if (line.match(/^;\s*([^:]+):(\d+)/)) {
+                break;
+            }
+
+            // Match instruction lines: "     132: f000 f89f    bl    0x274 <DL_GPIO_setPins> @ imm = #0x13e"
+            const instrMatch = line.match(/^\s+([0-9a-fA-F]+):\s+[0-9a-fA-F]/);
             if (instrMatch) {
-                return '0x' + instrMatch[1];
+                const instructionAddress = '0x' + instrMatch[1];
+
+                // Store the first instruction address as fallback
+                if (!firstInstructionAddress) {
+                    firstInstructionAddress = instructionAddress;
+                }
+
+                // Check if this is a branch/call instruction (bl or blx)
+                // Extract the target address directly from the instruction
+                const branchMatch = line.match(/\b(bl|blx)\s+0x([0-9a-fA-F]+)/);
+                if (branchMatch) {
+                    // Get the target address from the bl/blx instruction itself
+                    const targetAddress = '0x' + branchMatch[2];
+                    foundFunctionCall = targetAddress;
+                    break; // Use the first function call found
+                }
             }
         }
-        return null;
+
+        // Prefer function call address, otherwise use first instruction
+        return foundFunctionCall || firstInstructionAddress;
     }
 
     /**
