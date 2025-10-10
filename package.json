@@ -296,8 +296,9 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run package",
-    "compile": "webpack",
+    "download-debugger": "node scripts/download-debugger.js",
+    "vscode:prepublish": "npm run download-debugger && npm run package",
+    "compile": "npm run download-debugger && webpack",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
     "compile-tests": "tsc -p . --outDir out",
