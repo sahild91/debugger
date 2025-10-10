@@ -3,10 +3,10 @@ import { exec } from 'child_process';
 import { Port11TreeViewProvider, Port11TreeItem } from './views/port11TreeView';
 import { ConsoleViewProvider } from './views/consoleViewProvider';
 import { CallStackViewProvider } from './views/callStackViewProvider';
-import { VariablesViewProvider } from './views/variablesViewProvider';
-import { BreakpointsViewProvider } from './views/breakpointsViewProvider';
+import { BreakpointsViewProvider } from './views/breakpointViewProvider';
 import { BoardsViewProvider } from './views/boardsViewProvider';
 import { SetupViewProvider } from './views/setupViewProvider';
+import { DataViewProvider } from './views/dataViewProvider';
 import { SDKManager } from './managers/sdkManager';
 import { ToolchainManager } from './managers/toolchainManager';
 import { SysConfigManager } from './managers/sysconfigManager';
@@ -20,10 +20,10 @@ let outputChannel: vscode.OutputChannel;
 let treeViewProvider: Port11TreeViewProvider;
 let consoleViewProvider: ConsoleViewProvider;
 let callStackViewProvider: CallStackViewProvider;
-let variablesViewProvider: VariablesViewProvider;
 let breakpointsViewProvider: BreakpointsViewProvider;
 let boardsViewProvider: BoardsViewProvider;
 let setupViewProvider: SetupViewProvider;
+let dataViewProvider: DataViewProvider;
 let sdkManager: SDKManager;
 let toolchainManager: ToolchainManager;
 let sysConfigManager: SysConfigManager;
@@ -410,19 +410,8 @@ export async function activate(context: vscode.ExtensionContext) {
             throw error;
         }
 
-        // Register TreeView
-        const treeView = vscode.window.createTreeView('port11.debugView', {
-            treeDataProvider: treeViewProvider,
-            showCollapseAll: true
-        });
-
-        context.subscriptions.push(treeView);
-
-        treeView.onDidChangeCheckboxState(async (e) => {
-            for (const [item, state] of e.items) {
-                await treeViewProvider.handleCheckboxChange(item as Port11TreeItem, state);
-            }
-        });
+        // TreeView provider is initialized but not registered as a view
+        // It's used for internal state management only
 
         // Initialize and Register Console View Provider
         outputChannel.appendLine('🖥️ Initializing Console View...');
@@ -440,21 +429,22 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         outputChannel.appendLine('  ✅ Call Stack View initialized successfully');
 
-        // Initialize and Register Variables View Provider
-        outputChannel.appendLine('📋 Initializing Variables View...');
-        variablesViewProvider = new VariablesViewProvider(context.extensionUri, outputChannel);
-        context.subscriptions.push(
-            vscode.window.registerWebviewViewProvider('port11.variablesView', variablesViewProvider)
-        );
-        outputChannel.appendLine('  ✅ Variables View initialized successfully');
-
         // Initialize and Register Breakpoints View Provider
         outputChannel.appendLine('🔴 Initializing Breakpoints View...');
-        breakpointsViewProvider = new BreakpointsViewProvider(context.extensionUri, outputChannel);
+        const swdDebuggerPath = cliManager.getExecutablePath();
+        breakpointsViewProvider = new BreakpointsViewProvider(context.extensionUri, outputChannel, swdDebuggerPath);
         context.subscriptions.push(
-            vscode.window.registerWebviewViewProvider('port11.breakpointsView', breakpointsViewProvider)
+            vscode.window.registerWebviewViewProvider('port11.variablesView', breakpointsViewProvider)
         );
         outputChannel.appendLine('  ✅ Breakpoints View initialized successfully');
+
+        // Initialize and Register Data View Provider
+        outputChannel.appendLine('📊 Initializing Data View...');
+        dataViewProvider = new DataViewProvider(context.extensionUri, outputChannel, swdDebuggerPath);
+        context.subscriptions.push(
+            vscode.window.registerWebviewViewProvider('port11.dataView', dataViewProvider)
+        );
+        outputChannel.appendLine('  ✅ Data View initialized successfully');
 
         // Initialize and Register Boards View Provider
         outputChannel.appendLine('📱 Initializing Boards View...');
@@ -506,8 +496,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
                 // Load disassembly for address mapping
                 const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-                if (workspaceFolder && variablesViewProvider) {
-                    await variablesViewProvider.loadDisassembly(workspaceFolder);
+                if (workspaceFolder && breakpointsViewProvider) {
+                    await breakpointsViewProvider.loadDisassembly(workspaceFolder);
+                }
+
+                // Update device breakpoints from hardware
+                try {
+                    await breakpointsViewProvider?.updateDeviceBreakpoints();
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to get device breakpoints: ${error}`);
                 }
 
                 // Update call stack view with initial data
@@ -521,7 +518,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 // Update variables view with initial data
                 try {
                     const variables = await debugCommand.getVariables();
-                    variablesViewProvider?.updateVariables(variables, true);
+                    breakpointsViewProvider?.updateBreakpoints(variables, true);
                 } catch (error) {
                     outputChannel.appendLine(`Failed to get initial variables: ${error}`);
                 }
@@ -534,7 +531,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 callStackViewProvider?.updateCallStack([], false);
 
                 // Clear variables view
-                variablesViewProvider?.updateVariables({
+                breakpointsViewProvider?.updateBreakpoints({
                     localVariables: [],
                     globalVariables: [],
                     totalCount: 0,
@@ -543,6 +540,13 @@ export async function activate(context: vscode.ExtensionContext) {
             }),
             vscode.commands.registerCommand('port11-debugger.debug.pause', async () => {
                 await debugCommand.halt();
+
+                // Update registry data when halted
+                try {
+                    await dataViewProvider?.updateRegistryData();
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to update registry data: ${error}`);
+                }
 
                 // Update call stack when paused
                 try {
@@ -555,7 +559,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 // Update variables when paused
                 try {
                     const variables = await debugCommand.getVariables();
-                    variablesViewProvider?.updateVariables(variables, true);
+                    breakpointsViewProvider?.updateBreakpoints(variables, true);
                 } catch (error) {
                     outputChannel.appendLine(`Failed to update variables: ${error}`);
                 }
@@ -578,7 +582,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 // Update variables after step
                 try {
                     const variables = await debugCommand.getVariables();
-                    variablesViewProvider?.updateVariables(variables, true);
+                    breakpointsViewProvider?.updateBreakpoints(variables, true);
                 } catch (error) {
                     outputChannel.appendLine(`Failed to update variables: ${error}`);
                 }
@@ -591,7 +595,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     const callStack = await debugCommand.getCallStack();
                     callStackViewProvider?.updateCallStack(callStack, true);
                     const variables = await debugCommand.getVariables();
-                    variablesViewProvider?.updateVariables(variables, true);
+                    breakpointsViewProvider?.updateBreakpoints(variables, true);
                 } catch (error) {
                     outputChannel.appendLine(`Failed to update debug views: ${error}`);
                 }
@@ -604,7 +608,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     const callStack = await debugCommand.getCallStack();
                     callStackViewProvider?.updateCallStack(callStack, true);
                     const variables = await debugCommand.getVariables();
-                    variablesViewProvider?.updateVariables(variables, true);
+                    breakpointsViewProvider?.updateBreakpoints(variables, true);
                 } catch (error) {
                     outputChannel.appendLine(`Failed to update debug views: ${error}`);
                 }
