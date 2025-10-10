@@ -6,11 +6,11 @@ import * as https from "https";
 
 const DOWNLOAD_URLS = {
   darwin:
-    "https://res.cloudinary.com/drclxio85/raw/upload/v1758433874/evobi/swd-debugger",
+    "https://storage.googleapis.com/port11/swd-debugger-mac_aarch64",
   win32:
-    "https://res.cloudinary.com/drclxio85/raw/upload/v1758515423/evobi/swd-debugger_win",
+    "https://storage.googleapis.com/port11/swd-debugger.exe",
   linux:
-    "https://res.cloudinary.com/drclxio85/raw/upload/v1758433874/evobi/swd-debugger",
+    "https://storage.googleapis.com/port11/swd-debugger-linux_x86_64",
 };
 
 const DEST_FILE_NAME = "swd-debugger";
