@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { exec } from 'child_process';
-import { Port11TreeViewProvider, Port11TreeItem } from './views/port11TreeView';
+import { execFile } from 'child_process';
+import { Port11TreeViewProvider } from './views/port11TreeView';
 import { ConsoleViewProvider } from './views/consoleViewProvider';
 import { CallStackViewProvider } from './views/callStackViewProvider';
 import { BreakpointsViewProvider } from './views/breakpointViewProvider';
@@ -80,7 +80,35 @@ function executeSwdDebuggerCommand(args: string, successMessage: string, require
         outputChannel.appendLine(`🚀 Executing: ${command}`);
         outputChannel.show();
 
-        exec(command, { cwd: workspaceFolder }, (error, stdout, stderr) => {
+        const buildArgv = (raw: string): string[] => {
+            // Split by spaces but preserve everything after a known key like --file as a single argument
+            const parts = raw.trim().split(/\s+/);
+            const argv: string[] = [];
+            let i = 0;
+            while (i < parts.length) {
+                const tok = parts[i];
+                if (tok === '--file' || tok === '-f') {
+                    argv.push(tok);
+                    // Everything after --file is the path, which can have spaces. Join the rest.
+                    const pathValue = parts.slice(i + 1).join(' ');
+                    argv.push(pathValue);
+                    break;
+                } else {
+                    argv.push(tok);
+                    i++;
+                }
+            }
+            return argv;
+        };
+        const argvFromArgs = buildArgv(args);
+        // Prepend port if required
+        const argv: string[] = [];
+        if (requiresPort && selectedPort) {
+            argv.push('--port', selectedPort);
+        }
+        argv.push(...argvFromArgs);
+        // Invoke the executable directly; execFile handles spaces in both file and argv
+        execFile(executablePath, argv, { cwd: workspaceFolder }, (error, stdout, stderr) => {
             if (error) {
                 outputChannel.appendLine(`❌ Error: ${error.message}`);
                 outputChannel.appendLine(`stderr: ${stderr}`);
@@ -387,6 +415,75 @@ export async function activate(context: vscode.ExtensionContext) {
         const debugCommand = new DebugCommand(context, outputChannel, connectionManager, cliManager);
         outputChannel.appendLine('Command handlers initialized successfully');
 
+        // Listen for breakpoint hits to update UI automatically
+        debugCommand.onBreakpointHit(async () => {
+            outputChannel.appendLine('🎯 Breakpoint hit - updating UI...');
+
+            // Update registry data
+            try {
+                await dataViewProvider?.updateRegistryData();
+            } catch (error) {
+                outputChannel.appendLine(`Failed to update registry data: ${error}`);
+            }
+
+            // Update call stack
+            try {
+                const callStack = await debugCommand.getCallStack();
+                callStackViewProvider?.updateCallStack(callStack, true);
+            } catch (error) {
+                outputChannel.appendLine(`Failed to update call stack: ${error}`);
+            }
+
+            // Update variables
+            try {
+                const variables = await debugCommand.getVariables();
+                breakpointsViewProvider?.updateBreakpoints(variables, true);
+            } catch (error) {
+                outputChannel.appendLine(`Failed to update variables: ${error}`);
+            }
+
+            // HIGHLIGHT THE LINE IN EDITOR WHERE BREAKPOINT WAS HIT
+            try {
+                await highlightBreakpointLine(debugCommand, breakpointsViewProvider, outputChannel);
+            } catch (error) {
+                outputChannel.appendLine(`Failed to highlight breakpoint line: ${error}`);
+            }
+        });
+
+        debugCommand.onStepCompleted(async () => {
+            outputChannel.appendLine('👟 Step completed - updating UI...');
+
+            // Update registry data
+            try {
+                await dataViewProvider?.updateRegistryData();
+            } catch (error) {
+                outputChannel.appendLine(`Failed to update registry data: ${error}`);
+            }
+
+            // Update call stack
+            try {
+                const callStack = await debugCommand.getCallStack();
+                callStackViewProvider?.updateCallStack(callStack, true);
+            } catch (error) {
+                outputChannel.appendLine(`Failed to update call stack: ${error}`);
+            }
+
+            // Update variables
+            try {
+                const variables = await debugCommand.getVariables();
+                breakpointsViewProvider?.updateBreakpoints(variables, true);
+            } catch (error) {
+                outputChannel.appendLine(`Failed to update variables: ${error}`);
+            }
+
+            // Highlight the line where execution stopped
+            try {
+                await highlightBreakpointLine(debugCommand, breakpointsViewProvider, outputChannel);
+            } catch (error) {
+                outputChannel.appendLine(`Failed to highlight current line: ${error}`);
+            }
+        });
+
         // Initialize TreeView Provider
         try {
             outputChannel.appendLine('🌲 Initializing TreeView provider...');
@@ -557,54 +654,133 @@ export async function activate(context: vscode.ExtensionContext) {
                 } catch (error) {
                     outputChannel.appendLine(`Failed to update variables: ${error}`);
                 }
+
+                // HIGHLIGHT THE LINE IN EDITOR WHERE EXECUTION WAS HALTED
+                try {
+                    await highlightBreakpointLine(debugCommand, breakpointsViewProvider, outputChannel);
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to highlight current line: ${error}`);
+                }
             }),
-            vscode.commands.registerCommand('port11-debugger.debug.resume', () => debugCommand.resume()),
+            vscode.commands.registerCommand('port11-debugger.debug.resume', async () => {
+                try {
+                    await debugCommand.resume();
+
+                    // Clear call stack view when running
+                    callStackViewProvider?.updateCallStack([], false);
+
+                    // Clear variables view when running
+                    breakpointsViewProvider?.updateBreakpoints({
+                        localVariables: [],
+                        globalVariables: [],
+                        totalCount: 0,
+                        isValid: false
+                    }, false);
+
+                    outputChannel.appendLine('✅ Target resumed - monitoring for breakpoints...');
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to resume: ${error}`);
+                    vscode.window.showErrorMessage(`Failed to resume target: ${error}`);
+                }
+            }),
             vscode.commands.registerCommand('port11-debugger.debug.restart', () => restartDebugSession(debugCommand)),
 
             // Debug stepping commands
             vscode.commands.registerCommand('port11-debugger.debug.stepOver', async () => {
-                await debugCommand.stepOver();
-
-                // Update call stack after step
                 try {
-                    const callStack = await debugCommand.getCallStack();
-                    callStackViewProvider?.updateCallStack(callStack, true);
-                } catch (error) {
-                    outputChannel.appendLine(`Failed to update call stack: ${error}`);
-                }
+                    await debugCommand.stepOver();
 
-                // Update variables after step
-                try {
-                    const variables = await debugCommand.getVariables();
-                    breakpointsViewProvider?.updateBreakpoints(variables, true);
+                    // Update registry data after step
+                    try {
+                        await dataViewProvider?.updateRegistryData();
+                    } catch (error) {
+                        outputChannel.appendLine(`Failed to update registry data: ${error}`);
+                    }
+
+                    // Update call stack after step
+                    try {
+                        const callStack = await debugCommand.getCallStack();
+                        callStackViewProvider?.updateCallStack(callStack, true);
+                    } catch (error) {
+                        outputChannel.appendLine(`Failed to update call stack: ${error}`);
+                    }
+
+                    // Update variables after step
+                    try {
+                        const variables = await debugCommand.getVariables();
+                        breakpointsViewProvider?.updateBreakpoints(variables, true);
+                    } catch (error) {
+                        outputChannel.appendLine(`Failed to update variables: ${error}`);
+                    }
+
+                    // HIGHLIGHT THE LINE IN EDITOR WHERE EXECUTION STOPPED AFTER STEP
+                    try {
+                        await highlightBreakpointLine(debugCommand, breakpointsViewProvider, outputChannel);
+                    } catch (error) {
+                        outputChannel.appendLine(`Failed to highlight current line: ${error}`);
+                    }
                 } catch (error) {
-                    outputChannel.appendLine(`Failed to update variables: ${error}`);
+                    outputChannel.appendLine(`Step Over failed: ${error}`);
+                    // Don't show error popup for "not supported" messages
+                    if (error instanceof Error && !error.message.includes('not supported')) {
+                        vscode.window.showErrorMessage(`Step Over failed: ${error}`);
+                    }
                 }
             }),
             vscode.commands.registerCommand('port11-debugger.debug.stepInto', async () => {
-                await debugCommand.stepInto();
-
-                // Update views after step
                 try {
-                    const callStack = await debugCommand.getCallStack();
-                    callStackViewProvider?.updateCallStack(callStack, true);
-                    const variables = await debugCommand.getVariables();
-                    breakpointsViewProvider?.updateBreakpoints(variables, true);
+                    await debugCommand.stepInto();
+
+                    // Update views after step (same as stepOver)
+                    try {
+                        await dataViewProvider?.updateRegistryData();
+                        const callStack = await debugCommand.getCallStack();
+                        callStackViewProvider?.updateCallStack(callStack, true);
+                        const variables = await debugCommand.getVariables();
+                        breakpointsViewProvider?.updateBreakpoints(variables, true);
+                    } catch (error) {
+                        outputChannel.appendLine(`Failed to update debug views: ${error}`);
+                    }
+
+                    // Highlight the line
+                    try {
+                        await highlightBreakpointLine(debugCommand, breakpointsViewProvider, outputChannel);
+                    } catch (error) {
+                        outputChannel.appendLine(`Failed to highlight current line: ${error}`);
+                    }
                 } catch (error) {
-                    outputChannel.appendLine(`Failed to update debug views: ${error}`);
+                    outputChannel.appendLine(`Step Into failed: ${error}`);
+                    if (error instanceof Error && !error.message.includes('not supported')) {
+                        vscode.window.showErrorMessage(`Step Into failed: ${error}`);
+                    }
                 }
             }),
             vscode.commands.registerCommand('port11-debugger.debug.stepOut', async () => {
-                await debugCommand.stepOut();
-
-                // Update views after step
                 try {
-                    const callStack = await debugCommand.getCallStack();
-                    callStackViewProvider?.updateCallStack(callStack, true);
-                    const variables = await debugCommand.getVariables();
-                    breakpointsViewProvider?.updateBreakpoints(variables, true);
+                    await debugCommand.stepOut();
+
+                    // Update views after step
+                    try {
+                        await dataViewProvider?.updateRegistryData();
+                        const callStack = await debugCommand.getCallStack();
+                        callStackViewProvider?.updateCallStack(callStack, true);
+                        const variables = await debugCommand.getVariables();
+                        breakpointsViewProvider?.updateBreakpoints(variables, true);
+                    } catch (error) {
+                        outputChannel.appendLine(`Failed to update debug views: ${error}`);
+                    }
+
+                    // Highlight the line
+                    try {
+                        await highlightBreakpointLine(debugCommand, breakpointsViewProvider, outputChannel);
+                    } catch (error) {
+                        outputChannel.appendLine(`Failed to highlight current line: ${error}`);
+                    }
                 } catch (error) {
-                    outputChannel.appendLine(`Failed to update debug views: ${error}`);
+                    outputChannel.appendLine(`Step Out failed: ${error}`);
+                    if (error instanceof Error && !error.message.includes('GDB')) {
+                        vscode.window.showErrorMessage(`Step Out failed: ${error}`);
+                    }
                 }
             }),
 
@@ -647,8 +823,113 @@ export function deactivate() {
     outputChannel?.dispose();
 }
 
-// Command implementations
+async function highlightBreakpointLine(
+    debugCommand: DebugCommand,
+    breakpointsViewProvider: BreakpointsViewProvider | undefined,
+    outputChannel: vscode.OutputChannel
+): Promise<void> {
+    try {
+        // Read the Program Counter to get current execution address
+        const pc = await debugCommand.readPC();
+        outputChannel.appendLine(`📍 Current PC: ${pc}`);
 
+        if (!breakpointsViewProvider) {
+            outputChannel.appendLine('⚠️  Breakpoints view not available');
+            return;
+        }
+
+        // Get the address mapper from breakpoints view
+        const addressMapper = (breakpointsViewProvider as any).addressMapper;
+
+        if (!addressMapper || !addressMapper.isLoaded()) {
+            outputChannel.appendLine('⚠️  Address mapper not loaded - cannot map PC to source line');
+            return;
+        }
+
+        // Search through all mapped addresses to find matching PC
+        // The addressMapper stores file:line -> address mappings
+        // We need to reverse lookup: address -> file:line
+        const breakpointAddresses = addressMapper.getBreakpointAddresses();
+
+        for (const bp of breakpointAddresses) {
+            // Check if this breakpoint's address matches our PC
+            // Note: PC might have Thumb bit set, so compare without LSB
+            const pcValue = parseInt(pc, 16);
+            const bpAddress = parseInt(bp.address, 16);
+
+            // Compare with and without Thumb bit (bit 0)
+            if (pcValue === bpAddress || (pcValue & ~1) === (bpAddress & ~1)) {
+                outputChannel.appendLine(`✅ Found source location: ${bp.file}:${bp.line}`);
+
+                // Navigate to the source location
+                const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+                if (!workspaceFolder) {
+                    outputChannel.appendLine('⚠️  No workspace folder found');
+                    return;
+                }
+
+                // Resolve file path
+                let fileUri: vscode.Uri;
+                if (bp.file.startsWith('/') || bp.file.match(/^[a-zA-Z]:\\/)) {
+                    // Absolute path
+                    fileUri = vscode.Uri.file(bp.file);
+                } else {
+                    // Relative path - join with workspace
+                    fileUri = vscode.Uri.joinPath(workspaceFolder.uri, bp.file);
+                }
+
+                // Open the document
+                const document = await vscode.workspace.openTextDocument(fileUri);
+                const line = bp.line - 1; // Convert to 0-based
+
+                // Show the document with selection/highlight
+                await vscode.window.showTextDocument(document, {
+                    selection: new vscode.Range(
+                        new vscode.Position(line, 0),
+                        new vscode.Position(line, 0)
+                    ),
+                    viewColumn: vscode.ViewColumn.One,
+                    preserveFocus: false // Give focus to the editor
+                });
+
+                // Create a decoration to highlight the line
+                const decorationType = vscode.window.createTextEditorDecorationType({
+                    backgroundColor: new vscode.ThemeColor('editor.stackFrameHighlightBackground'),
+                    isWholeLine: true,
+                    overviewRulerColor: new vscode.ThemeColor('debugIcon.breakpointForeground'),
+                    overviewRulerLane: vscode.OverviewRulerLane.Full
+                });
+
+                const editor = vscode.window.activeTextEditor;
+                if (editor) {
+                    editor.setDecorations(decorationType, [
+                        new vscode.Range(
+                            new vscode.Position(line, 0),
+                            new vscode.Position(line, Number.MAX_VALUE)
+                        )
+                    ]);
+
+                    // Clear decoration after 5 seconds
+                    setTimeout(() => {
+                        decorationType.dispose();
+                    }, 5000);
+                }
+
+                outputChannel.appendLine(`✅ Highlighted line ${bp.line} in ${bp.file}`);
+                return; // Found and highlighted, exit
+            }
+        }
+
+        outputChannel.appendLine(`⚠️  No source mapping found for PC: ${pc}`);
+
+    } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        outputChannel.appendLine(`❌ Error highlighting breakpoint line: ${errorMsg}`);
+        throw error;
+    }
+}
+
+// Command implementations
 async function setupToolchain(): Promise<void> {
     try {
         outputChannel.appendLine('Starting complete toolchain setup (SDK + Toolchain + SysConfig)...');

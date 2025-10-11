@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { spawn, ChildProcess } from 'child_process';
 import { SDKManager } from '../managers/sdkManager';
 import { ToolchainManager } from '../managers/toolchainManager';
@@ -60,7 +61,7 @@ export class BuildCommand {
 
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
         this.statusBarItem.command = 'port11-debugger.showLogs';
-        
+
         context.subscriptions.push(this.diagnosticCollection);
     }
 
@@ -104,7 +105,7 @@ export class BuildCommand {
         // Update output channel with timestamp and better formatting
         const timestamp = new Date().toLocaleTimeString();
         const stageIcon = this.getStageIcon(stage);
-        
+
         if (stage === 'error') {
             this.outputChannel.appendLine(`[${timestamp}] ${stageIcon} ❌ BUILD FAILED: ${message}`);
             this.outputChannel.appendLine('Build process terminated due to error.');
@@ -140,10 +141,10 @@ export class BuildCommand {
         if (this.buildProcess) {
             this.updateProgress('error', 'Cancelling build process', 100);
             this.outputChannel.appendLine('🛑 Build cancelled by user');
-            
+
             // First try graceful termination
             this.buildProcess.kill('SIGTERM');
-            
+
             // Force kill after 3 seconds if it doesn't respond
             setTimeout(() => {
                 if (this.buildProcess && !this.buildProcess.killed) {
@@ -151,10 +152,10 @@ export class BuildCommand {
                     this.buildProcess.kill('SIGKILL');
                 }
             }, 3000);
-            
+
             this.buildProcess = null;
             this.hideProgress();
-            
+
             vscode.window.showWarningMessage('Build process cancelled');
         } else {
             this.outputChannel.appendLine('ℹ️  No active build process to cancel');
@@ -245,21 +246,21 @@ export class BuildCommand {
         } catch (error) {
             // Enhanced error handling with immediate stop
             this.updateProgress('error', error instanceof Error ? error.message : 'Unknown error', 100);
-            
+
             const errorMessage = error instanceof Error ? error.message : String(error);
             this.outputChannel.appendLine(`❌ Build Error: ${errorMessage}`);
             this.outputChannel.appendLine('='.repeat(80));
-            
+
             // Stop any running processes
             if (this.buildProcess && !(this.buildProcess as ChildProcess).killed) {
                 this.outputChannel.appendLine('🛑 Terminating build process...');
                 (this.buildProcess as ChildProcess).kill('SIGTERM');
                 this.buildProcess = null;
             }
-            
+
             // Hide progress and show final status
             setTimeout(() => this.hideProgress(), 1000);
-            
+
             // Create and return failed build result
             const buildResult: BuildResult = {
                 success: false,
@@ -272,10 +273,10 @@ export class BuildCommand {
                 warnings: [],
                 buildTime: Date.now() - this.buildStartTime
             };
-            
+
             // Don't throw here - return the result instead so the UI can handle it gracefully
             return buildResult;
-            
+
         } finally {
             // Always clean up
             this.buildProcess = null;
@@ -310,22 +311,22 @@ export class BuildCommand {
             throw new Error('No workspace folder open');
         }
     }
-    
+
     getSysConfigCliPath(): string {
         return this.sysConfigManager.getSysConfigCliPath();
     }
 
     private async detectProject(): Promise<any> {
         const workspaceFolders = vscode.workspace.workspaceFolders!;
-        
+
         this.outputChannel.appendLine('🔍 Searching for MSPM0 project indicators...');
 
         const projectFiles: string[] = [];
-        
+
         for (const folder of workspaceFolders) {
             const folderPath = folder.uri.fsPath;
             this.outputChannel.appendLine(`   Checking folder: ${folderPath}`);
-            
+
             // Look for essential MSPM0 project files
             const essentialFiles = [
                 '*.c',           // C source files
@@ -341,7 +342,7 @@ export class BuildCommand {
 
             let foundEssential = 0;
             let foundOptional = 0;
-            
+
             const foundFileTypes: string[] = [];
 
             // Check for essential files
@@ -351,7 +352,7 @@ export class BuildCommand {
                     null,
                     10
                 );
-                
+
                 if (files.length > 0) {
                     foundEssential++;
                     foundFileTypes.push(pattern);
@@ -369,7 +370,7 @@ export class BuildCommand {
                     null,
                     5
                 );
-                
+
                 if (files.length > 0) {
                     foundOptional++;
                     foundFileTypes.push(pattern);
@@ -382,7 +383,7 @@ export class BuildCommand {
             if (foundEssential >= 2) {  // Both *.c and *.syscfg must be present
                 this.outputChannel.appendLine(`   ✅ Valid MSPM0 project detected in ${folderPath}`);
                 this.outputChannel.appendLine(`      Essential files: ${foundEssential}/2, Optional files: ${foundOptional}`);
-                
+
                 return {
                     rootPath: folderPath,
                     projectFiles,
@@ -415,10 +416,10 @@ export class BuildCommand {
 
     private async prepareBuildConfig(projectInfo: any, options: BuildOptions): Promise<any> {
         this.outputChannel.appendLine('🔧 Preparing build configuration...');
-        
+
         // Get compiler path with detailed logging
         const compilerPath = this.toolchainManager.getCompilerPath();
-        
+
         if (!compilerPath) {
             const errorMessage = `ARM-CGT-CLANG compiler not found!
 
@@ -448,7 +449,7 @@ export class BuildCommand {
             ...this.sdkManager.getIncludePaths(),
             ...this.toolchainManager.getIncludePaths()
         ];
-        
+
         const libraryPaths = [
             ...this.sdkManager.getLibraryPaths(),
             ...this.toolchainManager.getLibraryPaths()
@@ -486,7 +487,7 @@ export class BuildCommand {
                 '**/build/**', // Exclude build directory
                 100
             );
-            
+
             sourceFiles.push(...files.map(f => f.fsPath));
         }
 
@@ -497,7 +498,7 @@ export class BuildCommand {
         return new Promise(async (resolve, reject) => {
             try {
                 const platform = require('os').platform();
-                
+
                 // Ensure build directory exists
                 if (!fs.existsSync(config.outputPath)) {
                     fs.mkdirSync(config.outputPath, { recursive: true });
@@ -517,7 +518,7 @@ export class BuildCommand {
 
                 // Build compiler arguments
                 const args = this.buildCompilerArgs(config);
-                
+
                 // Add all source files
                 validSourceFiles.forEach(sourceFile => {
                     args.push(sourceFile);
@@ -621,7 +622,7 @@ export class BuildCommand {
                 this.buildProcess.stdout?.on('data', (data) => {
                     const output = data.toString();
                     stdout += output;
-                    
+
                     const lines = output.split('\n');
                     lines.forEach((line: string) => {
                         if (line.trim()) {
@@ -634,7 +635,7 @@ export class BuildCommand {
                 this.buildProcess.stderr?.on('data', (data) => {
                     const output = data.toString();
                     stderr += output;
-                    
+
                     const lines = output.split('\n');
                     lines.forEach((line: string) => {
                         if (line.trim()) {
@@ -665,7 +666,7 @@ export class BuildCommand {
 
                     // Check if build was successful
                     const buildSuccess = code === 0 && !hasCompileErrors && errors.length === 0;
-                    
+
                     const result: BuildResult = {
                         success: buildSuccess,
                         errors: errors,
@@ -682,7 +683,7 @@ export class BuildCommand {
                             try {
                                 const os = require('os');
                                 const exe = os.platform().startsWith('win32') ? '.exe' : '';
-                                
+
                                 // Resolve tool paths from the same bin folder as tiarmclang
                                 const binDir = path.dirname(config.compilerPath);
                                 const tiarmhexPath = path.join(binDir, `tiarmhex${exe}`);
@@ -730,7 +731,7 @@ export class BuildCommand {
                                 this.outputChannel.appendLine(`⚠️  Post-link step skipped due to error: ${String(postErr)}`);
                             }
                         })();
-                        
+
                         // Show file size if available
                         try {
                             const stats = fs.statSync(outputFile);
@@ -738,7 +739,7 @@ export class BuildCommand {
                         } catch (e) {
                             // Size check failed but build was successful
                         }
-                        
+
                         if (warnings.length > 0) {
                             this.outputChannel.appendLine(`⚠️  Note: ${warnings.length} warning(s) reported`);
                         }
@@ -746,7 +747,7 @@ export class BuildCommand {
                         this.outputChannel.appendLine(`❌ BUILD FAILED (Exit Code: ${code})`);
                         this.outputChannel.appendLine(`   • Errors: ${errors.length}`);
                         this.outputChannel.appendLine(`   • Warnings: ${warnings.length}`);
-                        
+
                         // Show first few errors for quick reference
                         if (errors.length > 0) {
                             this.outputChannel.appendLine('');
@@ -779,14 +780,14 @@ export class BuildCommand {
                 this.buildProcess.on('error', (error) => {
                     this.buildProcess = null;
                     this.outputChannel.appendLine(`❌ Build process error: ${error.message}`);
-                    
+
                     // Platform-specific troubleshooting
                     if (platform.startsWith('win32')) {
                         this.outputChannel.appendLine('💡 Windows: Check compiler path and permissions');
                     } else {
                         this.outputChannel.appendLine('💡 Unix: Check executable permissions (chmod +x)');
                     }
-                    
+
                     reject(new Error(`Build process error: ${error.message}`));
                 });
 
@@ -800,7 +801,7 @@ export class BuildCommand {
 
     private async getValidSourceFiles(config: any): Promise<string[]> {
         const validFiles: string[] = [];
-        
+
         // 1. Main source file
         const mainFile = path.join(config.projectPath, 'main.c');
         if (fs.existsSync(mainFile)) {
@@ -824,7 +825,7 @@ export class BuildCommand {
             // In project directory
             path.join(config.projectPath, 'ticlang', 'startup_mspm0g350x_ticlang.c'),
             path.join(config.projectPath, 'startup_mspm0g350x_ticlang.c'),
-            
+
             // In SDK
             path.join(this.sdkManager.getSDKPath(), 'source', 'ti', 'devices', 'msp', 'm0p', 'startup_system_files', 'ticlang', 'startup_mspm0g350x_ticlang.c')
         ];
@@ -838,7 +839,7 @@ export class BuildCommand {
                 break;
             }
         }
-        
+
         if (!startupFound) {
             this.outputChannel.appendLine(`⚠️  No startup file found - build may fail at link stage`);
             this.outputChannel.appendLine(`   Searched: startup_mspm0g350x_ticlang.c`);
@@ -847,13 +848,13 @@ export class BuildCommand {
         // 4. IMPORTANT: Skip compiler-specific duplicate files
         // Don't include ticlang/ti_msp_dl_config.c, gcc/ti_msp_dl_config.c, iar/ti_msp_dl_config.c
         // These are duplicates of the syscfg/ti_msp_dl_config.c file
-        
+
         if (config.sourceFiles) {
             for (const sourceFile of config.sourceFiles) {
                 if (fs.existsSync(sourceFile) && !validFiles.includes(sourceFile)) {
                     const fileName = path.basename(sourceFile).toLowerCase();
                     const relativePath = path.relative(config.projectPath, sourceFile);
-                    
+
                     // Skip compiler-specific duplicate config files
                     if (relativePath.includes('ticlang') && fileName === 'ti_msp_dl_config.c') {
                         this.outputChannel.appendLine(`⏭️  Skipping duplicate: ${relativePath} (using syscfg version instead)`);
@@ -867,14 +868,14 @@ export class BuildCommand {
                         this.outputChannel.appendLine(`⏭️  Skipping duplicate: ${relativePath} (using syscfg version instead)`);
                         continue;
                     }
-                    
+
                     // Skip other compiler-specific files we don't want
-                    if (fileName.includes('iar') || fileName.includes('gcc') || 
+                    if (fileName.includes('iar') || fileName.includes('gcc') ||
                         (fileName.includes('startup') && !fileName.includes('ticlang'))) {
                         this.outputChannel.appendLine(`⏭️  Skipping non-ticlang file: ${relativePath}`);
                         continue;
                     }
-                    
+
                     // Include valid C files
                     if (fileName.endsWith('.c')) {
                         validFiles.push(sourceFile);
@@ -885,17 +886,17 @@ export class BuildCommand {
         }
 
         this.outputChannel.appendLine(`📊 Total valid source files: ${validFiles.length}`);
-        
+
         // Verify we have essential files
         const hasMain = validFiles.some(f => path.basename(f) === 'main.c');
         const hasSysConfig = validFiles.some(f => f.includes('syscfg') && f.endsWith('ti_msp_dl_config.c'));
         const hasStartup = validFiles.some(f => f.includes('startup_mspm0g350x_ticlang.c'));
-        
+
         this.outputChannel.appendLine(`📋 Essential files check:`);
         this.outputChannel.appendLine(`   • main.c: ${hasMain ? '✅' : '❌'}`);
         this.outputChannel.appendLine(`   • SysConfig: ${hasSysConfig ? '✅' : '❌'}`);
         this.outputChannel.appendLine(`   • Startup: ${hasStartup ? '✅' : '❌'}`);
-        
+
         if (!hasMain) {
             throw new Error('main.c is required but not found');
         }
@@ -905,7 +906,7 @@ export class BuildCommand {
         if (!hasStartup) {
             this.outputChannel.appendLine(`⚠️  Warning: No startup file found - linking may fail`);
         }
-        
+
         return validFiles;
     }
 
@@ -930,7 +931,7 @@ export class BuildCommand {
 
         const sysConfigCliPath = this.sysConfigManager.getSysConfigCliPath();
         const sdkPath = this.sdkManager.getSDKPath();
-        
+
         // Check if product.json exists
         const productJsonPath = path.join(sdkPath, '.metadata', 'product.json');
         if (!fs.existsSync(productJsonPath)) {
@@ -941,9 +942,9 @@ export class BuildCommand {
             const sysConfigFilePath = sysConfigFile.fsPath;
             const fileName = path.basename(sysConfigFilePath);
             const projectDir = path.dirname(sysConfigFilePath);
-            
+
             this.outputChannel.appendLine(`🔧 Processing SysConfig file: ${fileName}`);
-            
+
             // Create syscfg output directory if it doesn't exist
             const syscfgOutputDir = path.join(projectDir, 'syscfg');
             if (!fs.existsSync(syscfgOutputDir)) {
@@ -966,6 +967,13 @@ export class BuildCommand {
         }
     }
 
+    // ============================================================================
+    // FIX: Handle paths with spaces in SysConfig execution
+    // FILE: src/commands/buildCommand.ts
+    // ============================================================================
+
+    // FIND the runSysConfigCLI method (around line 380) and REPLACE with:
+
     private async runSysConfigCLI(sysConfigCliPath: string, args: string[], cwd: string): Promise<void> {
         return new Promise((resolve, reject) => {
             const platform = require('os').platform();
@@ -973,22 +981,89 @@ export class BuildCommand {
 
             // Clean the path - remove extra quotes if present
             const cleanPath = sysConfigCliPath.replace(/^"(.*)"$/, '$1');
-            
+
             this.outputChannel.appendLine(`🔧 Executing SysConfig CLI:`);
             this.outputChannel.appendLine(`   Path: ${cleanPath}`);
             this.outputChannel.appendLine(`   Args: ${args.join(' ')}`);
             this.outputChannel.appendLine(`   Working directory: ${cwd}`);
+            this.outputChannel.appendLine(`   Platform: ${platform}`);
 
             if (platform.startsWith('win32') && cleanPath.endsWith('.bat')) {
-                // Windows batch file - don't add extra quotes around the path
-                sysConfigProcess = spawn('cmd', ['/c', cleanPath, ...args], {
+                // WINDOWS .bat files with spaces: Create a temporary wrapper script
+                // This is the most reliable approach for handling spaces in paths
+
+                this.outputChannel.appendLine(`   Creating temporary wrapper script for reliable execution`);
+
+                // Create a temporary .bat file in a path without spaces
+                const tempDir = os.tmpdir();
+                const tempScriptPath = path.join(tempDir, `sysconfig_wrapper_${Date.now()}.bat`);
+
+                // Build the command to execute in the wrapper
+                // Quote the sysconfig path and each argument that has spaces
+                const quotedPath = `"${cleanPath}"`;
+                const quotedArgs = args.map(arg => {
+                    // Quote if contains spaces and not already quoted
+                    if (arg.includes(' ') && !arg.startsWith('"')) {
+                        return `"${arg}"`;
+                    }
+                    return arg;
+                });
+
+                // Create wrapper script content
+                const wrapperContent = `@echo off
+cd /d "${cwd}"
+call ${quotedPath} ${quotedArgs.join(' ')}
+exit /b %ERRORLEVEL%`;
+
+                this.outputChannel.appendLine(`   Wrapper script: ${tempScriptPath}`);
+                this.outputChannel.appendLine(`   Wrapper content:\n${wrapperContent}`);
+
+                try {
+                    // Write the wrapper script
+                    fs.writeFileSync(tempScriptPath, wrapperContent, { encoding: 'utf8' });
+
+                    // Execute the wrapper script (which is in a path without spaces)
+                    sysConfigProcess = spawn('cmd.exe', ['/c', tempScriptPath], {
+                        stdio: ['pipe', 'pipe', 'pipe'],
+                        windowsHide: true
+                    });
+
+                    // Clean up the temp file when done
+                    sysConfigProcess.on('close', () => {
+                        try {
+                            if (fs.existsSync(tempScriptPath)) {
+                                fs.unlinkSync(tempScriptPath);
+                                this.outputChannel.appendLine(`   Cleaned up wrapper script`);
+                            }
+                        } catch (cleanupError) {
+                            this.outputChannel.appendLine(`   Warning: Could not delete wrapper script: ${cleanupError}`);
+                        }
+                    });
+
+                } catch (error) {
+                    reject(new Error(`Failed to create wrapper script: ${error}`));
+                    return;
+                }
+
+            } else if (platform.startsWith('win32')) {
+                // Windows .exe files - can use spawn directly
+                sysConfigProcess = spawn(cleanPath, args, {
                     cwd: cwd,
                     stdio: ['pipe', 'pipe', 'pipe'],
-                    windowsHide: true,
-                    shell: false  // Prevent shell interpretation issues
+                    windowsHide: true
                 });
             } else {
-                // Direct execution for other platforms
+                // UNIX (macOS & Linux)
+
+                // Make sure the script is executable
+                if (cleanPath.endsWith('.sh')) {
+                    try {
+                        fs.chmodSync(cleanPath, '755');
+                    } catch (error) {
+                        this.outputChannel.appendLine(`   ⚠️  Could not set executable permission: ${error}`);
+                    }
+                }
+
                 sysConfigProcess = spawn(cleanPath, args, {
                     cwd: cwd,
                     stdio: ['pipe', 'pipe', 'pipe']
@@ -1017,42 +1092,31 @@ export class BuildCommand {
                 lines.forEach((line: string) => {
                     if (line.trim()) {
                         const trimmedLine = line.trim();
-                        
+
                         // Parse the summary line: "❌ 0 error(s), 9 warning(s)"
                         const summaryMatch = trimmedLine.match(/^❌?\s*(\d+)\s+error\(s\),\s*(\d+)\s+warning\(s\)$/);
                         if (summaryMatch) {
                             errorCount = parseInt(summaryMatch[1]);
                             warningCount = parseInt(summaryMatch[2]);
-                            
+
                             if (errorCount > 0) {
                                 hasRealError = true;
-                                this.outputChannel.appendLine(`  ❌ SysConfig Summary: ${errorCount} error(s), ${warningCount} warning(s)`);
+                                this.outputChannel.appendLine(`  ❌ ${trimmedLine}`);
+                            } else if (warningCount > 0) {
+                                this.outputChannel.appendLine(`  ⚠️  ${trimmedLine}`);
                             } else {
-                                this.outputChannel.appendLine(`  ⚠️  SysConfig Summary: ${errorCount} error(s), ${warningCount} warning(s)`);
+                                this.outputChannel.appendLine(`  ✅ ${trimmedLine}`);
                             }
-                            return;
-                        }
-                        
-                        // Check for actual error indicators (but not the summary line)
-                        if ((trimmedLine.toLowerCase().includes('error') && 
-                            !trimmedLine.match(/\d+\s+error\(s\)/)) ||  // Not a summary line
-                            trimmedLine.toLowerCase().includes('invalid') ||
-                            trimmedLine.toLowerCase().includes('not recognized') ||
-                            trimmedLine.toLowerCase().includes('not found') ||
-                            trimmedLine.toLowerCase().includes('failed')) {
+                        } else if (
+                            trimmedLine.toLowerCase().includes('error') &&
+                            !trimmedLine.includes('0 error')
+                        ) {
                             hasRealError = true;
                             this.outputChannel.appendLine(`  ❌ ${trimmedLine}`);
-                        } else if (trimmedLine.toLowerCase().includes('usage:') || 
-                                trimmedLine.toLowerCase().includes('example:') ||
-                                trimmedLine.toLowerCase().includes('note that')) {
-                            // This is help text, not an error
-                            this.outputChannel.appendLine(`  ℹ️  ${trimmedLine}`);
-                        } else if (trimmedLine.toLowerCase().includes('warning:')) {
-                            // Regular warning message
+                        } else if (trimmedLine.toLowerCase().includes('warning')) {
                             this.outputChannel.appendLine(`  ⚠️  ${trimmedLine}`);
                         } else {
-                            // Other informational messages
-                            this.outputChannel.appendLine(`  🔧 ${trimmedLine}`);
+                            this.outputChannel.appendLine(`  ❌ ${trimmedLine}`);
                         }
                     }
                 });
@@ -1060,40 +1124,24 @@ export class BuildCommand {
 
             sysConfigProcess.on('close', (code) => {
                 this.outputChannel.appendLine(`SysConfig process closed with code: ${code}`);
-                
-                // Success criteria: exit code 0 AND no real errors (warnings are OK)
-                if (code === 0 && !hasRealError) {
-                    this.outputChannel.appendLine('  ✅ SysConfig code generation completed successfully');
-                    
+
+                // Check if output files were generated
+                const syscfgOutputDir = path.join(cwd, 'syscfg');
+                const expectedFiles = [
+                    path.join(syscfgOutputDir, 'ti_msp_dl_config.c'),
+                    path.join(syscfgOutputDir, 'ti_msp_dl_config.h')
+                ];
+
+                const filesExist = expectedFiles.every(file => fs.existsSync(file));
+
+                if (code === 0 && filesExist) {
+                    this.outputChannel.appendLine(`  ✅ SysConfig files generated successfully in ${syscfgOutputDir}`);
+                    this.outputChannel.appendLine('');
+                    resolve();
+                } else if (code === 0 && !filesExist) {
+                    // Warning but continue - some configurations might not generate all files
                     if (warningCount > 0) {
-                        this.outputChannel.appendLine(`  ⚠️  Note: ${warningCount} warning(s) were reported but do not prevent compilation`);
-                    }
-                    
-                    // Verify that files were actually generated
-                    const expectedFiles = ['ti_msp_dl_config.c', 'ti_msp_dl_config.h'];
-                    const syscfgDir = path.join(cwd, 'syscfg');
-                    let generatedCount = 0;
-                    
-                    for (const expectedFile of expectedFiles) {
-                        const filePath = path.join(syscfgDir, expectedFile);
-                        if (fs.existsSync(filePath)) {
-                            generatedCount++;
-                            this.outputChannel.appendLine(`    ✅ Generated: ${expectedFile}`);
-                        } else {
-                            this.outputChannel.appendLine(`    ⚠️  Missing: ${expectedFile}`);
-                        }
-                    }
-                    
-                    if (generatedCount === expectedFiles.length) {
-                        this.outputChannel.appendLine(`  🎉 SysConfig generation successful - all required files created`);
-                        if (warningCount > 0) {
-                            this.outputChannel.appendLine(`  📝 Summary: 0 errors, ${warningCount} warnings (warnings are non-blocking)`);
-                        }
-                        this.outputChannel.appendLine('');
-                        resolve();
-                    } else if (generatedCount > 0) {
-                        this.outputChannel.appendLine(`  ✅ SysConfig generation partial success (${generatedCount}/${expectedFiles.length} files created)`);
-                        this.outputChannel.appendLine('  ⚠️  Some files missing but continuing build...');
+                        this.outputChannel.appendLine(`  ⚠️  SysConfig completed with ${warningCount} warning(s), continuing build...`);
                         this.outputChannel.appendLine('');
                         resolve(); // Continue anyway if we have some files
                     } else {
@@ -1259,7 +1307,7 @@ export class BuildCommand {
     private buildCompilerArgs(config: any): string[] {
         const args: string[] = [];
         const platform = require('os').platform();
-        
+
         // ARM Cortex-M0+ specific flags (LLVM syntax, not TI CCS syntax)
         args.push('-march=thumbv6m');           // Target architecture
         args.push('-mcpu=cortex-m0plus');       // CPU target  
@@ -1278,7 +1326,7 @@ export class BuildCommand {
 
         // Include paths (use -I, not -i) - ADD CMSIS FIRST
         const sdkPath = this.sdkManager.getSDKPath();
-        
+
         // CRITICAL: Add CMSIS Core include path FIRST
         const cmsisCorePath = path.join(sdkPath, 'source', 'third_party', 'CMSIS', 'Core', 'Include');
         if (fs.existsSync(cmsisCorePath)) {
@@ -1304,7 +1352,7 @@ export class BuildCommand {
 
         // Target device define
         args.push('-D__MSPM0G3507__');
-        
+
         // Additional useful defines
         args.push('-DTARGET_IS_MSPM0G3507');
 
@@ -1330,7 +1378,7 @@ export class BuildCommand {
         args.push('-std=c99');                  // C99 standard
 
         this.outputChannel.appendLine(`🔧 Generated ${args.length} compiler arguments for ${platform}`);
-        
+
         return args;
     }
 
@@ -1342,19 +1390,19 @@ export class BuildCommand {
             // Parse ARM-CGT-CLANG error/warning format
             // Format: "file.c", line X: error/warning #XXXX: message
             const match = line.match(/"([^"]+)",\s*line\s*(\d+):\s*(error|warning)\s*#?\d*:\s*(.+)/i);
-            
+
             if (match) {
                 const [, filePath, lineNum, severity, message] = match;
                 const fullPath = path.resolve(projectPath, filePath);
-                
+
                 const diagnostic: vscode.Diagnostic = {
                     range: new vscode.Range(
                         Math.max(0, parseInt(lineNum) - 1), 0,
                         Math.max(0, parseInt(lineNum) - 1), 1000
                     ),
                     message: message.trim(),
-                    severity: severity.toLowerCase() === 'error' ? 
-                        vscode.DiagnosticSeverity.Error : 
+                    severity: severity.toLowerCase() === 'error' ?
+                        vscode.DiagnosticSeverity.Error :
                         vscode.DiagnosticSeverity.Warning,
                     source: 'port11-debugger'
                 };
@@ -1373,7 +1421,7 @@ export class BuildCommand {
         for (const diagnostic of diagnostics) {
             // Extract file path from diagnostic (this is simplified)
             const filePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath + '/main.c'; // Placeholder
-            
+
             if (!diagnosticMap.has(filePath)) {
                 diagnosticMap.set(filePath, []);
             }
@@ -1389,7 +1437,7 @@ export class BuildCommand {
 
     private showBuildResults(result: BuildResult): void {
         const { success, errors, warnings, buildTime } = result;
-        
+
         if (success) {
             vscode.window.showInformationMessage(
                 `Build completed successfully in ${(buildTime / 1000).toFixed(1)}s ` +

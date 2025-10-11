@@ -7,6 +7,7 @@ import { CliManager } from '../managers/cliManager';
 import { CallStackFrame } from '../types/callStack';
 import { VariableInfo, VariablesData } from '../types/variable';
 import { SymbolParser } from '../utils/symbolParser';
+import { EventEmitter } from 'events';
 
 export interface DebugSession {
     id: string;
@@ -34,6 +35,9 @@ export class DebugCommand {
     private cliManager: CliManager;
     private dapProcess: ChildProcess | null = null;
     private currentSession: DebugSession | null = null;
+    private monitorProcess: ChildProcess | null = null;
+    private isMonitoring: boolean = false;
+    private eventEmitter: EventEmitter = new EventEmitter();
 
     constructor(
         context: vscode.ExtensionContext,
@@ -45,6 +49,10 @@ export class DebugCommand {
         this.outputChannel = outputChannel;
         this.connectionManager = connectionManager;
         this.cliManager = cliManager;
+    }
+
+    public onBreakpointHit(callback: () => void): void {
+        this.eventEmitter.on('breakpointHit', callback);
     }
 
     async start(port?: string): Promise<DebugSession> {
@@ -148,6 +156,11 @@ export class DebugCommand {
 
             this.outputChannel.appendLine('Stopping debug session...');
 
+            // Stop monitoring if active
+            if (this.isMonitoring) {
+                await this.stopMonitoring();
+            }
+
             // Stop DAP process
             if (this.dapProcess) {
                 this.dapProcess.kill();
@@ -180,13 +193,153 @@ export class DebugCommand {
         }
 
         this.outputChannel.appendLine('⏸️  Halting target...');
+
         try {
+            // CRITICAL: Stop the monitoring process first before sending halt
+            if (this.isMonitoring) {
+                this.outputChannel.appendLine('Stopping monitor process before halt...');
+                await this.stopMonitoring();
+            }
+
+            // Now send the halt command
             await this.executeDAPCommand(['halt']);
             this.outputChannel.appendLine('✅ Target halted successfully');
+
+            // AUTO-READ registers after halt
+            this.outputChannel.appendLine('📊 Automatically reading registers...');
+            await this.readAllRegisters();
+
         } catch (error) {
             this.outputChannel.appendLine(`❌ Failed to halt: ${error}`);
             throw error;
         }
+    }
+
+    private async startResumeWithMonitoring(): Promise<void> {
+        // If already monitoring, stop it first
+        if (this.monitorProcess) {
+            await this.stopMonitoring();
+        }
+
+        return new Promise((resolve, reject) => {
+            const config = vscode.workspace.getConfiguration('port11-debugger');
+            const cliPath = this.cliManager.getExecutablePath();
+            const board = this.currentSession?.board;
+
+            if (!board || !cliPath) {
+                reject(new Error('No board connected or CLI not available'));
+                return;
+            }
+
+            const args = ['--port', board.path, '--baud', '115200', 'resume'];
+
+            this.outputChannel.appendLine(`Executing: ${cliPath} ${args.join(' ')}`);
+
+            // Spawn the resume process which will monitor until halt
+            this.monitorProcess = spawn(cliPath, args);
+            this.isMonitoring = true;
+
+            let stdout = '';
+            let stderr = '';
+
+            this.monitorProcess.stdout?.on('data', (data) => {
+                const output = data.toString();
+                stdout += output;
+                this.outputChannel.append(output);
+
+                // Check if breakpoint was hit
+                if (this.checkForBreakpointHit(output)) {
+                    this.handleBreakpointHit();
+                }
+            });
+
+            this.monitorProcess.stderr?.on('data', (data) => {
+                const output = data.toString();
+                stderr += output;
+                this.outputChannel.append(output);
+            });
+
+            this.monitorProcess.on('close', (code) => {
+                this.isMonitoring = false;
+                this.monitorProcess = null;
+
+                if (code === 0) {
+                    this.outputChannel.appendLine('Monitor process ended normally');
+                    resolve();
+                } else {
+                    // Non-zero exit is expected when halt interrupts monitoring
+                    this.outputChannel.appendLine(`Monitor process ended with code ${code}`);
+                    resolve(); // Still resolve, not an error
+                }
+            });
+
+            this.monitorProcess.on('error', (error) => {
+                this.isMonitoring = false;
+                this.monitorProcess = null;
+                reject(new Error(`Monitor process error: ${error.message}`));
+            });
+
+            // Don't set timeout for monitor - it should run until breakpoint or manual halt
+        });
+    }
+
+    private checkForBreakpointHit(output: string): boolean {
+        // Check for patterns indicating target halted
+        // Based on the Rust code: "Target halted after X.XXXs – stopping monitor"
+        return output.includes('Target halted') ||
+            output.includes('HALTED') ||
+            output.includes('stopping monitor');
+    }
+
+    private async handleBreakpointHit(): Promise<void> {
+        this.outputChannel.appendLine('🎯 Breakpoint hit detected!');
+
+        // Auto-read all registers when breakpoint is reached
+        try {
+            this.outputChannel.appendLine('📊 Automatically reading registers...');
+            await this.readAllRegisters();
+
+            // Emit event so extension.ts can update UI and highlight line
+            this.eventEmitter.emit('breakpointHit');
+        } catch (error) {
+            this.outputChannel.appendLine(`⚠️  Failed to auto-read registers: ${error}`);
+        }
+    }
+
+    private async stopMonitoring(): Promise<void> {
+        if (!this.monitorProcess || !this.isMonitoring) {
+            return;
+        }
+
+        this.outputChannel.appendLine('Stopping monitor process...');
+
+        return new Promise((resolve) => {
+            if (!this.monitorProcess) {
+                resolve();
+                return;
+            }
+
+            // Set up cleanup before killing
+            const cleanup = () => {
+                this.isMonitoring = false;
+                this.monitorProcess = null;
+                resolve();
+            };
+
+            // Handle process exit
+            this.monitorProcess.once('exit', cleanup);
+
+            // Kill the process
+            this.monitorProcess.kill('SIGTERM');
+
+            // Fallback timeout
+            setTimeout(() => {
+                if (this.monitorProcess) {
+                    this.monitorProcess.kill('SIGKILL');
+                }
+                cleanup();
+            }, 1000);
+        });
     }
 
     async resume(): Promise<void> {
@@ -201,9 +354,11 @@ export class DebugCommand {
         }
 
         this.outputChannel.appendLine('▶️  Resuming target...');
+
         try {
-            await this.executeDAPCommand(['resume']);
-            this.outputChannel.appendLine('✅ Target resumed successfully');
+            // Start the resume command which includes built-in monitoring
+            await this.startResumeWithMonitoring();
+            this.outputChannel.appendLine('✅ Target resumed successfully - monitoring for breakpoints...');
         } catch (error) {
             this.outputChannel.appendLine(`❌ Failed to resume: ${error}`);
             throw error;
@@ -397,7 +552,7 @@ export class DebugCommand {
         if (match) {
             return match[1];
         }
-        
+
         // Return raw output if parsing fails
         return output.trim();
     }
@@ -487,19 +642,35 @@ export class DebugCommand {
             throw new Error('No active debug session');
         }
 
-        this.outputChannel.appendLine('⚠️  Step Over not supported by DAP CLI yet');
-        this.outputChannel.appendLine('💡 Use Halt/Resume for basic control, or integrate GDB for stepping');
-        throw new Error('Step commands require GDB/LLDB integration');
+        // Check if in offline mode
+        if (this.currentSession.board.path === 'offline') {
+            this.outputChannel.appendLine('⚠️  Step command not available in offline mode');
+            return;
+        }
+
+        this.outputChannel.appendLine('👟 Stepping one instruction...');
+
+        try {
+            // Execute the step command
+            await this.executeDAPCommand(['step']);
+            this.outputChannel.appendLine('✅ Step completed');
+
+            // AUTO-READ registers after step
+            this.outputChannel.appendLine('📊 Automatically reading registers...');
+            await this.readAllRegisters();
+
+            // Emit event to update UI and highlight the new line
+            this.eventEmitter.emit('stepCompleted');
+
+        } catch (error) {
+            this.outputChannel.appendLine(`❌ Failed to step: ${error}`);
+            throw error;
+        }
     }
 
     async stepInto(): Promise<void> {
-        if (!this.currentSession?.isActive) {
-            throw new Error('No active debug session');
-        }
-
-        this.outputChannel.appendLine('⚠️  Step Into not supported by DAP CLI yet');
-        this.outputChannel.appendLine('💡 Use Halt/Resume for basic control, or integrate GDB for stepping');
-        throw new Error('Step commands require GDB/LLDB integration');
+        // For single instruction stepping, stepInto is the same as stepOver
+        await this.stepOver();
     }
 
     async stepOut(): Promise<void> {
@@ -508,8 +679,12 @@ export class DebugCommand {
         }
 
         this.outputChannel.appendLine('⚠️  Step Out not supported by DAP CLI yet');
-        this.outputChannel.appendLine('💡 Use Halt/Resume for basic control, or integrate GDB for stepping');
-        throw new Error('Step commands require GDB/LLDB integration');
+        this.outputChannel.appendLine('💡 This requires call stack unwinding which needs GDB integration');
+        throw new Error('Step Out command requires GDB/LLDB integration');
+    }
+
+    public onStepCompleted(callback: () => void): void {
+        this.eventEmitter.on('stepCompleted', callback);
     }
 
     /**
@@ -825,7 +1000,7 @@ export class DebugCommand {
         if (this.dapProcess) {
             this.dapProcess.kill();
         }
-        
+
         if (this.currentSession?.isActive) {
             this.currentSession.isActive = false;
         }
