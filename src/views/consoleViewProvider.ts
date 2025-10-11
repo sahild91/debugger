@@ -173,7 +173,7 @@ export class ConsoleViewProvider implements vscode.WebviewViewProvider {
         <body>
             <!-- Control buttons -->
             <div class="controls">
-                <button onclick="clearConsole()" title="Clear all console logs">🗑️ Clear Console</button>
+                <button onclick="clearConsole()" title="Clear all console logs">Clear Console</button>
             </div>
 
             <!-- Console output area -->

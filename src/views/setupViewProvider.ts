@@ -243,7 +243,7 @@ export class SetupViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <div class="header">
-                <button class="refresh-btn" onclick="refreshStatus()">🔄 Refresh</button>
+                <button class="refresh-btn" onclick="refreshStatus()">Refresh</button>
             </div>
             <div class="container" id="setup-container">
                 <div style="text-align: center; padding: 30px; color: var(--vscode-descriptionForeground);">

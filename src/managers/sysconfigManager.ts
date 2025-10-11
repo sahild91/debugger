@@ -162,7 +162,10 @@ export class SysConfigManager {
                 }
             }
 
-            this.outputChannel.appendLine('❌ SysConfig not found in any expected location');
+            }
+        }
+
+        this.outputChannel.appendLine('ERROR: SysConfig not found in any expected location');
             return defaultInfo;
 
         } catch (error) {
@@ -199,7 +202,9 @@ export class SysConfigManager {
                         cliPath: possiblePath
                     };
                 } else {
-                    this.outputChannel.appendLine(`  ❌ Not found: ${possiblePath}`);
+                    return possiblePath;
+                } else {
+                    this.outputChannel.appendLine(`  ERROR: Not found: ${possiblePath}`);
                 }
             }
 

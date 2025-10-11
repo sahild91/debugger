@@ -207,7 +207,7 @@ export class BoardsViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <div class="header">
-                <button class="detect-btn" onclick="detectBoards()">🔍 Detect</button>
+                <button class="detect-btn" onclick="detectBoards()">Detect</button>
             </div>
             <div class="container" id="boards-container">
                 <div class="empty-state">

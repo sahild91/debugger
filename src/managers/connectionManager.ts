@@ -13,7 +13,9 @@ export interface SerialPort {
     deviceType?: 'MSPM0' | 'ESP32' | 'Arduino' | 'MCP' | 'Unknown';
 }
 
-// Alias for backward compatibility with other code
+// Alias for backward compatibility
+export type Board = BoardInfo;
+
 export interface BoardInfo extends SerialPort {
     friendlyName: string;
     isConnected: boolean;
@@ -48,9 +50,9 @@ export class ConnectionManager {
                 await this.context.globalState.update(this.SELECTED_PORT_INFO_KEY, portInfo);
             }
             await this.context.globalState.update(this.PORT_LAST_SELECTED_KEY, new Date().toISOString());
-            this.outputChannel.appendLine(`💾 Saved selected port: ${port}`);
+            this.outputChannel.appendLine(`Saved selected port: ${port}`);
         } catch (error) {
-            this.outputChannel.appendLine(`⚠️  Failed to save selected port: ${error}`);
+            this.outputChannel.appendLine(`WARNING: Failed to save selected port: ${error}`);
         }
     }
 
@@ -72,7 +74,7 @@ export class ConnectionManager {
                     this.selectedPortInfo = savedPortInfo || portExists;
                     this.outputChannel.appendLine(`📂 Loaded saved port: ${savedPort}`);
                 } else {
-                    this.outputChannel.appendLine(`⚠️  Saved port ${savedPort} no longer available`);
+                    this.outputChannel.appendLine(`WARNING: Saved port ${savedPort} no longer available`);
                     await this.clearSavedPort();
                 }
             }
@@ -371,7 +373,7 @@ export class ConnectionManager {
 
     async disconnect(): Promise<void> {
         if (this.selectedPort) {
-            this.outputChannel.appendLine(`🔌 Disconnected from port: ${this.selectedPort}`);
+            this.outputChannel.appendLine(`Disconnected from port: ${this.selectedPort}`);
             vscode.window.showInformationMessage(`Disconnected from ${this.selectedPort}`);
         }
         this.selectedPort = null;
@@ -401,7 +403,7 @@ export class ConnectionManager {
      */
     async detectBoards(): Promise<BoardInfo[]> {
         try {
-            this.outputChannel.appendLine('🔍 Detecting boards...');
+            this.outputChannel.appendLine('Detecting boards...');
             const ports = await this.getAvailablePorts();
             
             // Convert to BoardInfo format
@@ -538,7 +540,7 @@ export class ConnectionManager {
             // This method just manages the connection state for the extension
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            this.outputChannel.appendLine(`❌ Connection failed: ${errorMessage}`);
+            this.outputChannel.appendLine(`ERROR: Connection failed: ${errorMessage}`);
             throw error;
         }
     }
@@ -550,7 +552,7 @@ export class ConnectionManager {
     async disconnectFromBoard(port: string): Promise<void> {
         try {
             if (this.selectedPort === port) {
-                this.outputChannel.appendLine(`🔌 Disconnecting from ${port}...`);
+                this.outputChannel.appendLine(`Disconnecting from ${port}...`);
                 
                 this.selectedPort = null;
                 this.selectedPortInfo = null;
@@ -564,7 +566,7 @@ export class ConnectionManager {
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            this.outputChannel.appendLine(`❌ Disconnection failed: ${errorMessage}`);
+            this.outputChannel.appendLine(`ERROR: Disconnection failed: ${errorMessage}`);
             throw error;
         }
     }

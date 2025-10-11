@@ -246,7 +246,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <div class="header">
-                <button class="refresh-btn" onclick="refreshBreakpoints()">🔄 Refresh</button>
+                <button class="refresh-btn" onclick="refreshBreakpoints()">Refresh</button>
             </div>
             <div class="container" id="breakpoints-container">
                 <div class="empty-state">No breakpoints set</div>
@@ -272,7 +272,8 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
 
                     let html = '';
                     breakpoints.forEach(bp => {
-                        const icon = bp.type === 'function' ? '🔵' : '🔴';
+                        if (breakpoints.length > 0) {
+                        const icon = bp.type === 'function' ? '[F]' : '[L]';
                         const disabledClass = bp.enabled ? '' : 'disabled';
 
                         html += \`

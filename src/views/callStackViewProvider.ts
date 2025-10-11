@@ -317,11 +317,11 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <div class="header">
-                <button class="refresh-btn" onclick="refreshCallStack()">🔄 Refresh</button>
+                <button class="refresh-btn" onclick="refreshCallStack()">Refresh</button>
             </div>
             <div class="container" id="callstack-container">
                 <div class="empty-state">
-                    <div class="empty-icon">📚</div>
+                    <div class="empty-icon">[STACK]</div>
                     <div class="empty-title">No Debug Session</div>
                     <div class="empty-description">Start debugging to see the call stack</div>
                 </div>
@@ -343,7 +343,8 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
                     if (!isDebugActive || !frames || frames.length === 0) {
                         container.innerHTML = \`
                             <div class="empty-state">
-                                <div class="empty-icon">📚</div>
+                                                            <div class="no-frames">
+                                <div class="empty-icon">[STACK]</div>
                                 <div class="empty-title">No Debug Session</div>
                                 <div class="empty-description">Start debugging to see the call stack</div>
                             </div>

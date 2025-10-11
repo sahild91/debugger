@@ -105,8 +105,10 @@ export class DebugCommand {
                 return session;
             } else {
                 // Start debug session without board (simulation/offline mode)
-                this.outputChannel.appendLine('⚠️  No board detected - starting debug in offline mode');
-                this.outputChannel.appendLine('💡 Debug features will be limited without hardware connection');
+                if (!boardDetected) {
+                    this.outputChannel.appendLine('WARNING: No board detected - starting debug in offline mode');
+                    this.outputChannel.appendLine('NOTE: Debug features will be limited without hardware connection');
+                }
 
                 // Create a mock board info for offline mode
                 const mockBoard: BoardInfo = {
@@ -127,7 +129,7 @@ export class DebugCommand {
 
                 this.currentSession = session;
                 this.outputChannel.appendLine(`Debug session started in offline mode: ${session.id}`);
-                this.outputChannel.appendLine('✅ Debug views are available for symbol inspection');
+                this.outputChannel.appendLine('SUCCESS: Debug views are available for symbol inspection');
 
                 return session;
             }
@@ -522,8 +524,8 @@ export class DebugCommand {
         }
 
         try {
-            this.outputChannel.appendLine('📚 Reading call stack...');
-            this.outputChannel.appendLine('⚠️  Note: Call stack feature requires GDB/LLDB integration (not yet implemented)');
+            this.outputChannel.appendLine('Reading call stack...');
+            this.outputChannel.appendLine('NOTE: Call stack feature requires GDB/LLDB integration (not yet implemented)');
 
             // TODO: Call stack requires:
             // 1. Read SP (Stack Pointer) register
@@ -536,7 +538,7 @@ export class DebugCommand {
             return [];
 
         } catch (error) {
-            this.outputChannel.appendLine(`❌ Failed to read call stack: ${error}`);
+            this.outputChannel.appendLine(`ERROR: Failed to read call stack: ${error}`);
             return [];
         }
     }
@@ -611,7 +613,7 @@ export class DebugCommand {
         }
 
         try {
-            this.outputChannel.appendLine('📋 Reading variables from debug symbols...');
+            this.outputChannel.appendLine('Reading variables from debug symbols...');
 
             let localVariables: VariableInfo[] = [];
             let globalVariables: VariableInfo[] = [];
@@ -631,7 +633,7 @@ export class DebugCommand {
 
                     this.outputChannel.appendLine(`Parsed ${parsedVars.length} variables from disassembly`);
                 } else {
-                    this.outputChannel.appendLine(`💡 Tip: Generate disassembly with: tiarmobjdump -lS build/main.out > full_disasm.txt`);
+                    this.outputChannel.appendLine(`TIP: Generate disassembly with: tiarmobjdump -lS build/main.out > full_disasm.txt`);
                 }
 
                 // Try to find and parse ELF file directly
@@ -650,7 +652,7 @@ export class DebugCommand {
                         localVariables = elfVars.filter(v => v.scope === 'local');
                         globalVariables = elfVars.filter(v => v.scope === 'global' || v.scope === 'static');
                     } else {
-                        this.outputChannel.appendLine('⚠️  No variables found in ELF symbol table');
+                        this.outputChannel.appendLine('WARNING: No variables found in ELF symbol table');
                     }
                 }
             }
@@ -692,7 +694,8 @@ export class DebugCommand {
             }
 
             const totalCount = localVariables.length + globalVariables.length;
-            this.outputChannel.appendLine(`✅ Variables: ${localVariables.length} local, ${globalVariables.length} global`);
+
+            this.outputChannel.appendLine(`SUCCESS: Variables: ${localVariables.length} local, ${globalVariables.length} global`);
 
             return {
                 localVariables,
@@ -702,7 +705,7 @@ export class DebugCommand {
             };
 
         } catch (error) {
-            this.outputChannel.appendLine(`❌ Failed to read variables: ${error}`);
+            this.outputChannel.appendLine(`ERROR: Failed to read variables: ${error}`);
             return {
                 localVariables: [],
                 globalVariables: [],

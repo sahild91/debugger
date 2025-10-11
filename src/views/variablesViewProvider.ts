@@ -74,10 +74,11 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
   public async loadDisassembly(workspaceRoot: string): Promise<void> {
     const loaded = await this.addressMapper.loadDisassembly(workspaceRoot);
     if (loaded) {
-      this.outputChannel.appendLine('✅ Address mapper loaded successfully');
+      this.outputChannel.appendLine('SUCCESS: Address mapper loaded successfully');
       this.refresh();
     } else {
-      this.outputChannel.appendLine('⚠️  Could not load disassembly for address mapping');
+      } catch (error) {
+      this.outputChannel.appendLine('WARNING: Could not load disassembly for address mapping');
     }
   }
 
@@ -384,11 +385,11 @@ export class VariablesViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <div class="header">
-                <button class="refresh-btn" onclick="refreshVariables()">🔄 Refresh</button>
+                <button class="refresh-btn" onclick="refreshVariables()">Refresh</button>
             </div>
             <div class="container" id="variables-container">
                 <div class="empty-state">
-                    <div class="empty-icon">📋</div>
+                    <div class="empty-icon">[VARS]</div>
                     <div class="empty-title">No Debug Session</div>
                     <div class="empty-description">Start debugging to see variables</div>
                 </div>
