@@ -199,131 +199,15 @@
           "type": "string",
           "description": "Custom path to TI SysConfig (leave empty for auto-install)"
         },
-        "port11-debugger.serialPort": {
+        "port11-debugger.dapPath": {
           "type": "string",
-          "description": "Override auto-detected serial port"
+          "description": "Custom path to DAP CLI executable"
         },
-        "port11-debugger.debugVerbose": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable verbose output for DAP CLI debugging operations"
-        },
-        "port11-debugger.offlineMode": {
-          "type": "boolean",
-          "default": false,
-          "description": "Skip automatic downloads, use only cached/manually installed toolchains"
-        },
-        "port11-debugger.allowDebugWithoutBoard": {
-          "type": "boolean",
-          "default": true,
-          "description": "Allow starting debug session without a connected board (offline debugging)"
-        },
-        "port11-debugger.buildOutputLevel": {
+        "port11-debugger.defaultBoard": {
           "type": "string",
-          "default": "normal",
-          "description": "Control the amount of build output displayed",
-          "enum": [
-            "minimal",
-            "normal",
-            "verbose",
-            "diagnostic"
-          ]
-        },
-        "port11-debugger.autoDetectBoards": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically detect connected MSPM0 boards on startup"
-        },
-        "port11-debugger.flashVerify": {
-          "type": "boolean",
-          "default": true,
-          "description": "Verify firmware after flashing to ensure integrity"
-        },
-        "port11-debugger.debugTimeout": {
-          "type": "number",
-          "default": 10000,
-          "description": "Timeout in milliseconds for debug operations (DAP commands)",
-          "minimum": 1000,
-          "maximum": 60000
-        },
-        "port11-debugger.includePaths": {
-          "type": "array",
-          "default": [],
-          "description": "Additional include paths for compilation",
-          "items": {
-            "type": "string"
-          }
-        },
-        "port11-debugger.compilerFlags": {
-          "type": "array",
-          "default": [
-            "-O2",
-            "-Wall"
-          ],
-          "description": "Additional compiler flags for build",
-          "items": {
-            "type": "string"
-          }
-        },
-        "port11-debugger.enableStatusBar": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show Port11 status bar items"
-        },
-        "port11-debugger.showWelcomeOnStartup": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show welcome message on first startup"
-        },
-        "port11-debugger.checkForUpdatesOnStartup": {
-          "type": "boolean",
-          "default": true,
-          "description": "Check for extension updates on startup"
-        },
-        "port11-debugger.logLevel": {
-          "type": "string",
-          "default": "info",
-          "description": "Logging level for output channel",
-          "enum": [
-            "error",
-            "warning",
-            "info",
-            "debug",
-            "trace"
-          ]
+          "description": "Preferred default board for new projects"
         }
       }
     }
-  },
-  "scripts": {
-    "vscode:prepublish": "npm run package",
-    "compile": "webpack",
-    "watch": "webpack --watch",
-    "package": "webpack --mode production --devtool hidden-source-map",
-    "compile-tests": "tsc -p . --outDir out",
-    "watch-tests": "tsc -p . -w --outDir out",
-    "pretest": "npm run compile-tests && npm run compile && npm run lint",
-    "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
-  },
-  "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "@types/mocha": "^10.0.10",
-    "@types/node": "^20.x",
-    "@types/node-fetch": "^2.6.13",
-    "@types/vscode": "^1.85.0",
-    "@typescript-eslint/eslint-plugin": "^6.13.0",
-    "@typescript-eslint/parser": "^6.13.0",
-    "@vscode/test-electron": "^2.3.8",
-    "eslint": "^8.54.0",
-    "glob": "^10.3.10",
-    "ts-loader": "^9.5.1",
-    "typescript": "^5.3.2",
-    "webpack": "^5.89.0",
-    "webpack-cli": "^5.1.4"
-  },
-  "dependencies": {
-    "node-fetch": "^2.7.0",
-    "simple-git": "^3.20.0"
   }
 }
