@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { execFile } from 'child_process';
+import { execFile, exec } from 'child_process';
 import { Port11TreeViewProvider } from './views/port11TreeView';
 import { ConsoleViewProvider } from './views/consoleViewProvider';
 import { CallStackViewProvider } from './views/callStackViewProvider';
@@ -40,7 +40,7 @@ function getAbsolutePath(relativePath: string): string {
     return vscode.Uri.joinPath(vscode.Uri.file(workspaceFolder), relativePath).fsPath;
 }
 
-function executeSwdDebuggerCommand(args: string, successMessage: string, requiresPort: boolean = true): Promise<void> {
+function executeSwdDebuggerCommand(args: string, successMessage: string, requiresPort: boolean = true, requiresWorkspace: boolean = false): Promise<void> {
     return new Promise((resolve, reject) => {
         const executablePath = cliManager.getExecutablePath();
 
@@ -69,7 +69,9 @@ function executeSwdDebuggerCommand(args: string, successMessage: string, require
         }
 
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-        if (!workspaceFolder) {
+        
+        // Only check for workspace folder if explicitly required (e.g., for flash command with file paths)
+        if (requiresWorkspace && !workspaceFolder) {
             const errorMessage = 'No workspace folder open. Cannot determine file paths.';
             outputChannel.appendLine(`❌ ${errorMessage}`);
             vscode.window.showErrorMessage(errorMessage);
@@ -80,35 +82,8 @@ function executeSwdDebuggerCommand(args: string, successMessage: string, require
         outputChannel.appendLine(`🚀 Executing: ${command}`);
         outputChannel.show();
 
-        const buildArgv = (raw: string): string[] => {
-            // Split by spaces but preserve everything after a known key like --file as a single argument
-            const parts = raw.trim().split(/\s+/);
-            const argv: string[] = [];
-            let i = 0;
-            while (i < parts.length) {
-                const tok = parts[i];
-                if (tok === '--file' || tok === '-f') {
-                    argv.push(tok);
-                    // Everything after --file is the path, which can have spaces. Join the rest.
-                    const pathValue = parts.slice(i + 1).join(' ');
-                    argv.push(pathValue);
-                    break;
-                } else {
-                    argv.push(tok);
-                    i++;
-                }
-            }
-            return argv;
-        };
-        const argvFromArgs = buildArgv(args);
-        // Prepend port if required
-        const argv: string[] = [];
-        if (requiresPort && selectedPort) {
-            argv.push('--port', selectedPort);
-        }
-        argv.push(...argvFromArgs);
-        // Invoke the executable directly; execFile handles spaces in both file and argv
-        execFile(executablePath, argv, { cwd: workspaceFolder }, (error, stdout, stderr) => {
+        // Use workspace folder as cwd if available, otherwise use undefined (will use current working directory)
+        exec(command, { cwd: workspaceFolder || undefined }, (error: Error | null, stdout: string, stderr: string) => {
             if (error) {
                 outputChannel.appendLine(`❌ Error: ${error.message}`);
                 outputChannel.appendLine(`stderr: ${stderr}`);
@@ -191,7 +166,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 outputChannel.show();
 
                 const binPath = getAbsolutePath('build/main.hex');
-                await executeSwdDebuggerCommand(`flash --file ${binPath}`, 'Flash completed successfully!');
+                await executeSwdDebuggerCommand(`flash --file ${binPath}`, 'Flash completed successfully!', true, true);
             } catch (error) {
                 outputChannel.appendLine(`❌ Flash command failed: ${error}`);
             }
