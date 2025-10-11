@@ -1,21 +1,23 @@
 import * as vscode from "vscode";
 import { spawn } from "child_process";
-
-export interface RegisterData {
-  name: string;
-  value: string;
-  description?: string;
-}
+import { VariableInfo, RegisterData, DataViewContent } from "../types/variable";
 
 /**
- * DataViewProvider manages the data webview panel
- * Displays registry data from swd-debugger read-all command
+ * DataViewProvider manages the unified data webview panel
+ * Displays both CPU registers and program variables
+ * Registry section shows PC at the top, followed by other registers
+ * Variables are grouped into Local and Global sections
  */
 export class DataViewProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
   private outputChannel: vscode.OutputChannel;
   private swdDebuggerPath: string;
-  private registryData: RegisterData[] = [];
+  private dataContent: DataViewContent = {
+    registers: [],
+    localVariables: [],
+    globalVariables: [],
+    isDebugActive: false,
+  };
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -43,7 +45,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
     // Handle messages from webview
     webviewView.webview.onDidReceiveMessage((message) => {
       if (message.type === "refresh") {
-        this.updateRegistryData();
+        this.updateAll();
       }
     });
 
@@ -52,24 +54,60 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Update registry data by executing swd-debugger read-all
+   * Update both registry and variables data
+   * This is the main method called when Halt/Step is triggered
+   */
+  public async updateAll(): Promise<void> {
+    try {
+      this.outputChannel.appendLine('🔄 Updating Data View (Registry + Variables)...');
+      
+      // Update registry data
+      await this.updateRegistryData();
+      
+      // Note: Variables are updated separately via updateVariables() 
+      // which is called from extension.ts after getVariables()
+      
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.outputChannel.appendLine(`❌ Failed to update data view: ${errorMsg}`);
+    }
+  }
+
+  /**
+   * Update only registry data by executing swd-debugger read-all
    */
   public async updateRegistryData(): Promise<void> {
     try {
       this.outputChannel.appendLine('📊 Reading registry data...');
       const output = await this.executeSwdCommand(['read-all']);
-      console.log('Registry output:', output);
+      
       // Parse the output
-      this.registryData = this.parseRegistryOutput(output);
+      const registers = this.parseRegistryOutput(output);
+      
+      // Sort registers with PC at the top
+      this.dataContent.registers = this.sortRegisters(registers);
 
-      this.outputChannel.appendLine(`✅ Registry data updated: ${this.registryData.length} registers`);
+      this.outputChannel.appendLine(`✅ Registry data updated: ${this.dataContent.registers.length} registers`);
       this.refresh();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.outputChannel.appendLine(`❌ Failed to read registry data: ${errorMsg}`);
-      this.registryData = [];
+      this.dataContent.registers = [];
       this.refresh();
     }
+  }
+
+  /**
+   * Update variables data (called from extension.ts with data from debugCommand.getVariables())
+   */
+  public updateVariables(localVars: VariableInfo[], globalVars: VariableInfo[], isActive: boolean): void {
+    this.outputChannel.appendLine(`📋 Updating variables: ${localVars.length} local, ${globalVars.length} global`);
+    
+    this.dataContent.localVariables = localVars;
+    this.dataContent.globalVariables = globalVars;
+    this.dataContent.isDebugActive = isActive;
+    
+    this.refresh();
   }
 
   /**
@@ -92,6 +130,40 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
     }
 
     return registers;
+  }
+
+  /**
+   * Sort registers with PC at the top, followed by SP, LR, then R0-R15, then others
+   */
+  private sortRegisters(registers: RegisterData[]): RegisterData[] {
+    const priority: { [key: string]: number } = {
+      'PC': 1,
+      'R15': 1,
+      'SP': 2,
+      'R13': 2,
+      'LR': 3,
+      'R14': 3,
+    };
+
+    return registers.sort((a, b) => {
+      const aPriority = priority[a.name.toUpperCase()] || 100;
+      const bPriority = priority[b.name.toUpperCase()] || 100;
+
+      if (aPriority !== bPriority) {
+        return aPriority - bPriority;
+      }
+
+      // For registers with same priority, sort by name
+      // Extract number from register name (e.g., R0 -> 0)
+      const aNum = parseInt(a.name.replace(/[^0-9]/g, '')) || 999;
+      const bNum = parseInt(b.name.replace(/[^0-9]/g, '')) || 999;
+      
+      if (aNum !== bNum) {
+        return aNum - bNum;
+      }
+
+      return a.name.localeCompare(b.name);
+    });
   }
 
   /**
@@ -133,9 +205,11 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    this.outputChannel.appendLine(`🔄 Refreshing Data View webview...`);
+    
     this._view.webview.postMessage({
       type: "update",
-      registryData: this.registryData,
+      data: this.dataContent,
     });
   }
 
@@ -144,28 +218,28 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
    */
   private async executeSwdCommand(args: string[]): Promise<string> {
     return new Promise((resolve, reject) => {
-      this.outputChannel.appendLine(`Executing: ${this.swdDebuggerPath} ${args.join(' ')}`);
+      this.outputChannel.appendLine(
+        `Executing: ${this.swdDebuggerPath} ${args.join(" ")}`
+      );
 
       const process = spawn(this.swdDebuggerPath, args, {
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ["pipe", "pipe", "pipe"],
       });
 
-      let stdout = '';
-      let stderr = '';
+      let stdout = "";
+      let stderr = "";
 
-      process.stdout.on('data', (data) => {
+      process.stdout.on("data", (data) => {
         const output = data.toString();
         stdout += output;
-        this.outputChannel.append(output);
       });
 
-      process.stderr.on('data', (data) => {
+      process.stderr.on("data", (data) => {
         const output = data.toString();
         stderr += output;
-        this.outputChannel.append(output);
       });
 
-      process.on('close', (code) => {
+      process.on("close", (code) => {
         if (code === 0) {
           resolve(stdout);
         } else {
@@ -173,14 +247,14 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
         }
       });
 
-      process.on('error', (error) => {
+      process.on("error", (error) => {
         reject(new Error(`Process error: ${error.message}`));
       });
 
       // Set timeout for commands
       setTimeout(() => {
         process.kill();
-        reject(new Error('Command timed out'));
+        reject(new Error("Command timed out"));
       }, 10000);
     });
   }
@@ -195,41 +269,31 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
-            <title>Data</title>
+            <title>Data View</title>
             <style>
                 body {
                     padding: 0;
                     margin: 0;
                     font-family: var(--vscode-font-family);
                     font-size: var(--vscode-font-size);
+                    color: var(--vscode-foreground);
                     background-color: var(--vscode-editor-background);
-                    color: var(--vscode-editor-foreground);
-                    overflow: hidden;
-                }
-
-                .container {
-                    padding: 10px;
-                    overflow-y: auto;
-                    height: 100vh;
                 }
 
                 .header {
+                    padding: 8px 12px;
+                    border-bottom: 1px solid var(--vscode-panel-border);
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
-                    padding: 8px;
-                    background-color: var(--vscode-titleBar-activeBackground);
-                    border-bottom: 1px solid var(--vscode-panel-border);
-                    position: sticky;
-                    top: 0;
-                    z-index: 10;
+                    background-color: var(--vscode-sideBar-background);
                 }
 
                 .refresh-btn {
                     background-color: var(--vscode-button-background);
                     color: var(--vscode-button-foreground);
                     border: none;
-                    padding: 4px 8px;
+                    padding: 4px 12px;
                     cursor: pointer;
                     border-radius: 2px;
                     font-size: 11px;
@@ -239,21 +303,22 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
                     background-color: var(--vscode-button-hoverBackground);
                 }
 
-                /* Section headers */
+                .container {
+                    padding: 12px;
+                    overflow-y: auto;
+                    max-height: calc(100vh - 40px);
+                }
+
                 .section-header {
-                    padding: 8px 10px;
-                    background-color: var(--vscode-sideBar-background);
-                    border-bottom: 2px solid var(--vscode-panel-border);
-                    font-weight: 600;
                     font-size: 12px;
+                    font-weight: 600;
+                    color: var(--vscode-foreground);
+                    padding: 8px 0 4px 0;
+                    border-bottom: 1px solid var(--vscode-panel-border);
+                    margin-bottom: 8px;
                     display: flex;
                     align-items: center;
                     gap: 6px;
-                    margin-top: 10px;
-                }
-
-                .section-header:first-child {
-                    margin-top: 0;
                 }
 
                 .section-icon {
@@ -261,40 +326,46 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
                 }
 
                 .section-count {
-                    margin-left: auto;
                     background-color: var(--vscode-badge-background);
                     color: var(--vscode-badge-foreground);
-                    padding: 2px 6px;
                     border-radius: 10px;
+                    padding: 2px 6px;
                     font-size: 10px;
+                    margin-left: auto;
                 }
 
-                /* Register item */
-                .register-item {
-                    padding: 8px 10px;
-                    border-bottom: 1px solid var(--vscode-panel-border);
-                    transition: background-color 0.2s ease;
-                }
-
-                .register-item:hover {
+                .item {
+                    padding: 6px 8px;
+                    margin-bottom: 4px;
+                    border-radius: 3px;
                     background-color: var(--vscode-list-hoverBackground);
+                    transition: background-color 0.15s ease;
                 }
 
-                .register-header {
+                .item:hover {
+                    background-color: var(--vscode-list-activeSelectionBackground);
+                }
+
+                .item-header {
                     display: flex;
+                    justify-content: space-between;
                     align-items: center;
-                    gap: 8px;
                     margin-bottom: 4px;
                 }
 
-                .register-name {
+                .item-name {
                     font-weight: 500;
                     font-size: 13px;
                     color: var(--vscode-symbolIcon-variableForeground);
-                    min-width: 60px;
+                    min-width: 80px;
                 }
 
-                .register-value {
+                .item-name.pc {
+                    color: var(--vscode-debugTokenExpression-nameForeground);
+                    font-weight: 600;
+                }
+
+                .item-value {
                     font-family: 'Courier New', Consolas, monospace;
                     font-size: 11px;
                     color: var(--vscode-debugTokenExpression-numberForeground);
@@ -303,11 +374,31 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
                     border-radius: 3px;
                 }
 
-                .register-description {
+                .item-description {
                     font-size: 11px;
                     color: var(--vscode-descriptionForeground);
-                    margin-left: 68px;
+                    margin-left: 0px;
                     font-style: italic;
+                }
+
+                .item-details {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                    margin-top: 4px;
+                    padding-left: 0px;
+                    font-size: 11px;
+                    color: var(--vscode-descriptionForeground);
+                }
+
+                .item-location {
+                    font-size: 10px;
+                    color: var(--vscode-descriptionForeground);
+                }
+
+                .item-type {
+                    font-size: 10px;
+                    color: var(--vscode-debugTokenExpression-stringForeground);
                 }
 
                 .empty-state {
@@ -333,6 +424,25 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
                     opacity: 0.8;
                 }
 
+                .scope-badge {
+                    font-size: 9px;
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    margin-right: 6px;
+                }
+
+                .scope-local {
+                    background-color: var(--vscode-debugTokenExpression-nameForeground);
+                    color: var(--vscode-editor-background);
+                }
+
+                .scope-global {
+                    background-color: var(--vscode-debugTokenExpression-stringForeground);
+                    color: var(--vscode-editor-background);
+                }
+
                 /* Scrollbar styling */
                 .container::-webkit-scrollbar {
                     width: 10px;
@@ -356,7 +466,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
                 <div class="empty-state">
                     <div class="empty-icon">📊</div>
                     <div class="empty-title">No Data Available</div>
-                    <div class="empty-description">Start debugging and halt to see registry data</div>
+                    <div class="empty-description">Start debugging and halt to see data</div>
                 </div>
             </div>
 
@@ -366,19 +476,19 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
                 window.addEventListener('message', event => {
                     const message = event.data;
                     if (message.type === 'update') {
-                        renderData(message.registryData);
+                        renderData(message.data);
                     }
                 });
 
-                function renderData(registryData) {
+                function renderData(data) {
                     const container = document.getElementById('data-container');
 
-                    if (!registryData || registryData.length === 0) {
+                    if (!data || (!data.registers.length && !data.localVariables.length && !data.globalVariables.length)) {
                         container.innerHTML = \`
                             <div class="empty-state">
                                 <div class="empty-icon">📊</div>
                                 <div class="empty-title">No Data Available</div>
-                                <div class="empty-description">Start debugging and halt to see registry data</div>
+                                <div class="empty-description">Start debugging and halt to see data</div>
                             </div>
                         \`;
                         return;
@@ -387,27 +497,86 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
                     let html = '';
 
                     // Registry Section
-                    html += \`
-                        <div class="section-header">
-                            <span class="section-icon">📋</span>
-                            <span>Registry</span>
-                            <span class="section-count">\${registryData.length}</span>
-                        </div>
-                    \`;
-
-                    registryData.forEach(register => {
+                    if (data.registers && data.registers.length > 0) {
                         html += \`
-                            <div class="register-item">
-                                <div class="register-header">
-                                    <span class="register-name">\${register.name}</span>
-                                    <span class="register-value">\${register.value}</span>
-                                </div>
-                                \${register.description ? \`<div class="register-description">\${register.description}</div>\` : ''}
+                            <div class="section-header">
+                                <span class="section-icon">📋</span>
+                                <span>Registry</span>
+                                <span class="section-count">\${data.registers.length}</span>
                             </div>
                         \`;
-                    });
+
+                        data.registers.forEach(register => {
+                            const isPc = register.name.toUpperCase() === 'PC' || register.name.toUpperCase() === 'R15';
+                            html += \`
+                                <div class="item">
+                                    <div class="item-header">
+                                        <span class="item-name \${isPc ? 'pc' : ''}">\${register.name}</span>
+                                        <span class="item-value">\${register.value}</span>
+                                    </div>
+                                    \${register.description ? \`<div class="item-description">\${register.description}</div>\` : ''}
+                                </div>
+                            \`;
+                        });
+                    }
+
+                    // Local Variables Section
+                    if (data.localVariables && data.localVariables.length > 0) {
+                        html += \`
+                            <div class="section-header" style="margin-top: 16px;">
+                                <span class="section-icon">🔧</span>
+                                <span>Local Variables</span>
+                                <span class="section-count">\${data.localVariables.length}</span>
+                            </div>
+                        \`;
+
+                        data.localVariables.forEach(variable => {
+                            html += renderVariable(variable, 'local');
+                        });
+                    }
+
+                    // Global Variables Section
+                    if (data.globalVariables && data.globalVariables.length > 0) {
+                        html += \`
+                            <div class="section-header" style="margin-top: 16px;">
+                                <span class="section-icon">🌍</span>
+                                <span>Global Variables</span>
+                                <span class="section-count">\${data.globalVariables.length}</span>
+                            </div>
+                        \`;
+
+                        data.globalVariables.forEach(variable => {
+                            html += renderVariable(variable, 'global');
+                        });
+                    }
 
                     container.innerHTML = html;
+                }
+
+                function renderVariable(variable, scope) {
+                    let details = '';
+                    
+                    if (variable.filePath && variable.line) {
+                        const fileName = variable.filePath.split('/').pop() || variable.filePath;
+                        details += \`<span class="item-location">\${fileName}:\${variable.line}</span>\`;
+                    }
+                    
+                    if (variable.type) {
+                        details += \`<span class="item-type">\${variable.type}</span>\`;
+                    }
+
+                    return \`
+                        <div class="item">
+                            <div class="item-header">
+                                <span>
+                                    <span class="scope-badge scope-\${scope}">\${scope}</span>
+                                    <span class="item-name">\${variable.name}</span>
+                                </span>
+                                <span class="item-value">\${variable.value || variable.address}</span>
+                            </div>
+                            \${details ? \`<div class="item-details">\${details}</div>\` : ''}
+                        </div>
+                    \`;
                 }
 
                 function refreshData() {

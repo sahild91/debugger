@@ -851,20 +851,20 @@ export class DebugCommand {
             }
 
             // Read actual memory values for variables with addresses
-            for (const variable of [...localVariables, ...globalVariables]) {
-                // Skip registers and invalid addresses
-                if (variable.address &&
-                    variable.address !== '0x0' &&
-                    variable.address !== '(register)' &&
-                    variable.type !== 'register') {
-                    try {
-                        const memResult = await this.readMemory(variable.address, 4);
-                        variable.value = memResult.data;
-                    } catch (error) {
-                        // Ignore read errors for individual variables
-                    }
-                }
-            }
+            // for (const variable of [...localVariables, ...globalVariables]) {
+            //     // Skip registers and invalid addresses
+            //     if (variable.address &&
+            //         variable.address !== '0x0' &&
+            //         variable.address !== '(register)' &&
+            //         variable.type !== 'register') {
+            //         try {
+            //             const memResult = await this.readMemory(variable.address, 4);
+            //             variable.value = memResult.data;
+            //         } catch (error) {
+            //             // Ignore read errors for individual variables
+            //         }
+            //     }
+            // }
 
             const totalCount = localVariables.length + globalVariables.length;
             this.outputChannel.appendLine(`✅ Variables: ${localVariables.length} local, ${globalVariables.length} global`);

@@ -69,7 +69,7 @@ function executeSwdDebuggerCommand(args: string, successMessage: string, require
         }
 
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-        
+
         // Only check for workspace folder if explicitly required (e.g., for flash command with file paths)
         if (requiresWorkspace && !workspaceFolder) {
             const errorMessage = 'No workspace folder open. Cannot determine file paths.';
@@ -394,11 +394,23 @@ export async function activate(context: vscode.ExtensionContext) {
         debugCommand.onBreakpointHit(async () => {
             outputChannel.appendLine('🎯 Breakpoint hit - updating UI...');
 
-            // Update registry data
+            // Update registry data in DataViewProvider
             try {
                 await dataViewProvider?.updateRegistryData();
             } catch (error) {
                 outputChannel.appendLine(`Failed to update registry data: ${error}`);
+            }
+
+            // Update variables in DataViewProvider
+            try {
+                const variables = await debugCommand.getVariables();
+                dataViewProvider?.updateVariables(
+                    variables.localVariables,
+                    variables.globalVariables,
+                    true
+                );
+            } catch (error) {
+                outputChannel.appendLine(`Failed to update variables: ${error}`);
             }
 
             // Update call stack
@@ -407,14 +419,6 @@ export async function activate(context: vscode.ExtensionContext) {
                 callStackViewProvider?.updateCallStack(callStack, true);
             } catch (error) {
                 outputChannel.appendLine(`Failed to update call stack: ${error}`);
-            }
-
-            // Update variables
-            try {
-                const variables = await debugCommand.getVariables();
-                breakpointsViewProvider?.updateBreakpoints(variables, true);
-            } catch (error) {
-                outputChannel.appendLine(`Failed to update variables: ${error}`);
             }
 
             // HIGHLIGHT THE LINE IN EDITOR WHERE BREAKPOINT WAS HIT
@@ -428,11 +432,23 @@ export async function activate(context: vscode.ExtensionContext) {
         debugCommand.onStepCompleted(async () => {
             outputChannel.appendLine('👟 Step completed - updating UI...');
 
-            // Update registry data
+            // Update registry data in DataViewProvider
             try {
                 await dataViewProvider?.updateRegistryData();
             } catch (error) {
                 outputChannel.appendLine(`Failed to update registry data: ${error}`);
+            }
+
+            // Update variables in DataViewProvider
+            try {
+                const variables = await debugCommand.getVariables();
+                dataViewProvider?.updateVariables(
+                    variables.localVariables,
+                    variables.globalVariables,
+                    true
+                );
+            } catch (error) {
+                outputChannel.appendLine(`Failed to update variables: ${error}`);
             }
 
             // Update call stack
@@ -443,15 +459,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 outputChannel.appendLine(`Failed to update call stack: ${error}`);
             }
 
-            // Update variables
-            try {
-                const variables = await debugCommand.getVariables();
-                breakpointsViewProvider?.updateBreakpoints(variables, true);
-            } catch (error) {
-                outputChannel.appendLine(`Failed to update variables: ${error}`);
-            }
-
-            // Highlight the line where execution stopped
+            // HIGHLIGHT THE LINE IN EDITOR WHERE EXECUTION STOPPED AFTER STEP
             try {
                 await highlightBreakpointLine(debugCommand, breakpointsViewProvider, outputChannel);
             } catch (error) {
@@ -560,10 +568,17 @@ export async function activate(context: vscode.ExtensionContext) {
                 await debugCommand.start(port);
                 treeViewProvider.setDebugActive(true);
 
-                // Load disassembly for address mapping
+                // Load disassembly for address mapping in breakpoint view
                 const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
                 if (workspaceFolder && breakpointsViewProvider) {
                     await breakpointsViewProvider.loadDisassembly(workspaceFolder);
+                }
+
+                // Set breakpoint view as active (ADDED)
+                try {
+                    breakpointsViewProvider?.setDebugActive(true);
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to activate breakpoint view: ${error}`);
                 }
 
                 // Update device breakpoints from hardware
@@ -581,37 +596,56 @@ export async function activate(context: vscode.ExtensionContext) {
                     outputChannel.appendLine(`Failed to get initial call stack: ${error}`);
                 }
 
-                // Update variables view with initial data
+                // Update DataViewProvider with initial registry and variables data
                 try {
+                    await dataViewProvider?.updateRegistryData();
                     const variables = await debugCommand.getVariables();
-                    breakpointsViewProvider?.updateBreakpoints(variables, true);
+                    dataViewProvider?.updateVariables(
+                        variables.localVariables,
+                        variables.globalVariables,
+                        true
+                    );
                 } catch (error) {
-                    outputChannel.appendLine(`Failed to get initial variables: ${error}`);
+                    outputChannel.appendLine(`Failed to get initial data: ${error}`);
                 }
             }),
             vscode.commands.registerCommand('port11-debugger.debug.stop', async () => {
                 await debugCommand.stop();
                 treeViewProvider.setDebugActive(false);
 
+                // Deactivate breakpoint view (ADDED)
+                try {
+                    breakpointsViewProvider?.setDebugActive(false);
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to deactivate breakpoint view: ${error}`);
+                }
+
                 // Clear call stack view
                 callStackViewProvider?.updateCallStack([], false);
 
-                // Clear variables view
-                breakpointsViewProvider?.updateBreakpoints({
-                    localVariables: [],
-                    globalVariables: [],
-                    totalCount: 0,
-                    isValid: false
-                }, false);
+                // Clear DataViewProvider
+                dataViewProvider?.updateVariables([], [], false);
             }),
             vscode.commands.registerCommand('port11-debugger.debug.pause', async () => {
                 await debugCommand.halt();
 
-                // Update registry data when halted
+                // Update registry data in DataViewProvider when halted
                 try {
                     await dataViewProvider?.updateRegistryData();
                 } catch (error) {
                     outputChannel.appendLine(`Failed to update registry data: ${error}`);
+                }
+
+                // Update variables in DataViewProvider when paused
+                try {
+                    const variables = await debugCommand.getVariables();
+                    dataViewProvider?.updateVariables(
+                        variables.localVariables,
+                        variables.globalVariables,
+                        true
+                    );
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to update variables: ${error}`);
                 }
 
                 // Update call stack when paused
@@ -620,14 +654,6 @@ export async function activate(context: vscode.ExtensionContext) {
                     callStackViewProvider?.updateCallStack(callStack, true);
                 } catch (error) {
                     outputChannel.appendLine(`Failed to update call stack: ${error}`);
-                }
-
-                // Update variables when paused
-                try {
-                    const variables = await debugCommand.getVariables();
-                    breakpointsViewProvider?.updateBreakpoints(variables, true);
-                } catch (error) {
-                    outputChannel.appendLine(`Failed to update variables: ${error}`);
                 }
 
                 // HIGHLIGHT THE LINE IN EDITOR WHERE EXECUTION WAS HALTED
@@ -644,13 +670,8 @@ export async function activate(context: vscode.ExtensionContext) {
                     // Clear call stack view when running
                     callStackViewProvider?.updateCallStack([], false);
 
-                    // Clear variables view when running
-                    breakpointsViewProvider?.updateBreakpoints({
-                        localVariables: [],
-                        globalVariables: [],
-                        totalCount: 0,
-                        isValid: false
-                    }, false);
+                    // Clear variables in DataViewProvider when running
+                    dataViewProvider?.updateVariables([], [], false);
 
                     outputChannel.appendLine('✅ Target resumed - monitoring for breakpoints...');
                 } catch (error) {
@@ -661,44 +682,35 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.commands.registerCommand('port11-debugger.debug.restart', () => restartDebugSession(debugCommand)),
 
             // Debug stepping commands
-            vscode.commands.registerCommand('port11-debugger.debug.stepOver', async () => {
+            vscode.commands.registerCommand('port11-debugger.debug.stepOut', async () => {
                 try {
-                    await debugCommand.stepOver();
+                    await debugCommand.stepOut();
 
-                    // Update registry data after step
+                    // Update views after step
                     try {
                         await dataViewProvider?.updateRegistryData();
-                    } catch (error) {
-                        outputChannel.appendLine(`Failed to update registry data: ${error}`);
-                    }
-
-                    // Update call stack after step
-                    try {
+                        const variables = await debugCommand.getVariables();
+                        dataViewProvider?.updateVariables(
+                            variables.localVariables,
+                            variables.globalVariables,
+                            true
+                        );
                         const callStack = await debugCommand.getCallStack();
                         callStackViewProvider?.updateCallStack(callStack, true);
                     } catch (error) {
-                        outputChannel.appendLine(`Failed to update call stack: ${error}`);
+                        outputChannel.appendLine(`Failed to update debug views: ${error}`);
                     }
 
-                    // Update variables after step
-                    try {
-                        const variables = await debugCommand.getVariables();
-                        breakpointsViewProvider?.updateBreakpoints(variables, true);
-                    } catch (error) {
-                        outputChannel.appendLine(`Failed to update variables: ${error}`);
-                    }
-
-                    // HIGHLIGHT THE LINE IN EDITOR WHERE EXECUTION STOPPED AFTER STEP
+                    // Highlight the line
                     try {
                         await highlightBreakpointLine(debugCommand, breakpointsViewProvider, outputChannel);
                     } catch (error) {
                         outputChannel.appendLine(`Failed to highlight current line: ${error}`);
                     }
                 } catch (error) {
-                    outputChannel.appendLine(`Step Over failed: ${error}`);
-                    // Don't show error popup for "not supported" messages
-                    if (error instanceof Error && !error.message.includes('not supported')) {
-                        vscode.window.showErrorMessage(`Step Over failed: ${error}`);
+                    outputChannel.appendLine(`Step Out failed: ${error}`);
+                    if (error instanceof Error && !error.message.includes('GDB')) {
+                        vscode.window.showErrorMessage(`Step Out failed: ${error}`);
                     }
                 }
             }),

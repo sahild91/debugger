@@ -49,6 +49,12 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  public setDebugActive(isActive: boolean): void {
+    this.outputChannel.appendLine(`🔴 Breakpoint view debug state: ${isActive ? 'ACTIVE' : 'INACTIVE'}`);
+    this.isDebugActive = isActive;
+    this.refresh();
+  }
+
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
     context: vscode.WebviewViewResolveContext,

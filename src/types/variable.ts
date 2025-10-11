@@ -43,3 +43,35 @@ export interface VariablesData {
   /** Whether the variables data is currently valid */
   isValid: boolean;
 }
+
+/**
+ * Represents a single CPU register
+ */
+export interface RegisterData {
+  /** Register name (e.g., "R0", "PC", "SP") */
+  name: string;
+
+  /** Register value in hexadecimal format */
+  value: string;
+
+  /** Human-readable description of the register */
+  description?: string;
+}
+
+/**
+ * Combined data for the Data View
+ * Contains both CPU registers and program variables
+ */
+export interface DataViewContent {
+  /** CPU registers */
+  registers: RegisterData[];
+
+  /** Local variables from current scope */
+  localVariables: VariableInfo[];
+
+  /** Global and static variables */
+  globalVariables: VariableInfo[];
+
+  /** Whether debug session is active */
+  isDebugActive: boolean;
+}
