@@ -32,11 +32,6 @@ let connectionManager: ConnectionManager;
 let statusBarItem: vscode.StatusBarItem;
 let connectStatusBar: vscode.StatusBarItem;
 
-// Utility functions
-function escapePathForShell(path: string): string {
-    return path.replace(/\s/g, '\\ ');
-}
-
 function getAbsolutePath(relativePath: string): string {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
     if (!workspaceFolder) {
@@ -48,7 +43,6 @@ function getAbsolutePath(relativePath: string): string {
 function executeSwdDebuggerCommand(args: string, successMessage: string, requiresPort: boolean = true): Promise<void> {
     return new Promise((resolve, reject) => {
         const executablePath = cliManager.getExecutablePath();
-        const escapedPath = escapePathForShell(executablePath);
 
         // Check if a port is selected and add --port parameter
         const selectedPort = connectionManager.getSelectedPort();
@@ -69,9 +63,9 @@ function executeSwdDebuggerCommand(args: string, successMessage: string, require
         let command: string;
 
         if (selectedPort) {
-            command = `${escapedPath} --port ${selectedPort} ${args}`;
+            command = `${executablePath} --port ${selectedPort} ${args}`;
         } else {
-            command = `${escapedPath} ${args}`;
+            command = `${executablePath} ${args}`;
         }
 
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
