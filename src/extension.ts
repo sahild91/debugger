@@ -32,6 +32,208 @@ let connectionManager: ConnectionManager;
 let statusBarItem: vscode.StatusBarItem;
 let connectStatusBar: vscode.StatusBarItem;
 let debugCommand: DebugCommand;
+let currentPCDecoration: vscode.TextEditorDecorationType | undefined;
+
+// Parse disassembly file to find source location for a PC address
+async function findSourceLocationForPC(
+  pcAddress: string,
+  outputChannel: vscode.OutputChannel
+): Promise<{ file: string; line: number; functionName?: string } | undefined> {
+  try {
+    // Convert PC address format: 0x000002A4 -> 2a4
+    const cleanAddress = pcAddress.replace("0x", "").toLowerCase();
+
+    // Get workspace folder
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceFolder) {
+      outputChannel.appendLine("⚠️  No workspace folder found");
+      return undefined;
+    }
+
+    // Read disassembly file
+    const disasmPath = `${workspaceFolder}/full_disasm.txt`;
+    const fs = require("fs");
+
+    if (!fs.existsSync(disasmPath)) {
+      outputChannel.appendLine(`⚠️  Disassembly file not found: ${disasmPath}`);
+      return undefined;
+    }
+
+    const content = fs.readFileSync(disasmPath, "utf8");
+    const lines = content.split("\n");
+
+    let functionName: string | undefined;
+
+    // Step 1: Find the function at this address (e.g., "000002a4 <DL_GPIO_clearPins>:")
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Look for function definition line (format: "000002a4 <DL_GPIO_clearPins>:")
+      const funcMatch = line.match(/^([0-9a-f]+)\s+<([^>]+)>:/);
+
+      if (funcMatch) {
+        const funcAddress = funcMatch[1];
+        const funcName = funcMatch[2];
+
+        // Check if this is the address we're looking for
+        if (parseInt(funcAddress, 16) === parseInt(cleanAddress, 16)) {
+          functionName = funcName;
+          outputChannel.appendLine(
+            `✅ Found function at address: ${funcName} at ${funcAddress}`
+          );
+          break;
+        }
+      }
+    }
+
+    if (!functionName) {
+      outputChannel.appendLine(
+        `⚠️  No function found at address ${cleanAddress}`
+      );
+      return undefined;
+    }
+
+    // Step 2: Search backwards for "bl 0x2a4 <functionName>" to find the call site
+    outputChannel.appendLine(
+      `🔍 Searching for call to function: ${functionName}`
+    );
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+
+      // Look for branch/call instruction to this function
+      // Format: "     142: f000 f8af        bl    0x2a4 <DL_GPIO_clearPins> @ imm = #0x15e"
+      const callMatch = line.match(
+        /^\s*([0-9a-f]+):\s+[0-9a-f]+\s+[0-9a-f]+\s+bl\s+0x([0-9a-f]+)\s+<([^>]+)>/
+      );
+
+      if (callMatch) {
+        const callAddress = callMatch[1];
+        const calledFunc = callMatch[3];
+
+        // Check if this calls our function
+        if (calledFunc === functionName) {
+          outputChannel.appendLine(
+            `✅ Found call to ${functionName} at address ${callAddress}`
+          );
+
+          // Look backwards for source location comment
+          // Format: "; /path/to/file.c:60"
+          for (let j = i - 1; j >= Math.max(0, i - 10); j--) {
+            const commentLine = lines[j];
+
+            // Match source location comment
+            const sourceMatch = commentLine.match(/;\s*(.+):(\d+)\s*$/);
+
+            if (sourceMatch) {
+              const file = sourceMatch[1].trim();
+              const lineNum = parseInt(sourceMatch[2], 10);
+
+              outputChannel.appendLine(
+                `✅ Found source location: ${file}:${lineNum}`
+              );
+
+              return { file, line: lineNum, functionName };
+            }
+
+            // Stop if we hit another instruction line
+            if (commentLine.match(/^\s*[0-9a-f]+:\s/)) {
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    outputChannel.appendLine(
+      `⚠️  Could not find call site for function ${functionName}`
+    );
+    return undefined;
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    outputChannel.appendLine(`❌ Error parsing disassembly: ${errorMsg}`);
+    return undefined;
+  }
+}
+
+// Show arrow icon in gutter at current PC location
+async function showArrowAtPC(
+  pcAddress: string,
+  outputChannel: vscode.OutputChannel
+): Promise<void> {
+  try {
+    outputChannel.appendLine(`🎯 Showing arrow at PC: ${pcAddress}`);
+
+    // Clear previous arrow decoration
+    if (currentPCDecoration) {
+      currentPCDecoration.dispose();
+      currentPCDecoration = undefined;
+    }
+
+    // Find source location from disassembly
+    const location = await findSourceLocationForPC(pcAddress, outputChannel);
+
+    if (!location) {
+      outputChannel.appendLine("⚠️  Could not find source location for PC");
+      return;
+    }
+
+    // Resolve file path
+    let fileUri: vscode.Uri;
+    if (location.file.startsWith("/") || location.file.match(/^[a-zA-Z]:\\/)) {
+      // Absolute path
+      fileUri = vscode.Uri.file(location.file);
+    } else {
+      // Relative path
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        outputChannel.appendLine("⚠️  No workspace folder found");
+        return;
+      }
+      fileUri = vscode.Uri.joinPath(workspaceFolder.uri, location.file);
+    }
+
+    // Open the document
+    const document = await vscode.workspace.openTextDocument(fileUri);
+    const line = location.line - 1; // Convert to 0-based
+
+    // Show the document
+    const editor = await vscode.window.showTextDocument(document, {
+      selection: new vscode.Range(
+        new vscode.Position(line, 0),
+        new vscode.Position(line, 0)
+      ),
+      viewColumn: vscode.ViewColumn.One,
+      preserveFocus: false,
+    });
+
+    // Create arrow decoration in gutter
+    currentPCDecoration = vscode.window.createTextEditorDecorationType({
+      gutterIconPath: vscode.Uri.parse(
+        "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cG9seWdvbiBwb2ludHM9IjEsMiAxLDE0IDEyLDggMSwyIiBmaWxsPSIjZmZjYzAwIi8+PC9zdmc+"
+      ),
+      gutterIconSize: "contain",
+      isWholeLine: false,
+      overviewRulerColor: new vscode.ThemeColor("editorOverviewRuler.infoForeground"),
+      overviewRulerLane: vscode.OverviewRulerLane.Left,
+    });
+
+    // Apply decoration
+    editor.setDecorations(currentPCDecoration, [
+      new vscode.Range(
+        new vscode.Position(line, 0),
+        new vscode.Position(line, 0)
+      ),
+    ]);
+
+    outputChannel.appendLine(
+      `✅ Arrow shown at ${location.file}:${location.line}`
+    );
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    outputChannel.appendLine(`❌ Error showing arrow at PC: ${errorMsg}`);
+  }
+}
 
 function getAbsolutePath(relativePath: string): string {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
@@ -254,7 +456,15 @@ export async function activate(context: vscode.ExtensionContext) {
         } catch (error) {
           outputChannel.appendLine(`Failed to update call stack: ${error}`);
         }
-      } catch (error) {
+
+        // Show arrow at current PC location
+        try {
+          const pc = await debugCommand.readPC();
+          await showArrowAtPC(pc, outputChannel);
+        } catch (error) {
+          outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
+        }
+       } catch (error) {
         outputChannel.appendLine(`❌ Resume command failed: ${error}`);
       }
     }

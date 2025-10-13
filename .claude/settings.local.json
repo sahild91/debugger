@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run compile:*)"
+      "Bash(npm run compile:*)",
+      "Read(//Users/evobidev/Desktop/Sahil/gpio_toggle_output/**)"
     ],
     "deny": [],
     "ask": []
