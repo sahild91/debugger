@@ -20,7 +20,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
   private isDebugActive: boolean = false;
   private addressMapper: AddressMapper;
   private swdDebuggerPath: string;
-  private deviceBreakpoints: Array<{ slot: number, address: string }> = [];
+  private deviceBreakpoints: Array<{ slot: number; address: string }> = [];
   private breakpointStates: Map<string, boolean> = new Map();
 
   constructor(
@@ -50,7 +50,17 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
   }
 
   public setDebugActive(isActive: boolean): void {
-    this.outputChannel.appendLine(`🔴 Breakpoint view debug state: ${isActive ? 'ACTIVE' : 'INACTIVE'}`);
+    this.outputChannel.appendLine(
+      `🔴 Breakpoint view debug state: ${isActive ? "ACTIVE" : "INACTIVE"}`
+    );
+    this.outputChannel.appendLine(
+      `🔴 Breakpoint addresses: ${
+        this.addressMapper.getBreakpointAddresses().length
+      }`
+    );
+    this.outputChannel.appendLine(
+      `🔴 Device breakpoints: ${this.deviceBreakpoints.length}`
+    );
     this.isDebugActive = isActive;
     this.refresh();
   }
@@ -140,18 +150,22 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
   /**
    * Parse breakpoint list output from swd-debugger bp --list
    */
-  private parseBreakpointList(output: string): Array<{ slot: number, address: string }> {
-    const breakpoints: Array<{ slot: number, address: string }> = [];
+  private parseBreakpointList(
+    output: string
+  ): Array<{ slot: number; address: string }> {
+    const breakpoints: Array<{ slot: number; address: string }> = [];
     const lines = output.split("\n");
 
     for (const line of lines) {
       // Match lines that contain "Slot X: ENABLED at 0xABCD"
       // Extract both slot number and address
-      const match = line.match(/Slot\s+(\d+):\s+ENABLED\s+at\s+(0x[0-9a-fA-F]+)/i);
+      const match = line.match(
+        /Slot\s+(\d+):\s+ENABLED\s+at\s+(0x[0-9a-fA-F]+)/i
+      );
       if (match) {
         breakpoints.push({
           slot: parseInt(match[1]),
-          address: match[2]
+          address: match[2],
         });
       }
     }
@@ -164,11 +178,23 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
    */
   public refresh() {
     if (!this._view) {
+      this.outputChannel.appendLine(
+        "❌ BreakpointsViewProvider: No view available"
+      );
       return;
     }
 
-    // Get breakpoint addresses
     const breakpointAddresses = this.addressMapper.getBreakpointAddresses();
+
+    this.outputChannel.appendLine(`🔄 BreakpointsViewProvider refresh:`);
+    this.outputChannel.appendLine(`   - isDebugActive: ${this.isDebugActive}`);
+    this.outputChannel.appendLine(
+      `   - breakpointAddresses: ${breakpointAddresses.length}`
+    );
+    this.outputChannel.appendLine(
+      `   - deviceBreakpoints: ${this.deviceBreakpoints.length}`
+    );
+    this.outputChannel.appendLine(`   - _view.visible: ${this._view.visible}`);
 
     // Convert Map to plain object for JSON serialization
     const breakpointStatesObj: { [key: string]: boolean } = {};
@@ -176,14 +202,21 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
       breakpointStatesObj[key] = value;
     });
 
-    this._view.webview.postMessage({
-      type: "update",
-      data: this.breakpointsData,
-      isDebugActive: this.isDebugActive,
-      breakpointAddresses: breakpointAddresses,
-      deviceBreakpoints: this.deviceBreakpoints,
-      breakpointStates: breakpointStatesObj,
-    });
+    try {
+      this._view.webview.postMessage({
+        type: "update",
+        data: this.breakpointsData,
+        isDebugActive: this.isDebugActive,
+        breakpointAddresses: breakpointAddresses,
+        deviceBreakpoints: this.deviceBreakpoints,
+        breakpointStates: breakpointStatesObj,
+      });
+      this.outputChannel.appendLine("✅ Message sent to webview successfully");
+    } catch (error) {
+      this.outputChannel.appendLine(
+        `❌ Failed to send message to webview: ${error}`
+      );
+    }
   }
 
   /**
@@ -280,9 +313,10 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         // Update device breakpoints and refresh UI
         const output = await this.executeSwdCommand(["bp", "--list"]);
         this.deviceBreakpoints = this.parseBreakpointList(output);
-        this.outputChannel.appendLine(`✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`);
+        this.outputChannel.appendLine(
+          `✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
+        );
         this.refresh();
-
       } else {
         // Disable breakpoint: swd-debugger bp --clear ${address}
         this.outputChannel.appendLine(
@@ -298,7 +332,9 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         // Update device breakpoints and refresh UI
         const output = await this.executeSwdCommand(["bp", "--list"]);
         this.deviceBreakpoints = this.parseBreakpointList(output);
-        this.outputChannel.appendLine(`✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`);
+        this.outputChannel.appendLine(
+          `✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
+        );
         this.refresh();
       }
     } catch (error) {
@@ -321,7 +357,12 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         `🗑️  Clearing device breakpoint at slot ${slot}...`
       );
 
-      await this.executeSwdCommand(["bp", "--clear", "--slot", slot.toString()]);
+      await this.executeSwdCommand([
+        "bp",
+        "--clear",
+        "--slot",
+        slot.toString(),
+      ]);
 
       this.outputChannel.appendLine(
         `✅ Device breakpoint cleared at slot ${slot}`
@@ -390,7 +431,9 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         // Update device breakpoints and refresh UI
         const output = await this.executeSwdCommand(["bp", "--list"]);
         this.deviceBreakpoints = this.parseBreakpointList(output);
-        this.outputChannel.appendLine(`✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`);
+        this.outputChannel.appendLine(
+          `✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
+        );
       } else {
         vscode.window.showInformationMessage(`Breakpoint removed from VS Code`);
       }
@@ -467,6 +510,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
             <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
             <title>Breakpoints</title>
             <style>
+                /* Your existing CSS styles here - keep them all */
                 body {
                     padding: 0;
                     margin: 0;
@@ -718,6 +762,17 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
                     margin-top: 20px;
                 }
 
+                /* Debug info styling */
+                .debug-info {
+                    background-color: var(--vscode-inputValidation-infoBackground);
+                    border: 1px solid var(--vscode-inputValidation-infoBorder);
+                    padding: 8px;
+                    margin: 8px 0;
+                    border-radius: 4px;
+                    font-size: 11px;
+                    font-family: 'Courier New', monospace;
+                }
+
                 /* Scrollbar styling */
                 .container::-webkit-scrollbar {
                     width: 10px;
@@ -747,130 +802,107 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
 
             <script>
                 const vscode = acquireVsCodeApi();
+                let lastMessage = null;
 
                 window.addEventListener('message', event => {
                     const message = event.data;
+                    console.log('📨 Webview received message:', message.type);
+                    console.log('   isDebugActive:', message.isDebugActive);
+                    console.log('   breakpointAddresses count:', message.breakpointAddresses?.length);
+                    console.log('   deviceBreakpoints count:', message.deviceBreakpoints?.length);
+                    
+                    lastMessage = message;
+                    
                     if (message.type === 'update') {
                         renderBreakpoints(message.data, message.isDebugActive, message.breakpointAddresses, message.deviceBreakpoints, message.breakpointStates);
                     }
                 });
 
                 function renderBreakpoints(data, isDebugActive, breakpointAddresses, deviceBreakpoints, breakpointStates) {
+                  console.log('🎨 Rendering breakpoints:', {
+                    isDebugActive: isDebugActive,
+                    breakpointAddresses: breakpointAddresses,
+                    deviceBreakpoints: deviceBreakpoints
+                  });
+                  
                   const container = document.getElementById('breakpoints-container');
                   let html = '';
 
-                  // Show breakpoints if we have any (regardless of debug state)
-                  if (breakpointAddresses && breakpointAddresses.length > 0) {
-                      breakpointAddresses.forEach(function(bp) {
-                          // FIX: Changed from arrow function and template literals to regular function and string concatenation
-                          const label = bp.functionName ? bp.functionName : (bp.file + ':' + bp.line);
-                          const address = bp.address || 'N/A';
-                          const hasAddress = address !== 'N/A';
-                          const disabledClass = !hasAddress ? 'disabled' : '';
-
-                          // Restore checkbox state from breakpointStates
-                          const isChecked = breakpointStates && breakpointStates[address] === true;
-                          const checkedAttr = isChecked ? 'checked' : '';
-
-                          html += '<div class="breakpoint-item ' + disabledClass + '">' +
-                              '<input type="checkbox" ' +
-                              'class="breakpoint-checkbox" ' +
-                              'onchange="toggleBreakpoint(\'' + address + '\', this.checked)" ' +
-                              ((!hasAddress) ? 'disabled ' : '') +
-                              checkedAttr + '>' +
-                              '<span class="breakpoint-label">' + label + '</span>' +
-                              '<span class="variable-address">' + address + '</span>' +
-                              '<button class="breakpoint-close-btn" ' +
-                              'onclick="removeBreakpoint(\'' + address + '\', \'' + bp.file + '\', ' + bp.line + '); event.stopPropagation();" ' +
-                              'title="Remove breakpoint">✕</button>' +
-                              '</div>';
-                      });
-                  }
-
-                  // Show device breakpoints if any
-                  if (deviceBreakpoints && deviceBreakpoints.length > 0) {
-                      html += '<div class="section-header device-breakpoints-section">' +
-                          '<span>Device Breakpoints</span>' +
-                          '<span class="section-count">' + deviceBreakpoints.length + '</span>' +
+                  // If debug is NOT active, show the "No Debug Session " message
+                  if (!isDebugActive) {
+                      html = '<div class="empty-state">' +
+                          '<div class="empty-icon">📋</div>' +
+                          '<div class="empty-title">No Debug Session</div>' +
+                          '<div class="empty-description">Start debugging to see Breakpoints</div>' +
                           '</div>';
-
-                      deviceBreakpoints.forEach(function(bp) {
-                          html += '<div class="breakpoint-item">' +
-                              '<span class="breakpoint-label">Slot ' + bp.slot + '</span>' +
-                              '<span class="variable-address">' + bp.address + '</span>' +
-                              '<button class="breakpoint-close-btn" ' +
-                              'onclick="removeDeviceBreakpoint(' + bp.slot + '); event.stopPropagation();" ' +
-                              'title="Remove device breakpoint">✕</button>' +
-                              '</div>';
-                      });
-                  }
-
-                  // Show empty state ONLY if no breakpoints at all
-                  if ((!breakpointAddresses || breakpointAddresses.length === 0) && 
-                      (!deviceBreakpoints || deviceBreakpoints.length === 0)) {
+                  } 
+                  // If debug IS active but no breakpoints, show appropriate message
+                  else if ((!breakpointAddresses || breakpointAddresses.length === 0) && 
+                           (!deviceBreakpoints || deviceBreakpoints.length === 0)) {
                       html = '<div class="empty-state">' +
                           '<div class="empty-icon">📋</div>' +
                           '<div class="empty-title">No Breakpoints Set</div>' +
-                          '<div class="empty-description">' +
-                          (isDebugActive ? 'Click in the gutter to set breakpoints' : 'Start debugging and set breakpoints') +
-                          '</div>' +
+                          '<div class="empty-description">Click in the gutter to set breakpoints</div>' +
+                          '</div>';
+                  }
+                  // Debug is active AND we have breakpoints to show
+                  else {
+                      // Show breakpoint addresses if any
+                      if (breakpointAddresses && breakpointAddresses.length > 0) {
+                          breakpointAddresses.forEach(function(bp) {
+                              const label = bp.functionName ? bp.functionName : (bp.file + ':' + bp.line);
+                              const address = bp.address || 'N/A';
+                              const hasAddress = address !== 'N/A';
+                              const disabledClass = !hasAddress ? 'disabled' : '';
+
+                              // Restore checkbox state from breakpointStates
+                              const isChecked = breakpointStates && breakpointStates[address] === true;
+                              const checkedAttr = isChecked ? 'checked' : '';
+
+                              html += '<div class="breakpoint-item ' + disabledClass + '">' +
+                                  '<input type="checkbox" ' +
+                                  'class="breakpoint-checkbox" ' +
+                                  'onchange="toggleBreakpoint(\\'' + address + '\\', this.checked)" ' +
+                                  ((!hasAddress) ? 'disabled ' : '') +
+                                  checkedAttr + '>' +
+                                  '<span class="breakpoint-label">' + label + '</span>' +
+                                  '<span class="variable-address">' + address + '</span>' +
+                                  '<button class="breakpoint-close-btn" ' +
+                                  'onclick="removeBreakpoint(\\'' + address + '\\', \\'' + bp.file + '\\', ' + bp.line + '); event.stopPropagation();" ' +
+                                  'title="Remove breakpoint">✕</button>' +
+                                  '</div>';
+                          });
+                      }
+
+                      // Show device breakpoints if any
+                      if (deviceBreakpoints && deviceBreakpoints.length > 0) {
+                          html += '<div class="section-header device-breakpoints-section">' +
+                              '<span>Device Breakpoints</span>' +
+                              '<span class="section-count">' + deviceBreakpoints.length + '</span>' +
+                              '</div>';
+
+                          deviceBreakpoints.forEach(function(bp) {
+                              html += '<div class="breakpoint-item">' +
+                                  '<span class="breakpoint-label">Slot ' + bp.slot + '</span>' +
+                                  '<span class="variable-address">' + bp.address + '</span>' +
+                                  '<button class="breakpoint-close-btn" ' +
+                                  'onclick="removeDeviceBreakpoint(' + bp.slot + '); event.stopPropagation();" ' +
+                                  'title="Remove device breakpoint">✕</button>' +
+                                  '</div>';
+                          });
+                      }
+
+                      // Add debug info
+                      html += '<div class="debug-info">' +
+                          'Debug State: ACTIVE | ' +
+                          'Breakpoints: ' + (breakpointAddresses ? breakpointAddresses.length : 0) + ' | ' +
+                          'Device BPs: ' + (deviceBreakpoints ? deviceBreakpoints.length : 0) +
                           '</div>';
                   }
 
                   container.innerHTML = html;
+                  console.log('✅ Render completed. HTML length:', html.length);
               }
-
-                function renderBreakpointItem(breakpoint) {
-                    const scopeClass = 'scope-' + breakpoint.scope;
-                    const scopeLabel = breakpoint.scope.charAt(0).toUpperCase() + breakpoint.scope.slice(1);
-
-                    // Build location string
-                    let location = '';
-                    if (breakpoint.filePath && breakpoint.line) {
-                        const fileName = breakpoint.filePath.split('/').pop() || breakpoint.filePath;
-                        location = \`<span class="variable-location">\${fileName}:\${breakpoint.line}</span>\`;
-                    }
-
-                    // Build type string
-                    let typeStr = '';
-                    if (breakpoint.type) {
-                        typeStr = \`<span class="variable-type">\${breakpoint.type}</span>\`;
-                    }
-
-                    // Build value string
-                    let valueStr = '';
-                    if (breakpoint.value) {
-                        valueStr = \`<span class="variable-value">= \${breakpoint.value}</span>\`;
-                    }
-
-                    // Build tooltip
-                    const tooltip = [
-                        \`Name: \${breakpoint.name}\`,
-                        \`Address: \${breakpoint.address}\`,
-                        breakpoint.type ? \`Type: \${breakpoint.type}\` : '',
-                        breakpoint.value ? \`Value: \${breakpoint.value}\` : '',
-                        breakpoint.filePath ? \`Location: \${breakpoint.filePath}:\${breakpoint.line || ''}\` : ''
-                    ].filter(Boolean).join('\\n');
-
-                    return \`
-                        <div class="variable-item"
-                             onclick='navigateToBreakpoint(\${JSON.stringify(breakpoint)})'
-                             title="\${tooltip}">
-                            <div class="variable-header">
-                                <span class="scope-badge \${scopeClass}">\${scopeLabel}</span>
-                                <span class="variable-name">\${breakpoint.name}</span>
-                                <span class="variable-address">\${breakpoint.address}</span>
-                            </div>
-                            \${(location || typeStr || valueStr) ? \`
-                                <div class="variable-details">
-                                    \${location}
-                                    \${typeStr}
-                                    \${valueStr}
-                                </div>
-                            \` : ''}
-                        </div>
-                    \`;
-                }
 
                 function navigateToBreakpoint(breakpoint) {
                     vscode.postMessage({ type: 'navigateToBreakpoint', breakpoint: breakpoint });
@@ -890,6 +922,13 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
 
                 function refreshBreakpoints() {
                     vscode.postMessage({ type: 'refresh' });
+                }
+
+                // Log when the webview is loaded
+                console.log('🔄 Breakpoints webview loaded and ready');
+                if (lastMessage) {
+                    console.log('📋 Last message available, re-rendering...');
+                    renderBreakpoints(lastMessage.data, lastMessage.isDebugActive, lastMessage.breakpointAddresses, lastMessage.deviceBreakpoints, lastMessage.breakpointStates);
                 }
             </script>
         </body>
