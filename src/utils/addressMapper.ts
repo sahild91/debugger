@@ -14,6 +14,7 @@ export interface SourceLineAddress {
  */
 export class AddressMapper {
     private lineToAddressMap: Map<string, string> = new Map();
+    private addressToLineMap: Map<string, { file: string; line: number; functionName?: string }> = new Map();
     private functionToAddressMap: Map<string, string> = new Map();
     private disassemblyPath: string | null = null;
 
@@ -62,7 +63,7 @@ export class AddressMapper {
             }
         }
 
-        // Second pass: build line to address map
+        // Second pass: build line to address map (and reverse map)
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
 
@@ -77,6 +78,14 @@ export class AddressMapper {
                 if (address && currentFile) {
                     const key = this.makeKey(currentFile, lineNumber);
                     this.lineToAddressMap.set(key, address);
+
+                    // Build reverse map: address -> source location
+                    const normalizedAddress = address.toLowerCase();
+                    this.addressToLineMap.set(normalizedAddress, {
+                        file: currentFile,
+                        line: lineNumber,
+                        functionName: currentFunction || undefined
+                    });
                 }
                 continue;
             }
@@ -98,12 +107,9 @@ export class AddressMapper {
 
     /**
      * Find the next instruction address after a source line comment
-     * Prioritizes function calls (bl/blx) within the same source line scope
+     * Returns the instruction address (NOT the target of bl/blx)
      */
     private findNextInstructionAddress(lines: string[], startIndex: number): string | null {
-        let firstInstructionAddress: string | null = null;
-        let foundFunctionCall: string | null = null;
-
         for (let i = startIndex + 1; i < Math.min(startIndex + 10, lines.length); i++) {
             const line = lines[i];
 
@@ -117,25 +123,20 @@ export class AddressMapper {
             if (instrMatch) {
                 const instructionAddress = '0x' + instrMatch[1];
 
-                // Store the first instruction address as fallback
-                if (!firstInstructionAddress) {
-                    firstInstructionAddress = instructionAddress;
-                }
-
                 // Check if this is a branch/call instruction (bl or blx)
-                // Extract the target address directly from the instruction
                 const branchMatch = line.match(/\b(bl|blx)\s+0x([0-9a-fA-F]+)/);
                 if (branchMatch) {
-                    // Get the target address from the bl/blx instruction itself
-                    const targetAddress = '0x' + branchMatch[2];
-                    foundFunctionCall = targetAddress;
-                    break; // Use the first function call found
+                    // Return the INSTRUCTION address (where the bl is), not the target
+                    // This is what PC points to when halted at a call
+                    return instructionAddress;
                 }
+
+                // For non-branch instructions, return the instruction address
+                return instructionAddress;
             }
         }
 
-        // Prefer function call address, otherwise use first instruction
-        return foundFunctionCall || firstInstructionAddress;
+        return null;
     }
 
     /**
@@ -154,6 +155,46 @@ export class AddressMapper {
     public getAddressForFunction(functionName: string): string | null {
         const key = `func:${functionName}`;
         return this.lineToAddressMap.get(key) || null;
+    }
+
+    /**
+     * Get source location for a memory address (reverse lookup)
+     */
+    public getSourceLocationForAddress(address: string): { file: string; line: number; functionName?: string } | null {
+        // Normalize address: remove 0x prefix, convert to lowercase, remove leading zeros
+        const cleanAddress = address.replace(/^0x/i, '').toLowerCase();
+
+        // Remove leading zeros but keep at least one digit
+        const trimmedAddress = cleanAddress.replace(/^0+/, '') || '0';
+
+        // Try multiple formats:
+        // 1. With 0x prefix and trimmed (0x300)
+        const format1 = '0x' + trimmedAddress;
+        let result = this.addressToLineMap.get(format1);
+        if (result) {
+            return result;
+        }
+
+        // 2. Without prefix, trimmed (300)
+        result = this.addressToLineMap.get(trimmedAddress);
+        if (result) {
+            return result;
+        }
+
+        // 3. With prefix and leading zeros (0x00000300)
+        const format3 = '0x' + cleanAddress;
+        result = this.addressToLineMap.get(format3);
+        if (result) {
+            return result;
+        }
+
+        // 4. Without prefix, with leading zeros (00000300)
+        result = this.addressToLineMap.get(cleanAddress);
+        if (result) {
+            return result;
+        }
+
+        return null;
     }
 
     /**
@@ -223,5 +264,19 @@ export class AddressMapper {
             totalMappings: this.lineToAddressMap.size,
             disassemblyPath: this.disassemblyPath
         };
+    }
+
+    /**
+     * Debug: Get a sample of addresses from the reverse map
+     */
+    public getSampleAddresses(limit: number = 10): string[] {
+        const addresses: string[] = [];
+        let count = 0;
+        for (const [addr] of this.addressToLineMap) {
+            addresses.push(addr);
+            count++;
+            if (count >= limit) break;
+        }
+        return addresses;
     }
 }

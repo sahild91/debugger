@@ -40,6 +40,47 @@ async function findSourceLocationForPC(
   outputChannel: vscode.OutputChannel
 ): Promise<{ file: string; line: number; functionName?: string } | undefined> {
   try {
+    outputChannel.appendLine(`🔍 Looking up PC address: ${pcAddress}`);
+
+    // FAST PATH: Try addressMapper first (already loaded in memory)
+    if (breakpointsViewProvider) {
+      const addressMapper = (breakpointsViewProvider as any).addressMapper;
+
+      if (addressMapper && addressMapper.isLoaded()) {
+        outputChannel.appendLine(`⚡ Using fast path: addressMapper lookup`);
+
+        // Debug: Show mapper stats
+        const stats = addressMapper.getStats();
+        outputChannel.appendLine(`   Mapper has ${stats.totalMappings} mappings loaded`);
+
+        const result = addressMapper.getSourceLocationForAddress(pcAddress);
+
+        if (result) {
+          outputChannel.appendLine(
+            `✅ Fast path found: ${result.file}:${result.line}${result.functionName ? ` (${result.functionName})` : ''}`
+          );
+          return result;
+        } else {
+          outputChannel.appendLine(`⚠️  Fast path: address not found in mapper`);
+
+          // Debug: Try to see what addresses are near this one
+          outputChannel.appendLine(`   Searching for PC: ${pcAddress}`);
+          outputChannel.appendLine(`   Normalized: ${pcAddress.replace(/^0x/i, '').toLowerCase()}`);
+
+          // Show sample of what's in the map
+          const sampleAddresses = addressMapper.getSampleAddresses(5);
+          outputChannel.appendLine(`   Sample addresses in map: ${sampleAddresses.join(', ')}`);
+        }
+      } else {
+        outputChannel.appendLine(`⚠️  Fast path unavailable: addressMapper not loaded, using fallback...`);
+      }
+    } else {
+      outputChannel.appendLine(`⚠️  Fast path unavailable: breakpointsViewProvider not initialized, using fallback...`);
+    }
+
+    // FALLBACK: Parse full_disasm.txt file
+    outputChannel.appendLine(`📂 Using fallback: parsing full_disasm.txt`);
+
     // Convert PC address format: 0x000002A4 -> 2a4
     const cleanAddress = pcAddress.replace("0x", "").toLowerCase();
 
@@ -102,9 +143,11 @@ async function findSourceLocationForPC(
       const line = lines[i];
 
       // Look for branch/call instruction to this function
-      // Format: "     142: f000 f8af        bl    0x2a4 <DL_GPIO_clearPins> @ imm = #0x15e"
+      // Format: "     132: f000 f89f        bl    0x274 <DL_GPIO_setPins> @ imm = #0x13e"
+      // OR:     "     abc: 1234             bl    0x274 <DL_GPIO_setPins> @ imm = #0x13e"
+      // Match one or more hex groups before 'bl'
       const callMatch = line.match(
-        /^\s*([0-9a-f]+):\s+[0-9a-f]+\s+[0-9a-f]+\s+bl\s+0x([0-9a-f]+)\s+<([^>]+)>/
+        /^\s*([0-9a-f]+):\s+[0-9a-f\s]+\s+bl\s+0x([0-9a-f]+)\s+<([^>]+)>/
       );
 
       if (callMatch) {
@@ -119,7 +162,8 @@ async function findSourceLocationForPC(
 
           // Look backwards for source location comment
           // Format: "; /path/to/file.c:60"
-          for (let j = i - 1; j >= Math.max(0, i - 10); j--) {
+          // The comment can be several lines before the bl instruction
+          for (let j = i - 1; j >= Math.max(0, i - 20); j--) {
             const commentLine = lines[j];
 
             // Match source location comment
@@ -136,10 +180,8 @@ async function findSourceLocationForPC(
               return { file, line: lineNum, functionName };
             }
 
-            // Stop if we hit another instruction line
-            if (commentLine.match(/^\s*[0-9a-f]+:\s/)) {
-              break;
-            }
+            // Don't stop on instruction lines - keep looking backwards
+            // The source comment might be several instructions before the bl
           }
         }
       }
@@ -207,13 +249,14 @@ async function showArrowAtPC(
       preserveFocus: false,
     });
 
-    // Create arrow decoration in gutter
+    // Create arrow decoration in gutter with light yellow background
     currentPCDecoration = vscode.window.createTextEditorDecorationType({
       gutterIconPath: vscode.Uri.parse(
         "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cG9seWdvbiBwb2ludHM9IjEsMiAxLDE0IDEyLDggMSwyIiBmaWxsPSIjZmZjYzAwIi8+PC9zdmc+"
       ),
       gutterIconSize: "contain",
-      isWholeLine: false,
+      isWholeLine: true,
+      backgroundColor: "rgba(255, 255, 0, 0.2)", // Light yellow background
       overviewRulerColor: new vscode.ThemeColor("editorOverviewRuler.infoForeground"),
       overviewRulerLane: vscode.OverviewRulerLane.Left,
     });
