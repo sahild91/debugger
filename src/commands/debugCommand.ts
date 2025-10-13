@@ -226,7 +226,7 @@ export class DebugCommand {
 
         return new Promise((resolve, reject) => {
             const config = vscode.workspace.getConfiguration('port11-debugger');
-            const cliPath = this.cliManager.getExecutablePath();
+            const cliPath = this.cliManager.getSanitizedExecutablePath();
             const board = this.currentSession?.board;
 
             if (!board || !cliPath) {
@@ -497,7 +497,7 @@ export class DebugCommand {
                 return;
             }
 
-            const swdDebuggerPath = this.cliManager.getExecutablePath();
+            const swdDebuggerPath = this.cliManager.getSanitizedExecutablePath();
 
             const fullArgs = [
                 '--port', this.currentSession.board.path,

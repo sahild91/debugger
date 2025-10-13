@@ -294,7 +294,7 @@ function executeSwdDebuggerCommand(
   requiresWorkspace: boolean = false
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const executablePath = cliManager.getExecutablePath();
+    const executablePath = cliManager.getSanitizedExecutablePath();
     
     // Properly quote executable path if it contains spaces
     const quotedExecutablePath = executablePath.includes(" ") 
@@ -940,7 +940,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // Initialize and Register Data View Provider FIRST
     // (so we can pass it to BreakpointsViewProvider)
     outputChannel.appendLine("Initializing Data View...");
-    const swdDebuggerPath = cliManager.getExecutablePath();
+    const swdDebuggerPath = cliManager.getSanitizedExecutablePath();
     dataViewProvider = new DataViewProvider(
       context.extensionUri,
       outputChannel,

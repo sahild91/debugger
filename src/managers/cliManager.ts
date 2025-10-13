@@ -90,8 +90,32 @@ export class CliManager {
     return undefined;
   }
 
+  /**
+   * Sanitize path to handle whitespaces based on OS
+   */
+  private sanitizePath(filePath: string): string {
+    // Normalize the path first
+    const normalizedPath = path.normalize(filePath);
+    
+    // Check if path contains spaces
+    if (normalizedPath.includes(' ')) {
+      if (process.platform === "win32") {
+        // On Windows, wrap in quotes if not already quoted
+        return normalizedPath.startsWith('"') && normalizedPath.endsWith('"')
+          ? normalizedPath
+          : `"${normalizedPath}"`;
+      } else {
+        // On Unix-like systems (macOS, Linux), escape spaces
+        return normalizedPath.replace(/ /g, '\\ ');
+      }
+    }
+    
+    return normalizedPath;
+  }
+
   private getInstallDir(): string {
-    return path.join(this.context.extensionPath, "dist");
+    // Normalize path to handle whitespaces and resolve any relative path segments
+    return path.normalize(path.join(this.context.extensionPath, "dist"));
   }
 
   private getInstallPath(): string {
@@ -99,7 +123,17 @@ export class CliManager {
       process.platform === "win32"
         ? `${DEST_FILE_NAME}.exe`
         : DEST_FILE_NAME;
-    return path.join(this.context.extensionPath, "dist", fileName);
+    // Normalize path to handle whitespaces and resolve any relative path segments
+    return path.normalize(path.join(this.context.extensionPath, "dist", fileName));
+  }
+
+  /**
+   * Get sanitized executable path for shell commands
+   * Use this when passing path to shell/exec commands
+   */
+  getSanitizedExecutablePath(): string {
+    const execPath = this.getExecutablePath();
+    return this.sanitizePath(execPath);
   }
 
   private getDownloadUrl(): string {
@@ -454,6 +488,11 @@ export class CliManager {
     return this.verifyInstallation();
   }
 
+  /**
+   * Get executable path (unsanitized)
+   * Use this with spawn() or when path doesn't need shell escaping
+   * For shell commands, use getSanitizedExecutablePath() instead
+   */
   getExecutablePath(): string {
     const savedPath = this.context.globalState.get<string>(
       this.SWD_DEBUGGER_PATH_KEY
