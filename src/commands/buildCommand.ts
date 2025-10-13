@@ -140,7 +140,7 @@ export class BuildCommand {
     async cancelBuild(): Promise<void> {
         if (this.buildProcess) {
             this.updateProgress('error', 'Cancelling build process', 100);
-            this.outputChannel.appendLine('🛑 Build cancelled by user');
+            this.outputChannel.appendLine('Build cancelled by user');
 
             // First try graceful termination
             this.buildProcess.kill('SIGTERM');
@@ -148,7 +148,7 @@ export class BuildCommand {
             // Force kill after 3 seconds if it doesn't respond
             setTimeout(() => {
                 if (this.buildProcess && !this.buildProcess.killed) {
-                    this.outputChannel.appendLine('🔫 Force killing build process...');
+                    this.outputChannel.appendLine('Force killing build process...');
                     this.buildProcess.kill('SIGKILL');
                 }
             }, 3000);
@@ -158,7 +158,7 @@ export class BuildCommand {
 
             vscode.window.showWarningMessage('Build process cancelled');
         } else {
-            this.outputChannel.appendLine('ℹ️  No active build process to cancel');
+            this.outputChannel.appendLine('No active build process to cancel');
         }
     }
 
@@ -253,7 +253,7 @@ export class BuildCommand {
 
             // Stop any running processes
             if (this.buildProcess && !(this.buildProcess as ChildProcess).killed) {
-                this.outputChannel.appendLine('🛑 Terminating build process...');
+                this.outputChannel.appendLine('Terminating build process...');
                 (this.buildProcess as ChildProcess).kill('SIGTERM');
                 this.buildProcess = null;
             }
@@ -423,7 +423,7 @@ export class BuildCommand {
         if (!compilerPath) {
             const errorMessage = `ARM-CGT-CLANG compiler not found!
 
-    🚨 The extension could not find the TI ARM-CGT-CLANG compiler in any of these locations:
+    The extension could not find the TI ARM-CGT-CLANG compiler in any of these locations:
 
     1. Extension Storage: ${this.context.globalStorageUri.fsPath}
     2. System TI Installations (C:\\ti\\, /opt/ti/, etc.)
@@ -735,7 +735,7 @@ export class BuildCommand {
                         // Show file size if available
                         try {
                             const stats = fs.statSync(outputFile);
-                            this.outputChannel.appendLine(`📏 Binary size: ${stats.size.toLocaleString()} bytes`);
+                            this.outputChannel.appendLine(`Binary size: ${stats.size.toLocaleString()} bytes`);
                         } catch (e) {
                             // Size check failed but build was successful
                         }
@@ -751,7 +751,7 @@ export class BuildCommand {
                         // Show first few errors for quick reference
                         if (errors.length > 0) {
                             this.outputChannel.appendLine('');
-                            this.outputChannel.appendLine('🚨 COMPILATION ERRORS:');
+                            this.outputChannel.appendLine('COMPILATION ERRORS:');
                             errors.slice(0, 3).forEach((error, index) => {
                                 this.outputChannel.appendLine(`   ${index + 1}. ${error.message}`);
                             });

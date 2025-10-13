@@ -40,14 +40,14 @@ async function findSourceLocationForPC(
   outputChannel: vscode.OutputChannel
 ): Promise<{ file: string; line: number; functionName?: string } | undefined> {
   try {
-    outputChannel.appendLine(`🔍 Looking up PC address: ${pcAddress}`);
+    outputChannel.appendLine(`Looking up PC address: ${pcAddress}`);
 
     // FAST PATH: Try addressMapper first (already loaded in memory)
     if (breakpointsViewProvider) {
       const addressMapper = (breakpointsViewProvider as any).addressMapper;
 
       if (addressMapper && addressMapper.isLoaded()) {
-        outputChannel.appendLine(`⚡ Using fast path: addressMapper lookup`);
+        outputChannel.appendLine(`Using fast path: addressMapper lookup`);
 
         // Debug: Show mapper stats
         const stats = addressMapper.getStats();
@@ -57,11 +57,11 @@ async function findSourceLocationForPC(
 
         if (result) {
           outputChannel.appendLine(
-            `✅ Fast path found: ${result.file}:${result.line}${result.functionName ? ` (${result.functionName})` : ''}`
+            `Fast path found: ${result.file}:${result.line}${result.functionName ? ` (${result.functionName})` : ''}`
           );
           return result;
         } else {
-          outputChannel.appendLine(`⚠️  Fast path: address not found in mapper`);
+          outputChannel.appendLine(`Fast path: address not found in mapper`);
 
           // Debug: Try to see what addresses are near this one
           outputChannel.appendLine(`   Searching for PC: ${pcAddress}`);
@@ -72,14 +72,14 @@ async function findSourceLocationForPC(
           outputChannel.appendLine(`   Sample addresses in map: ${sampleAddresses.join(', ')}`);
         }
       } else {
-        outputChannel.appendLine(`⚠️  Fast path unavailable: addressMapper not loaded, using fallback...`);
+        outputChannel.appendLine(`Fast path unavailable: addressMapper not loaded, using fallback...`);
       }
     } else {
-      outputChannel.appendLine(`⚠️  Fast path unavailable: breakpointsViewProvider not initialized, using fallback...`);
+      outputChannel.appendLine(`Fast path unavailable: breakpointsViewProvider not initialized, using fallback...`);
     }
 
     // FALLBACK: Parse full_disasm.txt file
-    outputChannel.appendLine(`📂 Using fallback: parsing full_disasm.txt`);
+    outputChannel.appendLine(`Using fallback: parsing full_disasm.txt`);
 
     // Convert PC address format: 0x000002A4 -> 2a4
     const cleanAddress = pcAddress.replace("0x", "").toLowerCase();
@@ -87,7 +87,7 @@ async function findSourceLocationForPC(
     // Get workspace folder
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!workspaceFolder) {
-      outputChannel.appendLine("⚠️  No workspace folder found");
+      outputChannel.appendLine("No workspace folder found");
       return undefined;
     }
 
@@ -96,7 +96,7 @@ async function findSourceLocationForPC(
     const fs = require("fs");
 
     if (!fs.existsSync(disasmPath)) {
-      outputChannel.appendLine(`⚠️  Disassembly file not found: ${disasmPath}`);
+      outputChannel.appendLine(`Disassembly file not found: ${disasmPath}`);
       return undefined;
     }
 
@@ -120,7 +120,7 @@ async function findSourceLocationForPC(
         if (parseInt(funcAddress, 16) === parseInt(cleanAddress, 16)) {
           functionName = funcName;
           outputChannel.appendLine(
-            `✅ Found function at address: ${funcName} at ${funcAddress}`
+            `Found function at address: ${funcName} at ${funcAddress}`
           );
           break;
         }
@@ -129,14 +129,14 @@ async function findSourceLocationForPC(
 
     if (!functionName) {
       outputChannel.appendLine(
-        `⚠️  No function found at address ${cleanAddress}`
+        `No function found at address ${cleanAddress}`
       );
       return undefined;
     }
 
     // Step 2: Search backwards for "bl 0x2a4 <functionName>" to find the call site
     outputChannel.appendLine(
-      `🔍 Searching for call to function: ${functionName}`
+      `Searching for call to function: ${functionName}`
     );
 
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -157,7 +157,7 @@ async function findSourceLocationForPC(
         // Check if this calls our function
         if (calledFunc === functionName) {
           outputChannel.appendLine(
-            `✅ Found call to ${functionName} at address ${callAddress}`
+            `Found call to ${functionName} at address ${callAddress}`
           );
 
           // Look backwards for source location comment
@@ -174,7 +174,7 @@ async function findSourceLocationForPC(
               const lineNum = parseInt(sourceMatch[2], 10);
 
               outputChannel.appendLine(
-                `✅ Found source location: ${file}:${lineNum}`
+                `Found source location: ${file}:${lineNum}`
               );
 
               return { file, line: lineNum, functionName };
@@ -188,12 +188,12 @@ async function findSourceLocationForPC(
     }
 
     outputChannel.appendLine(
-      `⚠️  Could not find call site for function ${functionName}`
+      `Could not find call site for function ${functionName}`
     );
     return undefined;
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    outputChannel.appendLine(`❌ Error parsing disassembly: ${errorMsg}`);
+    outputChannel.appendLine(`Error parsing disassembly: ${errorMsg}`);
     return undefined;
   }
 }
@@ -204,7 +204,7 @@ async function showArrowAtPC(
   outputChannel: vscode.OutputChannel
 ): Promise<void> {
   try {
-    outputChannel.appendLine(`🎯 Showing arrow at PC: ${pcAddress}`);
+    outputChannel.appendLine(`Showing arrow at PC: ${pcAddress}`);
 
     // Clear previous arrow decoration
     if (currentPCDecoration) {
@@ -216,7 +216,7 @@ async function showArrowAtPC(
     const location = await findSourceLocationForPC(pcAddress, outputChannel);
 
     if (!location) {
-      outputChannel.appendLine("⚠️  Could not find source location for PC");
+      outputChannel.appendLine("Could not find source location for PC");
       return;
     }
 
@@ -229,7 +229,7 @@ async function showArrowAtPC(
       // Relative path
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       if (!workspaceFolder) {
-        outputChannel.appendLine("⚠️  No workspace folder found");
+        outputChannel.appendLine("No workspace folder found");
         return;
       }
       fileUri = vscode.Uri.joinPath(workspaceFolder.uri, location.file);
@@ -270,11 +270,11 @@ async function showArrowAtPC(
     ]);
 
     outputChannel.appendLine(
-      `✅ Arrow shown at ${location.file}:${location.line}`
+      `Arrow shown at ${location.file}:${location.line}`
     );
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    outputChannel.appendLine(`❌ Error showing arrow at PC: ${errorMsg}`);
+    outputChannel.appendLine(`Error showing arrow at PC: ${errorMsg}`);
   }
 }
 
@@ -513,7 +513,7 @@ export async function activate(context: vscode.ExtensionContext) {
           outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
         }
        } catch (error) {
-        outputChannel.appendLine(`❌ Resume command failed: ${error}`);
+        outputChannel.appendLine(`Resume command failed: ${error}`);
       }
     }
   );
@@ -913,7 +913,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // It's used for internal state management only
 
     // Initialize and Register Console View Provider
-    outputChannel.appendLine("🖥️ Initializing Console View...");
+    outputChannel.appendLine("Initializing Console View...");
     consoleViewProvider = new ConsoleViewProvider(context.extensionUri);
     context.subscriptions.push(
       vscode.window.registerWebviewViewProvider(

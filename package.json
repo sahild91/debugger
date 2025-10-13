@@ -2,7 +2,7 @@
   "name": "port11-debugger",
   "displayName": "Port11 Debugger",
   "description": "MSPM0 Development and Debugging Extension",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "YuduRobotics",
   "icon": "resources/icon.png",
   "engines": {
