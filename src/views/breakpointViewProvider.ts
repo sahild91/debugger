@@ -348,6 +348,14 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
           `✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
         );
         this.refresh();
+
+        // Automatically refresh the Data View (Variables) after breakpoint is disabled
+        if (this.dataViewProvider) {
+          this.outputChannel.appendLine(
+            `🔄 Auto-refreshing Data View after breakpoint disable...`
+          );
+          await this.dataViewProvider.updateAll();
+        }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -390,6 +398,14 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         `✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
       );
       this.refresh();
+
+      // Automatically refresh the Data View (Variables) after device breakpoint is removed
+      if (this.dataViewProvider) {
+        this.outputChannel.appendLine(
+          `🔄 Auto-refreshing Data View after device breakpoint removal...`
+        );
+        await this.dataViewProvider.updateAll();
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.outputChannel.appendLine(
@@ -451,6 +467,14 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
       }
 
       this.refresh();
+
+      // Automatically refresh the Data View (Variables) after breakpoint is removed
+      if (this.dataViewProvider) {
+        this.outputChannel.appendLine(
+          `🔄 Auto-refreshing Data View after breakpoint removal...`
+        );
+        await this.dataViewProvider.updateAll();
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.outputChannel.appendLine(
