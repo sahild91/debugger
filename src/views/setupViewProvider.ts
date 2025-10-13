@@ -243,7 +243,7 @@ export class SetupViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <div class="header">
-                <button class="refresh-btn" onclick="refreshStatus()">🔄 Refresh</button>
+                <button class="refresh-btn" onclick="refreshStatus()">Refresh</button>
             </div>
             <div class="container" id="setup-container">
                 <div style="text-align: center; padding: 30px; color: var(--vscode-descriptionForeground);">
@@ -268,22 +268,22 @@ export class SetupViewProvider implements vscode.WebviewViewProvider {
                     let html = '';
 
                     // SDK
-                    html += renderSetupItem('MSPM0 SDK', setup.sdk.installed, setup.sdk.version, '📦');
+                    html += renderSetupItem('MSPM0 SDK', setup.sdk.installed, setup.sdk.version, '[Package]');
 
                     // Toolchain
-                    html += renderSetupItem('ARM-CGT-CLANG', setup.toolchain.installed, setup.toolchain.version, '🔧');
+                    html += renderSetupItem('ARM-CGT-CLANG', setup.toolchain.installed, setup.toolchain.version, '[Setup]');
 
                     // SysConfig
-                    html += renderSetupItem('TI SysConfig', setup.sysconfig.installed, setup.sysconfig.version, '⚙️');
+                    html += renderSetupItem('TI SysConfig', setup.sysconfig.installed, setup.sysconfig.version, '[Config]');
 
                     // Debugger
-                    html += renderSetupItem('SWD Debugger', setup.debugger.installed, setup.debugger.version, '🐛');
+                    html += renderSetupItem('SWD Debugger', setup.debugger.installed, setup.debugger.version, '[Debug]');
 
                     // Setup button or success message
                     if (allInstalled) {
                         html += \`
                             <div class="all-installed">
-                                <div class="checkmark">✓</div>
+                                <div class="checkmark">[OK]</div>
                                 <div style="font-weight: 500;">All components installed</div>
                                 <div style="font-size: 11px; margin-top: 5px;">Ready for development</div>
                             </div>
@@ -291,7 +291,7 @@ export class SetupViewProvider implements vscode.WebviewViewProvider {
                     } else {
                         html += \`
                             <div class="setup-action">
-                                <button class="setup-btn" onclick="runSetup()">🚀 Run Complete Setup</button>
+                                <button class="setup-btn" onclick="runSetup()">Run Complete Setup</button>
                             </div>
                         \`;
                     }
@@ -302,7 +302,7 @@ export class SetupViewProvider implements vscode.WebviewViewProvider {
                 function renderSetupItem(name, installed, version, icon) {
                     const statusClass = installed ? 'installed' : 'not-installed';
                     const statusText = installed ? 'Installed' : 'Not Installed';
-                    const statusIcon = installed ? '✅' : '❌';
+                    const statusIcon = installed ? 'SUCCESS:' : 'ERROR:';
 
                     return \`
                         <div class="setup-item">

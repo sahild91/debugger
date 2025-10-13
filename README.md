@@ -1,297 +1,143 @@
-# Port11 Debugger - VS Code Extension
+# Port11 Debugger
 
-A comprehensive VS Code extension for MSPM0 development with integrated build, flash, and debug capabilities.
+A VS Code extension for programming and debugging MSPM0 microcontroller boards.
 
-## Features
+## What Does This Do?
 
-- **Zero-Configuration Setup**: Automatic installation of MSPM0 SDK and ARM-CGT-CLANG toolchain
-- **Integrated Build System**: Build projects directly from VS Code with error/warning parsing
-- **Board Auto-Detection**: Automatically detect and connect to MSPM0 development boards
-- **Flash Programming**: Flash firmware to boards with progress tracking
-- **Advanced Debugging**: Debug with memory/register viewing via integrated DAP CLI
-- **Cross-Platform Support**: Works on Windows, macOS, and Linux
+This extension lets you:
+- Build your code
+- Upload (flash) programs to your board
+- Debug your programs
+- View memory and registers
+
+All from within VS Code - no external tools needed.
 
 ## Installation
 
-### From VSIX Package
-1. Download the latest `.vsix` package from releases
-2. In VS Code, go to Extensions view (Ctrl+Shift+X)
-3. Click the "..." menu and select "Install from VSIX..."
-4. Select the downloaded `.vsix` file
+1. Download the `.vsix` file from releases
+2. Open VS Code
+3. Go to Extensions (click the blocks icon on the left, or press Ctrl+Shift+X)
+4. Click the "..." menu at the top → "Install from VSIX..."
+5. Select the downloaded file
 
-### From Marketplace
-*Coming soon - extension will be published to VS Code Marketplace*
+## First Time Setup
 
-## Quick Start
+When you first use the extension:
 
-1. **Install the Extension**: Install Port11 Debugger from VS Code Extensions
-2. **Open Your Project**: Open a folder containing MSPM0 source code
-3. **First-Time Setup**: The extension will prompt you to set up the toolchain
-4. **Start Developing**: Use the Port11 panel for build, flash, and debug operations
+1. The extension will download and install the required tools automatically
+2. This takes a few minutes
+3. Once done, you're ready to go!
 
-## Usage
+You can check setup status in the "Port11: Setup" panel on the left sidebar.
 
-### Setting Up the Toolchain
+## How to Use
 
-On first use, the extension will automatically:
+### 1. Connect Your Board
 
-1. **Clone MSPM0 SDK** from GitHub repository
-2. **Download ARM-CGT-CLANG** toolchain for your platform
-3. **Validate Installation** and show version information
+1. Plug your MSPM0 board into your computer via USB
+2. The extension will automatically detect it
+3. If not detected, click "Boards" panel and click "Detect"
 
-Access the setup via:
-- Command Palette: `Port11: Setup Toolchain`
-- Port11 panel in Explorer sidebar
-- Status bar notifications
+### 2. Open Your Project
 
-### Building Projects
+1. Open a folder containing your `.c` source files
+2. The extension recognizes MSPM0 projects automatically
 
-Build your MSPM0 projects with:
-- Command Palette: `Port11: Build Project`
-- Port11 panel "Build" button
-- Keyboard shortcut: `Ctrl+Shift+B`
+### 3. Build Your Code
 
-Features:
-- Automatic project detection
-- ARM-CGT-CLANG integration
-- Error/warning parsing in Problems panel
-- Build progress tracking
+**Option A:** Click the "Build" button in the status bar at the bottom
+**Option B:** Press `Ctrl+Shift+B`
+**Option C:** Open Command Palette (Ctrl+Shift+P) → type "Port11: Build"
 
-### Flashing Firmware
+The extension compiles your code. Any errors will show in the Problems panel.
 
-Flash your compiled firmware:
-- Command Palette: `Port11: Flash Firmware`
-- Port11 panel "Flash" button
+### 4. Upload to Board (Flash)
 
-Features:
-- Automatic board detection
-- Support for multiple binary formats (.out, .elf, .bin)
-- Flash verification
-- Progress tracking with size information
+After building successfully:
 
-### Debugging
+1. Click the "Flash" button in the status bar
+2. Wait for the upload to complete
+3. Your program is now running on the board!
 
-Start debugging sessions:
-- Command Palette: `Port11: Start Debug Session`
-- Port11 panel "Debug" button
+### 5. Debug Your Program
 
-Features:
-- SWD debugging via integrated Rust DAP CLI
-- Memory and register viewing
-- Target halt/resume control
-- Program counter tracking
-- Real-time register updates
+**Start Debugging:**
+1. Click the "Debug" button in the status bar
+2. Your program will pause at the start
 
-## Configuration
+**While Debugging:**
+- **Halt** - Pause the program
+- **Resume** - Continue running
+- **Step** - Execute one instruction at a time
 
-### Extension Settings
+**View Information:**
+- **Data View** - See register values and variables
+- **Breakpoints** - Manage breakpoints
+- **Call Stack** - See function call history
+- **Console** - View debug messages
 
-Configure the extension through VS Code settings:
+### 6. Setting Breakpoints
 
-```json
-{
-  "port11-debugger.autoUpdate": true,
-  "port11-debugger.serialPort": "/dev/ttyUSB0",
-  "port11-debugger.debugVerbose": false,
-  "port11-debugger.offlineMode": false,
-  "port11-debugger.buildOutputLevel": "normal"
-}
-```
+1. Open a `.c` file
+2. Click to the left of a line number (a red dot appears)
+3. Run debug - program will pause at that line
+4. Use "Resume" to continue to the next breakpoint
 
-### Project Structure
+## Common Issues
 
-The extension works with standard MSPM0 project structures:
+### "Board not detected"
+1. Make sure your board is plugged in via USB
+2. Try a different USB cable or port
+3. Click "Detect" in the Boards panel
 
-```
-your-project/
-├── main.c
-├── ti_msp_dl_config.c
-├── ti_msp_dl_config.h
-├── makefile (optional)
-└── build/ (generated)
-    └── main.out
-```
+### "Build failed"
+1. Check the Problems panel for specific errors
+2. Make sure your `.c` files are in the open folder
+3. Try running setup again from the Setup panel
 
-## Board Support
+### "Flash failed"
+1. Make sure your board is connected
+2. Build your project first (Flash button only works after a successful build)
+3. Check that no other program is using the board
 
-### Supported Boards
+### "Setup taking too long"
+1. The first-time setup downloads large files (this is normal)
+2. Make sure you have a stable internet connection
+3. Check that you have at least 2GB of free disk space
 
-- TI MSPM0 LaunchPad series
-- TI XDS110 debug probes
-- Generic FTDI USB-Serial adapters
-- Silicon Labs CP210x adapters
+### "Debug not working"
+1. Flash your program to the board first
+2. Make sure the board is connected
+3. Try clicking "Halt" first, then look at the Data View
 
-### Board Detection
+## Tips
 
-The extension automatically detects boards by:
-- USB Vendor/Product ID matching
-- Serial port enumeration
-- Board-specific identification
+- **Save your work often** - Build and flash frequently to catch errors early
+- **Use breakpoints** - They help you see what's happening step-by-step
+- **Check the Console** - It shows detailed information about what the extension is doing
+- **Status bar buttons** - The quickest way to Build, Flash, and Debug
 
-### Manual Board Configuration
+## Supported Boards
 
-Override automatic detection:
+This extension works with:
+- Port11 Extension Board
 
-```json
-{
-  "port11-debugger.serialPort": "/dev/ttyUSB0"
-}
-```
+## Supported Systems
 
-## Troubleshooting
+- Windows 10/11
+- macOS (Intel and Apple Silicon)
+- Linux (Ubuntu, Debian, Fedora)
 
-### Setup Issues
+## Need Help?
 
-**SDK Clone Failed**
-- Check internet connectivity
-- Verify GitHub access
-- Try manual setup with offline mode
+- Check the Console panel (View → Output → select "Port11 Debugger")
+- Look at the Setup panel to verify everything is installed
+- Report issues on GitHub
 
-**Toolchain Download Failed**
-- Check firewall/proxy settings
-- Verify disk space availability
-- Try downloading manually from TI website
+## Version
 
-### Build Issues
-
-**Compiler Not Found**
-- Verify toolchain installation in Port11 panel
-- Check PATH environment variable
-- Re-run setup process
-
-**Include Paths Missing**
-- Verify SDK installation
-- Check project structure
-- Review include path configuration
-
-### Flash Issues
-
-**Board Not Detected**
-- Check USB connections
-- Verify board power
-- Install USB drivers if needed
-- Try different USB ports
-
-**Flash Failed**
-- Verify board is in programming mode
-- Check binary file exists and is valid
-- Ensure no other tools are using the port
-
-### Debug Issues
-
-**DAP Connection Failed**
-- Verify SWD connections
-- Check board power and reset state
-- Ensure no other debuggers are connected
-- Try different baud rates
-
-**Register Reads Timeout**
-- Check board responsiveness
-- Verify SWD clock speed
-- Try halting target first
-
-## Development
-
-### Building from Source
-
-Requirements:
-- Node.js 20+
-- npm or yarn
-- VS Code Extension Development Host
-
-Steps:
-```bash
-git clone <repository-url>
-cd port11-debugger
-npm install
-npm run compile
-```
-
-### Testing
-
-Run tests:
-```bash
-npm test
-```
-
-Test in Extension Development Host:
-- Press F5 in VS Code
-- Opens new window with extension loaded
-- Test all functionality
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## Architecture
-
-### Core Components
-
-- **Extension Host**: Main VS Code extension entry point
-- **SDK Manager**: Handles MSPM0 SDK installation and updates
-- **Toolchain Manager**: Manages ARM-CGT-CLANG installation
-- **Serial Manager**: Board detection and communication
-- **Build System**: Compiler integration and error parsing
-- **Flash System**: Firmware programming with progress tracking
-- **Debug System**: DAP CLI integration for SWD debugging
-- **Webview UI**: Main user interface panel
-
-### File Structure
-
-```
-src/
-├── extension.ts              # Main extension entry
-├── managers/
-│   ├── sdkManager.ts        # MSPM0 SDK management
-│   ├── toolchainManager.ts  # ARM-CGT-CLANG management
-│   └── serialManager.ts     # Board/serial management
-├── commands/
-│   ├── buildCommand.ts      # Build integration
-│   ├── flashCommand.ts      # Flash integration
-│   └── debugCommand.ts      # Debug integration
-├── webview/
-│   └── webviewProvider.ts   # UI management
-├── utils/
-│   ├── platformUtils.ts     # Platform detection
-│   └── downloadUtils.ts     # HTTP downloads
-└── types/
-    └── index.ts             # TypeScript definitions
-```
+Current version: 0.1.0
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-- **Issues**: Report bugs and request features on GitHub Issues
-- **Documentation**: Check this README and inline documentation
-- **Community**: Join discussions in GitHub Discussions
-
-## Changelog
-
-### Version 0.1.0 (MVP)
-- Initial release
-- Basic build, flash, and debug functionality
-- Auto-setup for SDK and toolchain
-- Cross-platform support
-- Webview-based UI
-
-## Roadmap
-
-### Near Term
-- License compliance integration
-- Compiled DAP binaries for all platforms
-- Enhanced error handling and recovery
-- Improved board detection
-
-### Long Term
-- Advanced debugging features (breakpoints, watchpoints)
-- Project templates and wizards
-- Integration with TI SysConfig
-- Support for additional MCU families
-- Cloud-based compilation options
+MIT License - Free to use and modify

@@ -111,7 +111,7 @@ export class DownloadUtils {
                             this.outputChannel.appendLine(`ERROR: ${errorMsg}`);
                             reject(new Error(errorMsg));
                         } else {
-                            this.outputChannel.appendLine(`✅ Download complete and verified: ${this.formatBytes(actualSize)} total`);
+                            this.outputChannel.appendLine(`Download complete and verified: ${this.formatBytes(actualSize)} total`);
                             progressCallback?.(100);
                             resolve();
                         }

@@ -48,9 +48,9 @@ export class CliManager {
         this.SWD_DEBUGGER_LAST_DETECTED_KEY,
         new Date().toISOString()
       );
-      console.log(`💾 Saved SWD Debugger path: ${debuggerPath}`);
+      console.log(`Saved SWD Debugger path: ${debuggerPath}`);
     } catch (error) {
-      console.error(`⚠️  Failed to save SWD Debugger path: ${error}`);
+      console.error(`Failed to save SWD Debugger path: ${error}`);
     }
   }
 
@@ -63,9 +63,9 @@ export class CliManager {
         this.SWD_DEBUGGER_VERSION_KEY,
         version
       );
-      console.log(`💾 Saved SWD Debugger version: ${version}`);
+      console.log(`Saved SWD Debugger version: ${version}`);
     } catch (error) {
-      console.error(`⚠️  Failed to save SWD Debugger version: ${error}`);
+      console.error(`Failed to save SWD Debugger version: ${error}`);
     }
   }
 
@@ -84,7 +84,7 @@ export class CliManager {
       this.SWD_DEBUGGER_PATH_KEY
     );
     if (savedPath && fs.existsSync(savedPath)) {
-      console.log(`📂 Loaded saved SWD Debugger path: ${savedPath}`);
+      console.log(`Loaded saved SWD Debugger path: ${savedPath}`);
       return savedPath;
     }
     return undefined;
@@ -171,7 +171,7 @@ export class CliManager {
     description?: string;
   }> {
     try {
-      console.log("🔍 Checking for SWD Debugger updates...");
+      console.log("Checking for SWD Debugger updates...");
       
       const changelog = await this.fetchChangelog();
       const latestVersion = changelog.current_version;
@@ -193,7 +193,7 @@ export class CliManager {
       
       if (comparison > 0) {
         // New version available
-        console.log(`✨ Update available: ${storedVersion} → ${latestVersion}`);
+        console.log(`Update available: ${storedVersion} → ${latestVersion}`);
         return {
           updateAvailable: true,
           latestVersion,
@@ -201,10 +201,10 @@ export class CliManager {
         };
       }
 
-      console.log("✅ SWD Debugger is up to date");
+      console.log("SWD Debugger is up to date");
       return { updateAvailable: false };
     } catch (error) {
-      console.error(`⚠️  Failed to check for updates: ${error}`);
+      console.error(`Failed to check for updates: ${error}`);
       // On error, don't block initialization
       return { updateAvailable: false };
     }
@@ -218,9 +218,9 @@ export class CliManager {
     
     if (fs.existsSync(installPath)) {
       try {
-        console.log(`🗑️  Deleting old debugger: ${installPath}`);
+        console.log(`Deleting old debugger: ${installPath}`);
         fs.unlinkSync(installPath);
-        console.log("✅ Old debugger deleted");
+        console.log("Old debugger deleted");
       } catch (error) {
         throw new Error(`Failed to delete old debugger: ${error}`);
       }
@@ -259,7 +259,7 @@ export class CliManager {
       await this.saveSwdDebuggerVersion(version);
       await this.saveSwdDebuggerPath(installPath);
       
-      console.log(`✅ SWD Debugger v${version} installed successfully`);
+      console.log(`SWD Debugger v${version} installed successfully`);
     } catch (error: any) {
       // Clean up on failure
       if (fs.existsSync(installPath)) {
@@ -275,7 +275,7 @@ export class CliManager {
 
   async initialize(): Promise<void> {
     try {
-      console.log("🚀 Initializing SWD Debugger CLI Manager...");
+      console.log("Initializing SWD Debugger CLI Manager...");
 
       // Check for updates
       const updateCheck = await this.checkForUpdate();
@@ -311,7 +311,7 @@ export class CliManager {
 
         // Show update notification
         vscode.window.showInformationMessage(
-          `✨ SWD Debugger updated to v${version}: ${description}`
+          `SWD Debugger updated to v${version}: ${description}`
         );
       } else {
         // No update needed, but verify installation exists
@@ -348,7 +348,7 @@ export class CliManager {
             `swd-debugger v${version} installed successfully!`
           );
         } else {
-          console.log("✅ SWD Debugger is already installed and up to date");
+          console.log("SWD Debugger is already installed and up to date");
         }
       }
 

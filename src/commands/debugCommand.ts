@@ -113,8 +113,8 @@ export class DebugCommand {
                 return session;
             } else {
                 // Start debug session without board (simulation/offline mode)
-                this.outputChannel.appendLine('⚠️  No board detected - starting debug in offline mode');
-                this.outputChannel.appendLine('💡 Debug features will be limited without hardware connection');
+                this.outputChannel.appendLine('No board detected - starting debug in offline mode');
+                this.outputChannel.appendLine('Debug features will be limited without hardware connection');
 
                 // Create a mock board info for offline mode
                 const mockBoard: BoardInfo = {
@@ -135,7 +135,7 @@ export class DebugCommand {
 
                 this.currentSession = session;
                 this.outputChannel.appendLine(`Debug session started in offline mode: ${session.id}`);
-                this.outputChannel.appendLine('✅ Debug views are available for symbol inspection');
+                this.outputChannel.appendLine('Debug views are available for symbol inspection');
 
                 return session;
             }
@@ -188,11 +188,11 @@ export class DebugCommand {
 
         // Check if in offline mode
         if (this.currentSession.board.path === 'offline') {
-            this.outputChannel.appendLine('⚠️  Halt command not available in offline mode');
+            this.outputChannel.appendLine('Halt command not available in offline mode');
             return;
         }
 
-        this.outputChannel.appendLine('⏸️  Halting target...');
+        this.outputChannel.appendLine('Halting target...');
 
         try {
             // CRITICAL: Stop the monitoring process first before sending halt
@@ -203,17 +203,17 @@ export class DebugCommand {
 
             // Now send the halt command
             await this.executeDAPCommand(['halt']);
-            this.outputChannel.appendLine('✅ Target halted successfully');
+            this.outputChannel.appendLine('Target halted successfully');
 
             // AUTO-READ registers after halt
-            this.outputChannel.appendLine('📊 Automatically reading registers...');
+            this.outputChannel.appendLine('Automatically reading registers...');
             await this.readAllRegisters();
 
             // Emit event so extension.ts can update variables and UI
             this.eventEmitter.emit('haltDetected');
 
         } catch (error) {
-            this.outputChannel.appendLine(`❌ Failed to halt: ${error}`);
+            this.outputChannel.appendLine(`Failed to halt: ${error}`);
             throw error;
         }
     }
@@ -295,17 +295,17 @@ export class DebugCommand {
     }
 
     private async handleBreakpointHit(): Promise<void> {
-        this.outputChannel.appendLine('🎯 Breakpoint hit detected!');
+        this.outputChannel.appendLine('Breakpoint hit detected!');
 
         // Auto-read all registers when breakpoint is reached
         try {
-            this.outputChannel.appendLine('📊 Automatically reading registers...');
+            this.outputChannel.appendLine('Automatically reading registers...');
             await this.readAllRegisters();
 
             // Emit event so extension.ts can update UI and highlight line
             this.eventEmitter.emit('breakpointHit');
         } catch (error) {
-            this.outputChannel.appendLine(`⚠️  Failed to auto-read registers: ${error}`);
+            this.outputChannel.appendLine(`Failed to auto-read registers: ${error}`);
         }
     }
 
@@ -356,18 +356,18 @@ export class DebugCommand {
 
         // Check if in offline mode
         if (this.currentSession.board.path === 'offline') {
-            this.outputChannel.appendLine('⚠️  Resume command not available in offline mode');
+            this.outputChannel.appendLine('Resume command not available in offline mode');
             return;
         }
 
-        this.outputChannel.appendLine('▶️  Resuming target...');
+        this.outputChannel.appendLine('Resuming target...');
 
         try {
             // Start the resume command which includes built-in monitoring
             await this.startResumeWithMonitoring();
-            this.outputChannel.appendLine('✅ Target resumed successfully - monitoring for breakpoints...');
+            this.outputChannel.appendLine('Target resumed successfully - monitoring for breakpoints...');
         } catch (error) {
-            this.outputChannel.appendLine(`❌ Failed to resume: ${error}`);
+            this.outputChannel.appendLine(`Failed to resume: ${error}`);
             throw error;
         }
     }
@@ -651,26 +651,26 @@ export class DebugCommand {
 
         // Check if in offline mode
         if (this.currentSession.board.path === 'offline') {
-            this.outputChannel.appendLine('⚠️  Step command not available in offline mode');
+            this.outputChannel.appendLine('Step command not available in offline mode');
             return;
         }
 
-        this.outputChannel.appendLine('👟 Stepping one instruction...');
+        this.outputChannel.appendLine('Stepping one instruction...');
 
         try {
             // Execute the step command
             await this.executeDAPCommand(['step']);
-            this.outputChannel.appendLine('✅ Step completed');
+            this.outputChannel.appendLine('Step completed');
 
             // AUTO-READ registers after step
-            this.outputChannel.appendLine('📊 Automatically reading registers...');
+            this.outputChannel.appendLine('Automatically reading registers...');
             await this.readAllRegisters();
 
             // Emit event to update UI and highlight the new line
             this.eventEmitter.emit('stepCompleted');
 
         } catch (error) {
-            this.outputChannel.appendLine(`❌ Failed to step: ${error}`);
+            this.outputChannel.appendLine(`Failed to step: ${error}`);
             throw error;
         }
     }
@@ -685,8 +685,8 @@ export class DebugCommand {
             throw new Error('No active debug session');
         }
 
-        this.outputChannel.appendLine('⚠️  Step Out not supported by DAP CLI yet');
-        this.outputChannel.appendLine('💡 This requires call stack unwinding which needs GDB integration');
+        this.outputChannel.appendLine('Step Out not supported by DAP CLI yet');
+        this.outputChannel.appendLine('This requires call stack unwinding which needs GDB integration');
         throw new Error('Step Out command requires GDB/LLDB integration');
     }
 
@@ -704,8 +704,8 @@ export class DebugCommand {
         }
 
         try {
-            this.outputChannel.appendLine('📚 Reading call stack...');
-            this.outputChannel.appendLine('⚠️  Note: Call stack feature requires GDB/LLDB integration (not yet implemented)');
+            this.outputChannel.appendLine('Reading call stack...');
+            this.outputChannel.appendLine('Note: Call stack feature requires GDB/LLDB integration (not yet implemented)');
 
             // TODO: Call stack requires:
             // 1. Read SP (Stack Pointer) register
@@ -718,7 +718,7 @@ export class DebugCommand {
             return [];
 
         } catch (error) {
-            this.outputChannel.appendLine(`❌ Failed to read call stack: ${error}`);
+            this.outputChannel.appendLine(`Failed to read call stack: ${error}`);
             return [];
         }
     }
@@ -793,7 +793,7 @@ export class DebugCommand {
         }
 
         try {
-            this.outputChannel.appendLine('📋 Reading variables from debug symbols...');
+            this.outputChannel.appendLine('Reading variables from debug symbols...');
 
             let localVariables: VariableInfo[] = [];
             let globalVariables: VariableInfo[] = [];
@@ -813,7 +813,7 @@ export class DebugCommand {
 
                     this.outputChannel.appendLine(`Parsed ${parsedVars.length} variables from disassembly`);
                 } else {
-                    this.outputChannel.appendLine(`💡 Tip: Generate disassembly with: tiarmobjdump -lS build/main.out > full_disasm.txt`);
+                    this.outputChannel.appendLine(`Tip: Generate disassembly with: tiarmobjdump -lS build/main.out > full_disasm.txt`);
                 }
 
                 // Try to find and parse ELF file directly
@@ -826,13 +826,13 @@ export class DebugCommand {
                     const elfVars = SymbolParser.parseElfSymbols(elfPath);
 
                     if (elfVars.length > 0) {
-                        this.outputChannel.appendLine(`✅ Found ${elfVars.length} variables in ELF symbol table`);
+                        this.outputChannel.appendLine(`Found ${elfVars.length} variables in ELF symbol table`);
 
                         // Separate by scope
                         localVariables = elfVars.filter(v => v.scope === 'local');
                         globalVariables = elfVars.filter(v => v.scope === 'global' || v.scope === 'static');
                     } else {
-                        this.outputChannel.appendLine('⚠️  No variables found in ELF symbol table');
+                        this.outputChannel.appendLine('No variables found in ELF symbol table');
                     }
                 }
             }
@@ -874,7 +874,7 @@ export class DebugCommand {
             // }
 
             const totalCount = localVariables.length + globalVariables.length;
-            this.outputChannel.appendLine(`✅ Variables: ${localVariables.length} local, ${globalVariables.length} global`);
+            this.outputChannel.appendLine(`Variables: ${localVariables.length} local, ${globalVariables.length} global`);
 
             return {
                 localVariables,
@@ -884,7 +884,7 @@ export class DebugCommand {
             };
 
         } catch (error) {
-            this.outputChannel.appendLine(`❌ Failed to read variables: ${error}`);
+            this.outputChannel.appendLine(`Failed to read variables: ${error}`);
             return {
                 localVariables: [],
                 globalVariables: [],
