@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { VariableInfo, VariablesData } from "../types/variable";
 import { AddressMapper } from "../utils/addressMapper";
 import { spawn } from "child_process";
+import { DataViewProvider } from "./dataViewProvider";
 
 /**
  * BreakpointsViewProvider manages the breakpoints webview panel
@@ -22,15 +23,18 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
   private swdDebuggerPath: string;
   private deviceBreakpoints: Array<{ slot: number; address: string }> = [];
   private breakpointStates: Map<string, boolean> = new Map();
+  private dataViewProvider?: DataViewProvider;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     outputChannel: vscode.OutputChannel,
-    swdDebuggerPath: string
+    swdDebuggerPath: string,
+    dataViewProvider?: DataViewProvider
   ) {
     this.outputChannel = outputChannel;
     this.addressMapper = new AddressMapper();
     this.swdDebuggerPath = swdDebuggerPath;
+    this.dataViewProvider = dataViewProvider;
 
     // Listen for breakpoint changes and refresh
     vscode.debug.onDidChangeBreakpoints((event) => {
@@ -317,6 +321,14 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
           `✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
         );
         this.refresh();
+
+        // Automatically refresh the Data View (Variables) after breakpoint is enabled
+        if (this.dataViewProvider) {
+          this.outputChannel.appendLine(
+            `🔄 Auto-refreshing Data View after breakpoint enable...`
+          );
+          await this.dataViewProvider.updateAll();
+        }
       } else {
         // Disable breakpoint: swd-debugger bp --clear ${address}
         this.outputChannel.appendLine(

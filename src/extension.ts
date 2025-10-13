@@ -603,24 +603,10 @@ export async function activate(context: vscode.ExtensionContext) {
     );
     outputChannel.appendLine("  ✅ Call Stack View initialized successfully");
 
-    // Initialize and Register Breakpoints View Provider
-    outputChannel.appendLine("🔴 Initializing Breakpoints View...");
-    const swdDebuggerPath = cliManager.getExecutablePath();
-    breakpointsViewProvider = new BreakpointsViewProvider(
-      context.extensionUri,
-      outputChannel,
-      swdDebuggerPath
-    );
-    context.subscriptions.push(
-      vscode.window.registerWebviewViewProvider(
-        "port11.variablesView",
-        breakpointsViewProvider
-      )
-    );
-    outputChannel.appendLine("  ✅ Breakpoints View initialized successfully");
-
-    // Initialize and Register Data View Provider
+    // Initialize and Register Data View Provider FIRST
+    // (so we can pass it to BreakpointsViewProvider)
     outputChannel.appendLine("📊 Initializing Data View...");
+    const swdDebuggerPath = cliManager.getExecutablePath();
     dataViewProvider = new DataViewProvider(
       context.extensionUri,
       outputChannel,
@@ -633,6 +619,23 @@ export async function activate(context: vscode.ExtensionContext) {
       )
     );
     outputChannel.appendLine("  ✅ Data View initialized successfully");
+
+    // Initialize and Register Breakpoints View Provider
+    // (pass dataViewProvider reference for auto-refresh)
+    outputChannel.appendLine("🔴 Initializing Breakpoints View...");
+    breakpointsViewProvider = new BreakpointsViewProvider(
+      context.extensionUri,
+      outputChannel,
+      swdDebuggerPath,
+      dataViewProvider
+    );
+    context.subscriptions.push(
+      vscode.window.registerWebviewViewProvider(
+        "port11.variablesView",
+        breakpointsViewProvider
+      )
+    );
+    outputChannel.appendLine("  ✅ Breakpoints View initialized successfully");
 
     // Initialize and Register Boards View Provider
     outputChannel.appendLine("📱 Initializing Boards View...");
