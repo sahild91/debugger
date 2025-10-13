@@ -50,6 +50,11 @@ function executeSwdDebuggerCommand(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const executablePath = cliManager.getExecutablePath();
+    
+    // Properly quote executable path if it contains spaces
+    const quotedExecutablePath = executablePath.includes(" ") 
+      ? `"${executablePath}"` 
+      : executablePath;
 
     // Check if a port is selected and add --port parameter
     const selectedPort = connectionManager.getSelectedPort();
@@ -73,9 +78,9 @@ function executeSwdDebuggerCommand(
     let command: string;
 
     if (selectedPort) {
-      command = `${executablePath} --port ${selectedPort} ${args}`;
+      command = `${quotedExecutablePath} --port ${selectedPort} ${args}`;
     } else {
-      command = `${executablePath} ${args}`;
+      command = `${quotedExecutablePath} ${args}`;
     }
 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
