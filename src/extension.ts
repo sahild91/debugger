@@ -31,6 +31,7 @@ let cliManager: CliManager;
 let connectionManager: ConnectionManager;
 let statusBarItem: vscode.StatusBarItem;
 let connectStatusBar: vscode.StatusBarItem;
+let debugCommand: DebugCommand;
 
 function getAbsolutePath(relativePath: string): string {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
@@ -223,6 +224,36 @@ export async function activate(context: vscode.ExtensionContext) {
           "resume",
           "Target resumed successfully!"
         );
+
+        // After resume completes (target has halted), refresh variables
+        outputChannel.appendLine("⏸️ Target halted after resume - updating variables...");
+
+        // Update registry data in DataViewProvider
+        try {
+          await dataViewProvider?.updateRegistryData();
+        } catch (error) {
+          outputChannel.appendLine(`Failed to update registry data: ${error}`);
+        }
+
+        // Update variables in DataViewProvider
+        try {
+          const variables = await debugCommand.getVariables();
+          dataViewProvider?.updateVariables(
+            variables.localVariables,
+            variables.globalVariables,
+            true
+          );
+        } catch (error) {
+          outputChannel.appendLine(`Failed to update variables: ${error}`);
+        }
+
+        // Update call stack
+        try {
+          const callStack = await debugCommand.getCallStack();
+          callStackViewProvider?.updateCallStack(callStack, true);
+        } catch (error) {
+          outputChannel.appendLine(`Failed to update call stack: ${error}`);
+        }
       } catch (error) {
         outputChannel.appendLine(`❌ Resume command failed: ${error}`);
       }
@@ -458,7 +489,7 @@ export async function activate(context: vscode.ExtensionContext) {
       outputChannel,
       connectionManager
     );
-    const debugCommand = new DebugCommand(
+    debugCommand = new DebugCommand(
       context,
       outputChannel,
       connectionManager,
@@ -550,6 +581,51 @@ export async function activate(context: vscode.ExtensionContext) {
         );
       } catch (error) {
         outputChannel.appendLine(`Failed to highlight current line: ${error}`);
+      }
+    });
+
+    // Listen for halt events to update UI automatically (after resume halts)
+    debugCommand.onHaltDetected(async () => {
+      outputChannel.appendLine("⏸️ Halt detected - updating UI...");
+
+      // Update registry data in DataViewProvider
+      try {
+        await dataViewProvider?.updateRegistryData();
+      } catch (error) {
+        outputChannel.appendLine(`Failed to update registry data: ${error}`);
+      }
+
+      // Update variables in DataViewProvider
+      try {
+        const variables = await debugCommand.getVariables();
+        dataViewProvider?.updateVariables(
+          variables.localVariables,
+          variables.globalVariables,
+          true
+        );
+      } catch (error) {
+        outputChannel.appendLine(`Failed to update variables: ${error}`);
+      }
+
+      // Update call stack
+      try {
+        const callStack = await debugCommand.getCallStack();
+        callStackViewProvider?.updateCallStack(callStack, true);
+      } catch (error) {
+        outputChannel.appendLine(`Failed to update call stack: ${error}`);
+      }
+
+      // HIGHLIGHT THE LINE IN EDITOR WHERE EXECUTION WAS HALTED
+      try {
+        await highlightBreakpointLine(
+          debugCommand,
+          breakpointsViewProvider,
+          outputChannel
+        );
+      } catch (error) {
+        outputChannel.appendLine(
+          `Failed to highlight current line: ${error}`
+        );
       }
     });
 

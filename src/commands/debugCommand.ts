@@ -209,6 +209,9 @@ export class DebugCommand {
             this.outputChannel.appendLine('📊 Automatically reading registers...');
             await this.readAllRegisters();
 
+            // Emit event so extension.ts can update variables and UI
+            this.eventEmitter.emit('haltDetected');
+
         } catch (error) {
             this.outputChannel.appendLine(`❌ Failed to halt: ${error}`);
             throw error;
@@ -304,6 +307,10 @@ export class DebugCommand {
         } catch (error) {
             this.outputChannel.appendLine(`⚠️  Failed to auto-read registers: ${error}`);
         }
+    }
+
+    public onHaltDetected(callback: () => void): void {
+        this.eventEmitter.on('haltDetected', callback);
     }
 
     private async stopMonitoring(): Promise<void> {
