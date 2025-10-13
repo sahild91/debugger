@@ -574,18 +574,26 @@ export async function activate(context: vscode.ExtensionContext) {
                     await breakpointsViewProvider.loadDisassembly(workspaceFolder);
                 }
 
-                // Set breakpoint view as active (ADDED)
+                // Set breakpoint view as active
                 try {
                     breakpointsViewProvider?.setDebugActive(true);
                 } catch (error) {
                     outputChannel.appendLine(`Failed to activate breakpoint view: ${error}`);
                 }
 
-                // Update device breakpoints from hardware
+                // Update device breakpoints from hardware (optional in offline mode)
+                // CHANGED: Don't let this failure stop the breakpoint view from working
                 try {
-                    await breakpointsViewProvider?.updateDeviceBreakpoints();
+                    // Only try to fetch device breakpoints if we have a connected serial port
+                    const selectedPort = connectionManager.getSelectedPort();
+                    if (selectedPort && selectedPort !== 'offline') {
+                        await breakpointsViewProvider?.updateDeviceBreakpoints();
+                    } else {
+                        outputChannel.appendLine('⚠️  Skipping device breakpoints in offline mode');
+                    }
                 } catch (error) {
-                    outputChannel.appendLine(`Failed to get device breakpoints: ${error}`);
+                    outputChannel.appendLine(`⚠️  Failed to get device breakpoints (continuing anyway): ${error}`);
+                    // Don't throw - continue with debug session
                 }
 
                 // Update call stack view with initial data
@@ -607,6 +615,14 @@ export async function activate(context: vscode.ExtensionContext) {
                     );
                 } catch (error) {
                     outputChannel.appendLine(`Failed to get initial data: ${error}`);
+                }
+
+                // IMPORTANT: Force a refresh of breakpoint view after everything is set up
+                try {
+                    breakpointsViewProvider?.refresh();
+                    outputChannel.appendLine('✅ Breakpoint view refresh triggered');
+                } catch (error) {
+                    outputChannel.appendLine(`Failed to refresh breakpoint view: ${error}`);
                 }
             }),
             vscode.commands.registerCommand('port11-debugger.debug.stop', async () => {

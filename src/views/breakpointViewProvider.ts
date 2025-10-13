@@ -20,7 +20,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
   private isDebugActive: boolean = false;
   private addressMapper: AddressMapper;
   private swdDebuggerPath: string;
-  private deviceBreakpoints: Array<{slot: number, address: string}> = [];
+  private deviceBreakpoints: Array<{ slot: number, address: string }> = [];
   private breakpointStates: Map<string, boolean> = new Map();
 
   constructor(
@@ -140,8 +140,8 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
   /**
    * Parse breakpoint list output from swd-debugger bp --list
    */
-  private parseBreakpointList(output: string): Array<{slot: number, address: string}> {
-    const breakpoints: Array<{slot: number, address: string}> = [];
+  private parseBreakpointList(output: string): Array<{ slot: number, address: string }> {
+    const breakpoints: Array<{ slot: number, address: string }> = [];
     const lines = output.split("\n");
 
     for (const line of lines) {
@@ -756,89 +756,83 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
                 });
 
                 function renderBreakpoints(data, isDebugActive, breakpointAddresses, deviceBreakpoints, breakpointStates) {
-                    const container = document.getElementById('breakpoints-container');
+    const container = document.getElementById('breakpoints-container');
+    let html = '';
 
-                    let html = '';
+    // CHANGE THIS SECTION:
+    // OLD: if (!isDebugActive || !data || !data.isValid) {
+    // NEW: Only check if debug is active and if we have breakpoints
 
-                    // Breakpoint Addresses Section (always show if there are breakpoints)
-                    if (breakpointAddresses && breakpointAddresses.length > 0) {
+    // Show breakpoints if we have any (regardless of debug state)
+    if (breakpointAddresses && breakpointAddresses.length > 0) {
+        breakpointAddresses.forEach(bp => {
+            const label = bp.functionName ? bp.functionName : `${ bp.file }:${ bp.line } `;
+            const address = bp.address || 'N/A';
+            const hasAddress = address !== 'N/A';
+            const disabledClass = !hasAddress ? 'disabled' : '';
 
-                        breakpointAddresses.forEach(bp => {
-                            const label = bp.functionName ? bp.functionName : \`\${bp.file}:\${bp.line}\`;
-                            const address = bp.address || 'N/A';
-                            const hasAddress = address !== 'N/A';
-                            const disabledClass = !hasAddress ? 'disabled' : '';
+            // Restore checkbox state from breakpointStates
+            const isChecked = breakpointStates && breakpointStates[address] === true;
+            const checkedAttr = isChecked ? 'checked' : '';
 
-                            // Restore checkbox state from breakpointStates
-                            const isChecked = breakpointStates && breakpointStates[address] === true;
-                            const checkedAttr = isChecked ? 'checked' : '';
+            html += `
+      < div class="breakpoint-item ${disabledClass}" >
+        <input type="checkbox"
+    class="breakpoint-checkbox"
+    onchange = "toggleBreakpoint('${address}', this.checked)"
+                           ${ !hasAddress ? 'disabled' : '' }
+                           ${ checkedAttr }>
 
-                            html += \`
-                                <div class="breakpoint-item \${disabledClass}">
-                                    <input type="checkbox"
-                                           class="breakpoint-checkbox"
-                                           onchange="toggleBreakpoint('\${address}', this.checked)"
-                                           \${!hasAddress ? 'disabled' : ''}
-                                           \${checkedAttr}>
+      <span class="breakpoint-label" > ${ label } </span>
+        < span class="variable-address" > ${ address } </span>
+          < button class="breakpoint-close-btn"
+    onclick = "removeBreakpoint('${address}', '${bp.file}', ${bp.line}); event.stopPropagation();"
+    title = "Remove breakpoint" >✕</button>
+      </div>
+        `;
+        });
+    }
 
-                                    <span class="breakpoint-label">\${label}</span>
-                                    <span class="variable-address">\${address}</span>
-                                    <button class="breakpoint-close-btn"
-                                            onclick="removeBreakpoint('\${address}', '\${bp.file}', \${bp.line}); event.stopPropagation();"
-                                            title="Remove breakpoint">✕</button>
-                                </div>
-                            \`;
-                        });
-                    }
+    // Show device breakpoints if any
+    if (deviceBreakpoints && deviceBreakpoints.length > 0) {
+        html += `
+      < div class="section-header device-breakpoints-section" >
+        <span>Device Breakpoints </span>
+          < span class="section-count" > ${ this.deviceBreakpoints?.length } </span>
+            </div>
+              `;
 
-                    // Device Breakpoints Section (always show if there are device breakpoints)
-                    if (deviceBreakpoints && deviceBreakpoints.length > 0) {
-                        html += \`
-                            <div class="section-header device-breakpoints-section">
-                               
-                                <span>Device Breakpoints</span>
-                                <span class="section-count">\${deviceBreakpoints.length}</span>
-                            </div>
-                        \`;
+        deviceBreakpoints.forEach(bp => {
+            html += `
+            < div class="breakpoint-item" >
+              <span class="breakpoint-label" > Slot ${ bp.slot } </span>
+                < span class="variable-address" > ${ bp.address } </span>
+                  < button class="breakpoint-close-btn"
+    onclick = "removeDeviceBreakpoint(${bp.slot}); event.stopPropagation();"
+    title = "Remove device breakpoint" >✕</button>
+      </div>
+        `;
+        });
+    }
 
-                        deviceBreakpoints.forEach(bp => {
-                            html += \`
-                                <div class="breakpoint-item">
-                                    <span class="breakpoint-label">Slot \${bp.slot}</span>
-                                    <span class="variable-address">\${bp.address}</span>
-                                    <button class="breakpoint-close-btn"
-                                            onclick="removeDeviceBreakpoint(\${bp.slot}); event.stopPropagation();"
-                                            title="Remove device breakpoint">✕</button>
-                                </div>
-                            \`;
-                        });
-                    }
+    // Show empty state ONLY if no breakpoints at all
+    if ((!breakpointAddresses || breakpointAddresses.length === 0) && 
+        (!deviceBreakpoints || deviceBreakpoints.length === 0)) {
+        html = `
+      < div class="empty-state" >
+        <div class="empty-icon" >📋</div>
+          < div class="empty-title" > No Breakpoints Set </div>
+            < div class="empty-description" > ${
+              isDebugActive ?
+                'Click in the gutter to set breakpoints' :
+                'Start debugging and set breakpoints'
+    } </div>
+      </div>
+        `;
+    }
 
-                    if (!isDebugActive || !data || !data.isValid) {
-                        if (breakpointAddresses && breakpointAddresses.length > 0) {
-                            // If we have breakpoints but no debug session, show just breakpoints
-                            container.innerHTML = html + \`
-                                <div class="empty-state">
-                                    <div class="empty-icon">📋</div>
-                                    <div class="empty-title">No Debug Session</div>
-                                    <div class="empty-description">Start debugging to see breakpoints</div>
-                                </div>
-                            \`;
-                        } else {
-                            container.innerHTML = \`
-                                <div class="empty-state">
-                                    <div class="empty-icon">📋</div>
-                                    <div class="empty-title">No Debug Session</div>
-                                    <div class="empty-description">Start debugging to see breakpoints</div>
-                                </div>
-                            \`;
-                        }
-                        return;
-                    }
-
-
-                    container.innerHTML = html;
-                }
+    container.innerHTML = html;
+}
 
                 function renderBreakpointItem(breakpoint) {
                     const scopeClass = 'scope-' + breakpoint.scope;

@@ -142,7 +142,9 @@ export class AddressMapper {
      * Get memory address for a source file line
      */
     public getAddressForLine(file: string, line: number): string | null {
-        const key = this.makeKey(file, line);
+        // Normalize the file path to use forward slashes (works on all platforms)
+        const normalizedFile = file.replace(/\\/g, '/');
+        const key = this.makeKey(normalizedFile, line);
         return this.lineToAddressMap.get(key) || null;
     }
 
@@ -167,7 +169,11 @@ export class AddressMapper {
                 const filePath = location.uri.fsPath;
                 const lineNumber = location.range.start.line + 1; // Convert to 1-based
 
-                const address = this.getAddressForLine(filePath, lineNumber);
+                // FIX: Normalize the file path before looking up address
+                // This ensures Windows paths (C:\path\file.c) match the normalized keys
+                const normalizedPath = filePath.replace(/\\/g, '/');
+
+                const address = this.getAddressForLine(normalizedPath, lineNumber);
 
                 if (address) {
                     result.push({
