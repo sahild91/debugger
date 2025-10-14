@@ -1296,11 +1296,48 @@ export async function activate(context: vscode.ExtensionContext) {
         async () => {
           try {
             await debugCommand.stepOver();
-            // update here
+
+            // After step completes, update variables and UI
+            outputChannel.appendLine("⏸️ Target halted after step - updating variables...");
+
+            // Update registry data in DataViewProvider
+            try {
+              await dataViewProvider?.updateRegistryData();
+            } catch (error) {
+              outputChannel.appendLine(`Failed to update registry data: ${error}`);
+            }
+
+            // Update variables in DataViewProvider
+            try {
+              const variables = await debugCommand.getVariables();
+              dataViewProvider?.updateVariables(
+                variables.localVariables,
+                variables.globalVariables,
+                true
+              );
+            } catch (error) {
+              outputChannel.appendLine(`Failed to update variables: ${error}`);
+            }
+
+            // Update call stack
+            try {
+              const callStack = await debugCommand.getCallStack();
+              callStackViewProvider?.updateCallStack(callStack, true);
+            } catch (error) {
+              outputChannel.appendLine(`Failed to update call stack: ${error}`);
+            }
+
+            // Show arrow at current PC location
+            try {
+              const pc = await debugCommand.readPC();
+              await showArrowAtPC(pc, outputChannel);
+            } catch (error) {
+              outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
+            }
           } catch (error) {
-            outputChannel.appendLine(`Step Out failed: ${error}`);
+            outputChannel.appendLine(`Step Over failed: ${error}`);
             if (error instanceof Error && !error.message.includes("GDB")) {
-              vscode.window.showErrorMessage(`Step Out failed: ${error}`);
+              vscode.window.showErrorMessage(`Step Over failed: ${error}`);
             }
           }
         }
