@@ -42,7 +42,7 @@ export class SysConfigManager {
     constructor(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
         this.context = context;
         this.outputChannel = outputChannel;
-        this.sysConfigPath = path.join(context.globalStorageUri.fsPath, this.SYSCONFIG_FOLDER_NAME);
+        this.sysConfigPath = path.join(DownloadUtils.getBaseInstallPath(), this.SYSCONFIG_FOLDER_NAME);
         this.downloadUtils = new DownloadUtils(outputChannel);
     }
 
@@ -96,6 +96,9 @@ export class SysConfigManager {
             const searchPaths = [
                 // Our preferred location (global storage)
                 this.sysConfigPath,
+                // YuduRobotics plugin locations
+                'C:\\YuduRobotics\\plugins\\sysconfig-1.24.2',
+                path.join(os.homedir(), 'YuduRobotics', 'plugins', 'sysconfig-1.24.2'),
                 // Common TI installation locations
                 'C:\\ti\\sysconfig_1.24.2',
                 'C:\\Program Files\\Texas Instruments\\sysconfig_1.24.2',
@@ -377,8 +380,10 @@ export class SysConfigManager {
             });
 
             // Ensure global storage directory exists
-            if (!fs.existsSync(this.context.globalStorageUri.fsPath)) {
-                fs.mkdirSync(this.context.globalStorageUri.fsPath, { recursive: true });
+            const baseInstallPath = DownloadUtils.getBaseInstallPath();
+            if (!fs.existsSync(baseInstallPath)) {
+                fs.mkdirSync(baseInstallPath, { recursive: true });
+                this.outputChannel.appendLine(`Created base install directory: ${baseInstallPath}`);
             }
 
             this.outputChannel.appendLine(`Downloading TI SysConfig for ${platform}`);

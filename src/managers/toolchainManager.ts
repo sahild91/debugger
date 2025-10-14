@@ -41,7 +41,7 @@ export class ToolchainManager {
     constructor(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
         this.context = context;
         this.outputChannel = outputChannel;
-        this.toolchainPath = path.join(context.globalStorageUri.fsPath, this.TOOLCHAIN_FOLDER_NAME);
+        this.toolchainPath = path.join(DownloadUtils.getBaseInstallPath(), this.TOOLCHAIN_FOLDER_NAME);
         this.downloadUtils = new DownloadUtils(outputChannel);
     }
 
@@ -267,8 +267,10 @@ export class ToolchainManager {
             });
 
             // Ensure global storage directory exists
-            if (!fs.existsSync(this.context.globalStorageUri.fsPath)) {
-                fs.mkdirSync(this.context.globalStorageUri.fsPath, { recursive: true });
+            const baseInstallPath = DownloadUtils.getBaseInstallPath();
+            if (!fs.existsSync(baseInstallPath)) {
+                fs.mkdirSync(baseInstallPath, { recursive: true });
+                this.outputChannel.appendLine(`Created base install directory: ${baseInstallPath}`);
             }
 
             this.outputChannel.appendLine(`Downloading ARM-CGT-CLANG toolchain for ${platform}`);
@@ -807,6 +809,9 @@ export class ToolchainManager {
 
         if (platform.startsWith('win32')) {
             systemPaths.push(
+                // YuduRobotics plugin location (priority)
+                'C:\\YuduRobotics\\plugins\\ti-cgt-armllvm-4.0.3',
+                
                 // TI CCS standard locations
                 'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_4.0.3.LTS',
                 'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_3.2.2.LTS',
@@ -825,6 +830,8 @@ export class ToolchainManager {
             );
         } else if (platform.startsWith('darwin')) {
             systemPaths.push(
+                // YuduRobotics plugin location (priority)
+                path.join(os.homedir(), 'YuduRobotics', 'plugins', 'ti-cgt-armllvm-4.0.3'),
                 '/Applications/ti/ccs/tools/compiler/ti-cgt-armllvm_4.0.3.LTS',
                 '/Applications/ti/ccs/tools/compiler/ti-cgt-armllvm_3.2.2.LTS',
                 '/Applications/ti/ti-cgt-armllvm_4.0.3.LTS',
@@ -835,6 +842,8 @@ export class ToolchainManager {
         } else {
             // Linux paths (including your example from compiler commands)
             systemPaths.push(
+                // YuduRobotics plugin location (priority)
+                path.join(os.homedir(), 'YuduRobotics', 'plugins', 'ti-cgt-armllvm-4.0.3'),
                 '/home/ti-cgt-armllvm_3.2.2.LTS',  // From your example
                 '/home/ti-cgt-armllvm_4.0.3.LTS',
                 '/opt/ti/ti-cgt-armllvm_4.0.3.LTS',

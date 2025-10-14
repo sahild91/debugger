@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import fetch from 'node-fetch';
 
 export interface DownloadProgress {
@@ -15,6 +16,20 @@ export class DownloadUtils {
     
     constructor(outputChannel: vscode.OutputChannel) {
         this.outputChannel = outputChannel;
+    }
+
+    /**
+     * Get base installation path based on platform
+     * Windows: C:\YuduRobotics\plugins
+     * macOS/Linux: ~/YuduRobotics/plugins
+     * This is a static method that can be used across all managers
+     */
+    static getBaseInstallPath(): string {
+        if (process.platform === 'win32') {
+            return 'C:\\YuduRobotics\\plugins';
+        } else {
+            return path.join(os.homedir(), 'YuduRobotics', 'plugins');
+        }
     }
 
     async downloadFile(

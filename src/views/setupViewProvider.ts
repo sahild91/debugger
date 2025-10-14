@@ -271,7 +271,7 @@ export class SetupViewProvider implements vscode.WebviewViewProvider {
                     html += renderSetupItem('MSPM0 SDK', setup.sdk.installed, setup.sdk.version, '[Package]');
 
                     // Toolchain
-                    html += renderSetupItem('ARM-CGT-CLANG', setup.toolchain.installed, setup.toolchain.version, '[Setup]');
+                    html += renderSetupItem('ARM-CGT-CLANG', setup.toolchain.installed, setup.toolchain.version, '[Toolchain]');
 
                     // SysConfig
                     html += renderSetupItem('TI SysConfig', setup.sysconfig.installed, setup.sysconfig.version, '[Config]');

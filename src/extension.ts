@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
-import { execFile, exec } from "child_process";
+import * as path from "path";
+import * as fs from "fs";
+import { spawn } from "child_process";
 import { Port11TreeViewProvider } from "./views/port11TreeView";
 import { ConsoleViewProvider } from "./views/consoleViewProvider";
 import { CallStackViewProvider } from "./views/callStackViewProvider";
@@ -283,25 +285,26 @@ function getAbsolutePath(relativePath: string): string {
   if (!workspaceFolder) {
     throw new Error("No workspace folder open");
   }
-  return vscode.Uri.joinPath(vscode.Uri.file(workspaceFolder), relativePath)
-    .fsPath;
+
+  // ✅ path.join handles spaces correctly
+  const absolutePath = path.join(workspaceFolder, relativePath);
+
+  // ✅ Verify file exists
+  if (!fs.existsSync(absolutePath)) {
+    throw new Error(`File not found: ${absolutePath}`);
+  }
+
+  return absolutePath;
 }
 
 function executeSwdDebuggerCommand(
-  args: string,
+  args: string[],  // ✅ Changed from string to string[]
   successMessage: string,
   requiresPort: boolean = true,
   requiresWorkspace: boolean = false
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const executablePath = cliManager.getSanitizedExecutablePath();
-    
-    // Properly quote executable path if it contains spaces
-    const quotedExecutablePath = executablePath.includes(" ") 
-      ? `"${executablePath}"` 
-      : executablePath;
-
-    // Check if a port is selected and add --port parameter
+    const executablePath = cliManager.getExecutablePath();  // ✅ Use unsanitized for spawn
     const selectedPort = connectionManager.getSelectedPort();
 
     // Validate port requirement
@@ -320,17 +323,9 @@ function executeSwdDebuggerCommand(
       return;
     }
 
-    let command: string;
-
-    if (selectedPort) {
-      command = `${quotedExecutablePath} --port ${selectedPort} ${args}`;
-    } else {
-      command = `${quotedExecutablePath} ${args}`;
-    }
-
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
 
-    // Only check for workspace folder if explicitly required (e.g., for flash command with file paths)
+    // Only check for workspace folder if explicitly required
     if (requiresWorkspace && !workspaceFolder) {
       const errorMessage =
         "No workspace folder open. Cannot determine file paths.";
@@ -340,32 +335,67 @@ function executeSwdDebuggerCommand(
       return;
     }
 
-    outputChannel.appendLine(`Executing: ${command}`);
-    outputChannel.show();
+    // Build arguments array
+    const fullArgs: string[] = [];
 
-    // Use workspace folder as cwd if available, otherwise use undefined (will use current working directory)
-    exec(
-      command,
-      { cwd: workspaceFolder || undefined },
-      (error: Error | null, stdout: string, stderr: string) => {
-        if (error) {
-          outputChannel.appendLine(`ERROR: ${error.message}`);
-          outputChannel.appendLine(`stderr: ${stderr}`);
-          vscode.window.showErrorMessage(`Command failed: ${error.message}`);
-          reject(error);
-          return;
-        }
+    if (selectedPort) {
+      fullArgs.push('--port', selectedPort);
+    }
 
-        if (stderr) {
-          outputChannel.appendLine(`stderr: ${stderr}`);
-        }
+    fullArgs.push(...args);  // ✅ Spread the args array
 
-        outputChannel.appendLine(`stdout: ${stdout}`);
-        outputChannel.appendLine(`SUCCESS: ${successMessage}`);
+    outputChannel.appendLine(`Executing: ${executablePath}`);
+    outputChannel.appendLine(`Arguments: ${fullArgs.join(' ')}`);
+
+    // ✅ Use spawn instead of exec
+    const swdProcess = spawn(executablePath, fullArgs, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: workspaceFolder || undefined
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    swdProcess.stdout.on('data', (data: { toString: () => any; }) => {
+      const output = data.toString();
+      stdout += output;
+      outputChannel.append(output);
+    });
+
+    swdProcess.stderr.on('data', (data: { toString: () => any; }) => {
+      const output = data.toString();
+      stderr += output;
+      outputChannel.append(output);
+    });
+
+    swdProcess.on('close', (code: number) => {
+      if (code === 0) {
+        outputChannel.appendLine(successMessage);
         vscode.window.showInformationMessage(successMessage);
         resolve();
+      } else {
+        const errorMessage = `Command failed with exit code ${code}`;
+        outputChannel.appendLine(`ERROR: ${errorMessage}`);
+        if (stderr) {
+          outputChannel.appendLine(`Stderr: ${stderr}`);
+        }
+        vscode.window.showErrorMessage(errorMessage);
+        reject(new Error(errorMessage));
       }
-    );
+    });
+
+    interface SwdProcessError extends Error {
+      code?: string;
+      errno?: string;
+      syscall?: string;
+    }
+
+    swdProcess.on('error', (error: SwdProcessError) => {
+      const errorMessage: string = `Process error: ${error.message}`;
+      outputChannel.appendLine(`ERROR: ${errorMessage}`);
+      vscode.window.showErrorMessage(errorMessage);
+      reject(error);
+    });
   });
 }
 
@@ -438,7 +468,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         const binPath = getAbsolutePath("build/main.hex");
         await executeSwdDebuggerCommand(
-          `flash --file ${binPath}`,
+          ['flash', '--file', binPath],
           "Flash completed successfully!",
           true,
           true
@@ -456,7 +486,7 @@ export async function activate(context: vscode.ExtensionContext) {
       try {
         outputChannel.appendLine("Halt command triggered");
         outputChannel.show();
-        await executeSwdDebuggerCommand("halt", "Target halted successfully!");
+        await executeSwdDebuggerCommand(['halt'], "Target halted successfully!");
       } catch (error) {
         outputChannel.appendLine(`ERROR: Halt command failed: ${error}`);
       }
@@ -471,7 +501,7 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine("Resume command triggered");
         outputChannel.show();
         await executeSwdDebuggerCommand(
-          "resume",
+          ['resume'],
           "Target resumed successfully!"
         );
 
@@ -512,7 +542,7 @@ export async function activate(context: vscode.ExtensionContext) {
         } catch (error) {
           outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
         }
-       } catch (error) {
+      } catch (error) {
         outputChannel.appendLine(`Resume command failed: ${error}`);
       }
     }
@@ -526,7 +556,7 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine("Erase command triggered");
         outputChannel.show();
         await executeSwdDebuggerCommand(
-          "erase 0x00000000 0x0001FFFF",
+          ['erase', '0x00000000', '0x0001FFFF'],
           "Flash memory erased successfully!"
         );
       } catch (error) {
@@ -1555,17 +1585,15 @@ async function refreshStatus(): Promise<void> {
       `  SDK: ${sdkInstalled ? `installed (${sdkVersion})` : "not installed"}`
     );
     outputChannel.appendLine(
-      `  Toolchain: ${
-        toolchainInstalled
-          ? `installed (${toolchainInfo.version})`
-          : "not installed"
+      `  Toolchain: ${toolchainInstalled
+        ? `installed (${toolchainInfo.version})`
+        : "not installed"
       }`
     );
     outputChannel.appendLine(
-      `  SysConfig: ${
-        sysConfigInstalled
-          ? `installed (${sysConfigInfo.version})`
-          : "not installed"
+      `  SysConfig: ${sysConfigInstalled
+        ? `installed (${sysConfigInfo.version})`
+        : "not installed"
       }`
     );
     outputChannel.appendLine(`  Boards: ${boards.length} detected`);
@@ -1657,7 +1685,7 @@ function updateConnectStatusBar(): void {
     if (selectedPort) {
       const deviceType =
         selectedPortInfo?.deviceType !== "Unknown" &&
-        selectedPortInfo?.deviceType
+          selectedPortInfo?.deviceType
           ? ` (${selectedPortInfo.deviceType})`
           : "";
       connectStatusBar.text = `$(plug) ${selectedPort}${deviceType}`;

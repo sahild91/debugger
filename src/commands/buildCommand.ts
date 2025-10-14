@@ -6,6 +6,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { SDKManager } from '../managers/sdkManager';
 import { ToolchainManager } from '../managers/toolchainManager';
 import { SysConfigManager } from '../managers/sysconfigManager';
+import { DownloadUtils } from '../utils/downloadUtils';
 
 export interface BuildOptions {
     target?: string;
@@ -421,11 +422,12 @@ export class BuildCommand {
         const compilerPath = this.toolchainManager.getCompilerPath();
 
         if (!compilerPath) {
+            const baseInstallPath = DownloadUtils.getBaseInstallPath();
             const errorMessage = `ARM-CGT-CLANG compiler not found!
 
     The extension could not find the TI ARM-CGT-CLANG compiler in any of these locations:
 
-    1. Extension Storage: ${this.context.globalStorageUri.fsPath}
+    1. Plugin Installation Directory: ${baseInstallPath}
     2. System TI Installations (C:\\ti\\, /opt/ti/, etc.)
     3. System PATH
 

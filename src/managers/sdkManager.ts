@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { simpleGit, SimpleGit } from 'simple-git';
+import { DownloadUtils } from '../utils/downloadUtils';
 
 // Define our own progress handler type since it's not exported in newer versions
 type ProgressHandler = (progress: { stage: string; progress: number }) => void;
@@ -30,13 +31,15 @@ export class SDKManager {
     constructor(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
         this.context = context;
         this.outputChannel = outputChannel;
-        this.sdkPath = path.join(context.globalStorageUri.fsPath, this.SDK_FOLDER_NAME);
+        this.sdkPath = path.join(DownloadUtils.getBaseInstallPath(), this.SDK_FOLDER_NAME);
         this.git = simpleGit();
     }
 
+
+
     /**
- * Save SDK path to globalState for persistence
- */
+     * Save SDK path to globalState for persistence
+     */
     private async saveSdkPath(sdkPath: string): Promise<void> {
         try {
             await this.context.globalState.update(this.SDK_PATH_KEY, sdkPath);
@@ -60,8 +63,8 @@ export class SDKManager {
     }
 
     /**
- * Search for SDK in common system installation locations
- */
+     * Search for SDK in common system installation locations
+     */
     private findSdkInSystemLocations(): string | undefined {
         this.outputChannel.appendLine('Searching for MSPM0 SDK in system locations...');
 
@@ -69,6 +72,7 @@ export class SDKManager {
 
         if (process.platform === 'win32') {
             systemPaths.push(
+                'C:\\YuduRobotics\\plugins\\mspm0-sdk',
                 'C:\\ti\\mspm0-sdk',
                 'C:\\ti\\mspm0_sdk_2_10_00_05',
                 'C:\\ti\\mspm0_sdk_2_00_01_00',
@@ -77,12 +81,14 @@ export class SDKManager {
             );
         } else if (process.platform === 'darwin') {
             systemPaths.push(
+                path.join(os.homedir(), 'YuduRobotics', 'plugins', 'mspm0-sdk'),
                 '/Applications/ti/mspm0-sdk',
                 '/opt/ti/mspm0-sdk',
                 path.join(os.homedir(), 'ti', 'mspm0-sdk')
             );
         } else {
             systemPaths.push(
+                path.join(os.homedir(), 'YuduRobotics', 'plugins', 'mspm0-sdk'),
                 '/opt/ti/mspm0-sdk',
                 '/usr/local/ti/mspm0-sdk',
                 path.join(os.homedir(), 'ti', 'mspm0-sdk')
@@ -109,11 +115,11 @@ export class SDKManager {
     }
 
     /**
- * Get SDK path with intelligent search:
- * 1. Check saved path in globalState
- * 2. Check extension storage
- * 3. Search system locations
- */
+     * Get SDK path with intelligent search:
+     * 1. Check saved path in globalState
+     * 2. Check new base install path
+     * 3. Search system locations
+     */
     private async discoverSdkPath(): Promise<string> {
         // Priority 1: Check saved path
         const savedPath = await this.loadSavedSdkPath();
@@ -122,7 +128,7 @@ export class SDKManager {
             return savedPath;
         }
 
-        // Priority 2: Check extension storage
+        // Priority 2: Check new base install path
         if (fs.existsSync(this.sdkPath)) {
             await this.saveSdkPath(this.sdkPath);
             return this.sdkPath;
@@ -192,9 +198,11 @@ export class SDKManager {
 
     async installSDK(progressCallback?: (progress: SDKSetupProgress) => void): Promise<void> {
         try {
-            // Ensure global storage directory exists
-            if (!fs.existsSync(this.context.globalStorageUri.fsPath)) {
-                fs.mkdirSync(this.context.globalStorageUri.fsPath, { recursive: true });
+            // Ensure base install directory exists
+            const baseInstallPath = DownloadUtils.getBaseInstallPath();
+            if (!fs.existsSync(baseInstallPath)) {
+                fs.mkdirSync(baseInstallPath, { recursive: true });
+                this.outputChannel.appendLine(`Created base install directory: ${baseInstallPath}`);
             }
 
             progressCallback?.({

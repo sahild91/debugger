@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as https from "https";
+import { DownloadUtils } from "../utils/downloadUtils";
 
 const DOWNLOAD_URLS = {
   darwin:
@@ -96,7 +97,7 @@ export class CliManager {
   private sanitizePath(filePath: string): string {
     // Normalize the path first
     const normalizedPath = path.normalize(filePath);
-    
+
     // Check if path contains spaces
     if (normalizedPath.includes(' ')) {
       if (process.platform === "win32") {
@@ -109,13 +110,13 @@ export class CliManager {
         return normalizedPath.replace(/ /g, '\\ ');
       }
     }
-    
+
     return normalizedPath;
   }
 
   private getInstallDir(): string {
-    // Normalize path to handle whitespaces and resolve any relative path segments
-    return path.normalize(path.join(this.context.extensionPath, "dist"));
+    // Use the base install path to avoid spaces in path (e.g., "Texas Instruments" in CCS)
+    return path.normalize(DownloadUtils.getBaseInstallPath());
   }
 
   private getInstallPath(): string {
@@ -123,8 +124,8 @@ export class CliManager {
       process.platform === "win32"
         ? `${DEST_FILE_NAME}.exe`
         : DEST_FILE_NAME;
-    // Normalize path to handle whitespaces and resolve any relative path segments
-    return path.normalize(path.join(this.context.extensionPath, "dist", fileName));
+    // Use the base install path to avoid spaces in path (e.g., "Texas Instruments" in CCS)
+    return path.normalize(path.join(DownloadUtils.getBaseInstallPath(), fileName));
   }
 
   /**
@@ -206,7 +207,7 @@ export class CliManager {
   }> {
     try {
       console.log("Checking for SWD Debugger updates...");
-      
+
       const changelog = await this.fetchChangelog();
       const latestVersion = changelog.current_version;
       const storedVersion = this.getStoredVersion();
@@ -224,7 +225,7 @@ export class CliManager {
       }
 
       const comparison = this.compareVersions(latestVersion, storedVersion);
-      
+
       if (comparison > 0) {
         // New version available
         console.log(`Update available: ${storedVersion} → ${latestVersion}`);
@@ -249,7 +250,7 @@ export class CliManager {
    */
   private async deleteOldDebugger(): Promise<void> {
     const installPath = this.getInstallPath();
-    
+
     if (fs.existsSync(installPath)) {
       try {
         console.log(`Deleting old debugger: ${installPath}`);
@@ -276,6 +277,7 @@ export class CliManager {
       progress.report({ message: "Creating installation directory..." });
       if (!fs.existsSync(installDir)) {
         fs.mkdirSync(installDir, { recursive: true });
+        console.log(`Created base install directory: ${installDir}`);
       }
 
       // Download file
@@ -292,7 +294,7 @@ export class CliManager {
       // Save version and path
       await this.saveSwdDebuggerVersion(version);
       await this.saveSwdDebuggerPath(installPath);
-      
+
       console.log(`SWD Debugger v${version} installed successfully`);
     } catch (error: any) {
       // Clean up on failure
@@ -405,6 +407,7 @@ export class CliManager {
       progress.report({ message: "Creating installation directory..." });
       if (!fs.existsSync(installDir)) {
         fs.mkdirSync(installDir, { recursive: true });
+        console.log(`Created base install directory: ${installDir}`);
       }
 
       // Download file with verification
