@@ -56,16 +56,26 @@
     "views": {
       "port11-debugger": [
         {
+          "id": "port11.topToolbarView",
+          "name": "Debug Toolbar",
+          "type": "webview",
+          "icon": "$(debug-alt)",
+          "when": "port11.debugActive",
+          "initialSize": 1
+        },
+        {
           "id": "port11.variablesView",
           "name": "Breakpoints",
           "type": "webview",
-          "icon": "$(debug-breakpoint)"
+          "icon": "$(debug-breakpoint)",
+          "canCollapse": false
         },
         {
           "id": "port11.dataView",
           "name": "Variables",
           "type": "webview",
-          "icon": "$(symbol-variable)"
+          "icon": "$(symbol-variable)",
+          "canCollapse": false
         },
         {
           "id": "port11.boardsView",

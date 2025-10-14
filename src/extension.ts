@@ -7,6 +7,7 @@ import { BreakpointsViewProvider } from "./views/breakpointViewProvider";
 import { BoardsViewProvider } from "./views/boardsViewProvider";
 import { SetupViewProvider } from "./views/setupViewProvider";
 import { DataViewProvider } from "./views/dataViewProvider";
+import { TopToolbarProvider } from "./views/topToolbarProvider";
 import { SDKManager } from "./managers/sdkManager";
 import { ToolchainManager } from "./managers/toolchainManager";
 import { SysConfigManager } from "./managers/sysconfigManager";
@@ -24,6 +25,7 @@ let breakpointsViewProvider: BreakpointsViewProvider;
 let boardsViewProvider: BoardsViewProvider;
 let setupViewProvider: SetupViewProvider;
 let dataViewProvider: DataViewProvider;
+let topToolbarProvider: TopToolbarProvider;
 let sdkManager: SDKManager;
 let toolchainManager: ToolchainManager;
 let sysConfigManager: SysConfigManager;
@@ -365,6 +367,9 @@ function executeSwdDebuggerCommand(
 }
 
 export async function activate(context: vscode.ExtensionContext) {
+  // Initialize debug state context (hide debug toolbar initially)
+  vscode.commands.executeCommand('setContext', 'port11.debugActive', false);
+
   // Initialize base output channel for logging
   const baseOutputChannel =
     vscode.window.createOutputChannel("Port11 Debugger");
@@ -907,6 +912,22 @@ export async function activate(context: vscode.ExtensionContext) {
     // TreeView provider is initialized but not registered as a view
     // It's used for internal state management only
 
+    // Initialize and Register Top Toolbar Provider (sidebar webview)
+    outputChannel.appendLine("🔧 Initializing Top Toolbar...");
+    topToolbarProvider = new TopToolbarProvider(context.extensionUri);
+    context.subscriptions.push(
+      vscode.window.registerWebviewViewProvider(
+        "port11.topToolbarView",
+        topToolbarProvider,
+        {
+          webviewOptions: {
+            retainContextWhenHidden: true
+          }
+        }
+      )
+    );
+    outputChannel.appendLine("  ✅ Top Toolbar initialized successfully");
+
     // Initialize and Register Console View Provider
     outputChannel.appendLine("🖥️ Initializing Console View...");
     consoleViewProvider = new ConsoleViewProvider(context.extensionUri);
@@ -1042,6 +1063,9 @@ export async function activate(context: vscode.ExtensionContext) {
           await debugCommand.start(port);
           treeViewProvider.setDebugActive(true);
 
+          // Show top toolbar when debug starts
+          topToolbarProvider?.show();
+
           // Load disassembly for address mapping in breakpoint view
           const workspaceFolder =
             vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -1088,6 +1112,9 @@ export async function activate(context: vscode.ExtensionContext) {
         async () => {
           await debugCommand.stop();
           treeViewProvider.setDebugActive(false);
+
+          // Hide top toolbar when debug stops
+          topToolbarProvider?.hide();
 
           // Deactivate breakpoint view (ADDED)
           try {
@@ -1265,36 +1292,11 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       ),
       vscode.commands.registerCommand(
-        "port11-debugger.debug.stepOut",
+        "port11-debugger.debug.stepOver",
         async () => {
           try {
-            await debugCommand.stepOut();
-
-            // Update views after step
-            try {
-              await dataViewProvider?.updateRegistryData();
-              const callStack = await debugCommand.getCallStack();
-              callStackViewProvider?.updateCallStack(callStack, true);
-              const variables = await debugCommand.getVariables();
-              breakpointsViewProvider?.updateBreakpoints(variables, true);
-            } catch (error) {
-              outputChannel.appendLine(
-                `Failed to update debug views: ${error}`
-              );
-            }
-
-            // Highlight the line
-            try {
-              await highlightBreakpointLine(
-                debugCommand,
-                breakpointsViewProvider,
-                outputChannel
-              );
-            } catch (error) {
-              outputChannel.appendLine(
-                `Failed to highlight current line: ${error}`
-              );
-            }
+            await debugCommand.stepOver();
+            // update here
           } catch (error) {
             outputChannel.appendLine(`Step Out failed: ${error}`);
             if (error instanceof Error && !error.message.includes("GDB")) {
