@@ -96,7 +96,7 @@ export async function activate(context: vscode.ExtensionContext) {
             // Board management commands
             vscode.commands.registerCommand('port11-debugger.detectBoards', () => detectBoards()),
             vscode.commands.registerCommand('port11-debugger.openMainPanel', async () => {
-                outputChannel.appendLine('🚀 Creating standalone Port11 Debugger panel...');
+                outputChannel.appendLine('Starting Creating standalone Port11 Debugger panel...');
                 
                 try {
                     // Create a webview panel
@@ -133,9 +133,9 @@ export async function activate(context: vscode.ExtensionContext) {
                         htmlContent = htmlContent.replace(/\{\{styleUri\}\}/g, styleUri.toString());
                         htmlContent = htmlContent.replace(/\{\{scriptUri\}\}/g, scriptUri.toString());
                         
-                        outputChannel.appendLine('✅ HTML template loaded from file');
+                        outputChannel.appendLine('Success: HTML template loaded from file');
                     } catch (error) {
-                        outputChannel.appendLine(`⚠️ Could not load HTML template: ${error}`);
+                        outputChannel.appendLine(`Warning: Could not load HTML template: ${error}`);
                         
                         // Use fallback HTML with full interface
                         htmlContent = `
@@ -225,15 +225,15 @@ export async function activate(context: vscode.ExtensionContext) {
                         <body>
                             <div class="container">
                                 <header style="text-align: center; margin-bottom: 40px;">
-                                    <h1 style="font-size: 28px; margin-bottom: 10px;">🚀 Port11 Debugger</h1>
+                                    <h1 style="font-size: 28px; margin-bottom: 10px;">Starting Port11 Debugger</h1>
                                     <p style="color: var(--vscode-descriptionForeground); font-size: 16px;">MSPM0 Development Environment</p>
                                 </header>
 
                                 <div class="section">
-                                    <h2>📊 System Status</h2>
+                                    <h2>Status System Status</h2>
                                     <div id="status-grid">
                                         <div class="status-item" id="status-sdk">
-                                            <div class="status-icon">📦</div>
+                                            <div class="status-icon">Package</div>
                                             <div>
                                                 <h3 style="margin: 0 0 5px 0;">MSPM0 SDK</h3>
                                                 <p id="sdk-status-text" style="margin: 0; color: var(--vscode-descriptionForeground);">Checking...</p>
@@ -242,7 +242,7 @@ export async function activate(context: vscode.ExtensionContext) {
                                         </div>
 
                                         <div class="status-item" id="status-toolchain">
-                                            <div class="status-icon">🔧</div>
+                                            <div class="status-icon">Setup</div>
                                             <div>
                                                 <h3 style="margin: 0 0 5px 0;">ARM-CGT-CLANG</h3>
                                                 <p id="toolchain-status-text" style="margin: 0; color: var(--vscode-descriptionForeground);">Checking...</p>
@@ -251,7 +251,7 @@ export async function activate(context: vscode.ExtensionContext) {
                                         </div>
 
                                         <div class="status-item" id="status-board">
-                                            <div class="status-icon">🔌</div>
+                                            <div class="status-icon">Connect</div>
                                             <div>
                                                 <h3 style="margin: 0 0 5px 0;">Connected Boards</h3>
                                                 <p id="board-status-text" style="margin: 0; color: var(--vscode-descriptionForeground);">Checking...</p>
@@ -273,18 +273,18 @@ export async function activate(context: vscode.ExtensionContext) {
                                 </div>
 
                                 <div class="section">
-                                    <h2>⚡ Quick Actions</h2>
+                                    <h2>Quick Quick Actions</h2>
                                     <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-                                        <button id="setup-btn" class="action-btn">🔧 Setup Toolchain</button>
-                                        <button id="build-btn" class="action-btn" disabled>🔨 Build Project</button>
-                                        <button id="flash-btn" class="action-btn" disabled>⚡ Flash Firmware</button>
-                                        <button id="debug-btn" class="action-btn" disabled>🐛 Start Debug</button>
+                                        <button id="setup-btn" class="action-btn">Setup Setup Toolchain</button>
+                                        <button id="build-btn" class="action-btn" disabled>Build Build Project</button>
+                                        <button id="flash-btn" class="action-btn" disabled>Quick Flash Firmware</button>
+                                        <button id="debug-btn" class="action-btn" disabled>Debug Start Debug</button>
                                     </div>
                                 </div>
 
                                 <div class="section">
-                                    <h2>🔌 Board Management</h2>
-                                    <button id="detect-boards-btn" class="action-btn">🔍 Detect Boards</button>
+                                    <h2>Connect Board Management</h2>
+                                    <button id="detect-boards-btn" class="action-btn">Detect Detect Boards</button>
                                     <div id="boards-list" style="margin-top: 15px;">
                                         <p style="text-align: center; color: var(--vscode-descriptionForeground); padding: 20px;">
                                             Click "Detect Boards" to scan for connected devices
@@ -293,7 +293,7 @@ export async function activate(context: vscode.ExtensionContext) {
                                 </div>
 
                                 <div id="debug-section" class="section" style="display: none;">
-                                    <h2>🐛 Debug Controls</h2>
+                                    <h2>Debug Debug Controls</h2>
                                     <div style="display: flex; gap: 10px; margin-bottom: 20px;">
                                         <button id="debug-halt-btn" class="action-btn" disabled>⏸️ Halt</button>
                                         <button id="debug-resume-btn" class="action-btn" disabled>▶️ Resume</button>
@@ -311,7 +311,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
                             <script>
                                 const vscode = acquireVsCodeApi();
-                                console.log('🚀 Port11 Debugger panel loaded');
+                                console.log('Starting Port11 Debugger panel loaded');
                                 
                                 // Set up event listeners
                                 document.getElementById('setup-btn').addEventListener('click', () => {
@@ -366,7 +366,7 @@ export async function activate(context: vscode.ExtensionContext) {
                                 // Listen for messages from extension
                                 window.addEventListener('message', event => {
                                     const message = event.data;
-                                    console.log('📨 Received message:', message);
+                                    console.log('Message: Received message:', message);
                                     
                                     switch (message.command) {
                                         case 'updateStatus':
@@ -416,7 +416,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     // Handle messages from webview
                     panel.webview.onDidReceiveMessage(
                         async message => {
-                            outputChannel.appendLine(`📨 Panel received message: ${message.command}`);
+                            outputChannel.appendLine(`Message: Panel received message: ${message.command}`);
                             
                             try {
                                 // Forward messages to the webview provider's message handler
@@ -459,10 +459,10 @@ export async function activate(context: vscode.ExtensionContext) {
                         context.subscriptions
                     );
 
-                    outputChannel.appendLine('✅ Standalone panel created successfully!');
+                    outputChannel.appendLine('Success: Standalone panel created successfully!');
                     
                 } catch (error) {
-                    outputChannel.appendLine(`❌ Error creating standalone panel: ${error}`);
+                    outputChannel.appendLine(`Error: Error creating standalone panel: ${error}`);
                     vscode.window.showErrorMessage(`Failed to create Port11 panel: ${error}`);
                 }
             }),

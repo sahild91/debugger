@@ -41,7 +41,7 @@ export class ToolchainManager {
     constructor(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
         this.context = context;
         this.outputChannel = outputChannel;
-        this.toolchainPath = path.join(context.globalStorageUri.fsPath, this.TOOLCHAIN_FOLDER_NAME);
+        this.toolchainPath = path.join(DownloadUtils.getBaseInstallPath(), this.TOOLCHAIN_FOLDER_NAME);
         this.downloadUtils = new DownloadUtils(outputChannel);
     }
 
@@ -55,9 +55,9 @@ export class ToolchainManager {
                 await this.context.globalState.update(this.COMPILER_PATH_KEY, executablePath);
             }
             await this.context.globalState.update(this.TOOLCHAIN_LAST_DETECTED_KEY, new Date().toISOString());
-            this.outputChannel.appendLine(`💾 Saved toolchain path: ${basePath}`);
+            this.outputChannel.appendLine(`Saved toolchain path: ${basePath}`);
         } catch (error) {
-            this.outputChannel.appendLine(`⚠️  Failed to save toolchain path: ${error}`);
+            this.outputChannel.appendLine(`Failed to save toolchain path: ${error}`);
         }
     }
 
@@ -67,7 +67,7 @@ export class ToolchainManager {
     private async loadSavedCompilerPath(): Promise<string | undefined> {
         const savedPath = this.context.globalState.get<string>(this.COMPILER_PATH_KEY);
         if (savedPath && fs.existsSync(savedPath) && this.verifyCompilerExecutable(savedPath)) {
-            this.outputChannel.appendLine(`📂 Loaded saved compiler path: ${savedPath}`);
+            this.outputChannel.appendLine(`Loaded saved compiler path: ${savedPath}`);
             return savedPath;
         }
         return undefined;
@@ -91,7 +91,7 @@ export class ToolchainManager {
         };
 
         try {
-            this.outputChannel.appendLine('🔍 Getting ARM-CGT-CLANG toolchain information...');
+            this.outputChannel.appendLine('Getting ARM-CGT-CLANG toolchain information...');
 
             // Find the compiler using our prioritized search
             const compilerPath = this.getCompilerPath();
@@ -104,7 +104,7 @@ export class ToolchainManager {
                 if (compilerPath.includes(this.context.globalStorageUri.fsPath)) {
                     // It's in our extension storage
                     basePath = this.toolchainPath;
-                    this.outputChannel.appendLine(`✅ Using extension toolchain at: ${basePath}`);
+                    this.outputChannel.appendLine(`Using extension toolchain at: ${basePath}`);
                 } else {
                     // It's a system installation - extract base path
                     const parts = compilerPath.split(path.sep);
@@ -114,7 +114,7 @@ export class ToolchainManager {
                     } else {
                         basePath = path.dirname(compilerPath);
                     }
-                    this.outputChannel.appendLine(`✅ Using system toolchain at: ${basePath}`);
+                    this.outputChannel.appendLine(`Using system toolchain at: ${basePath}`);
                 }
 
                 // Try to get version information
@@ -130,15 +130,15 @@ export class ToolchainManager {
                 };
             }
 
-            this.outputChannel.appendLine('❌ No ARM-CGT-CLANG toolchain found');
+            this.outputChannel.appendLine('No ARM-CGT-CLANG toolchain found');
 
             // Provide specific installation guidance
             this.outputChannel.appendLine('');
-            this.outputChannel.appendLine('📋 To install ARM-CGT-CLANG toolchain:');
+            this.outputChannel.appendLine('To install ARM-CGT-CLANG toolchain:');
             this.outputChannel.appendLine('   1. Run "Port11 Debugger: Setup Toolchain" command (recommended)');
             this.outputChannel.appendLine('   2. Or manually install from: https://www.ti.com/tool/ARM-CGT');
             this.outputChannel.appendLine('');
-            this.outputChannel.appendLine('🔍 Searched locations:');
+            this.outputChannel.appendLine('Searched locations:');
             this.outputChannel.appendLine(`   Extension storage: ${this.toolchainPath}`);
             this.outputChannel.appendLine('   System TI installations: C:\\ti\\, /opt/ti/, etc.');
             this.outputChannel.appendLine('   System PATH');
@@ -174,7 +174,7 @@ export class ToolchainManager {
             for (const possiblePath of possiblePaths) {
                 this.outputChannel.appendLine(`  Checking executable: ${possiblePath}`);
                 if (fs.existsSync(possiblePath)) {
-                    this.outputChannel.appendLine(`  ✅ Found compiler executable: ${possiblePath}`);
+                    this.outputChannel.appendLine(`  Found compiler executable: ${possiblePath}`);
 
                     // Try to get version information
                     const version = await this.getToolchainVersion(possiblePath);
@@ -186,7 +186,7 @@ export class ToolchainManager {
                         executablePath: possiblePath
                     };
                 } else {
-                    this.outputChannel.appendLine(`  ❌ Not found: ${possiblePath}`);
+                    this.outputChannel.appendLine(`  Not found: ${possiblePath}`);
                 }
             }
 
@@ -267,8 +267,10 @@ export class ToolchainManager {
             });
 
             // Ensure global storage directory exists
-            if (!fs.existsSync(this.context.globalStorageUri.fsPath)) {
-                fs.mkdirSync(this.context.globalStorageUri.fsPath, { recursive: true });
+            const baseInstallPath = DownloadUtils.getBaseInstallPath();
+            if (!fs.existsSync(baseInstallPath)) {
+                fs.mkdirSync(baseInstallPath, { recursive: true });
+                this.outputChannel.appendLine(`Created base install directory: ${baseInstallPath}`);
             }
 
             this.outputChannel.appendLine(`Downloading ARM-CGT-CLANG toolchain for ${platform}`);
@@ -684,19 +686,19 @@ export class ToolchainManager {
 
     getCompilerPath(): string | undefined {
         try {
-            this.outputChannel.appendLine('🔍 Searching for ARM-CGT-CLANG compiler...');
+            this.outputChannel.appendLine('Searching for ARM-CGT-CLANG compiler...');
 
             // Priority 0: Check saved path in globalState (make it async or use sync version)
             const savedPath = this.context.globalState.get<string>(this.COMPILER_PATH_KEY);
             if (savedPath && fs.existsSync(savedPath) && this.verifyCompilerExecutable(savedPath)) {
-                this.outputChannel.appendLine(`✅ Using saved compiler path: ${savedPath}`);
+                this.outputChannel.appendLine(`Using saved compiler path: ${savedPath}`);
                 return savedPath;
             }
 
             // Existing Priority 1: Check extension storage
             const extensionCompilerPath = this.findCompilerInExtensionStorage();
             if (extensionCompilerPath) {
-                this.outputChannel.appendLine(`✅ Found compiler in extension storage: ${extensionCompilerPath}`);
+                this.outputChannel.appendLine(`Found compiler in extension storage: ${extensionCompilerPath}`);
                 // ADD: Save for next time (use async wrapper)
                 return extensionCompilerPath;
             }
@@ -704,11 +706,11 @@ export class ToolchainManager {
             // Third priority: Check system PATH
             const pathCompilerPath = this.findCompilerInSystemPath();
             if (pathCompilerPath) {
-                this.outputChannel.appendLine(`✅ Found compiler in system PATH: ${pathCompilerPath}`);
+                this.outputChannel.appendLine(`Found compiler in system PATH: ${pathCompilerPath}`);
                 return pathCompilerPath;
             }
 
-            this.outputChannel.appendLine('❌ No compiler found in any location');
+            this.outputChannel.appendLine('No compiler found in any location');
             return undefined;
 
         } catch (error) {
@@ -721,10 +723,10 @@ export class ToolchainManager {
         const platform = PlatformUtils.getCurrentPlatform();
         const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
 
-        this.outputChannel.appendLine(`🔍 Checking extension storage: ${this.toolchainPath}`);
+        this.outputChannel.appendLine(`Checking extension storage: ${this.toolchainPath}`);
 
         if (!fs.existsSync(this.toolchainPath)) {
-            this.outputChannel.appendLine(`   ❌ Extension toolchain directory doesn't exist: ${this.toolchainPath}`);
+            this.outputChannel.appendLine(`   Extension toolchain directory doesn't exist: ${this.toolchainPath}`);
             return undefined;
         }
 
@@ -756,13 +758,13 @@ export class ToolchainManager {
             if (fs.existsSync(compilerPath)) {
                 // Verify it's actually executable
                 if (this.verifyCompilerExecutable(compilerPath)) {
-                    this.outputChannel.appendLine(`   ✅ Valid compiler found: ${compilerPath}`);
+                    this.outputChannel.appendLine(`   Valid compiler found: ${compilerPath}`);
                     return compilerPath;
                 } else {
-                    this.outputChannel.appendLine(`   ⚠️  File exists but not valid: ${compilerPath}`);
+                    this.outputChannel.appendLine(`   File exists but not valid: ${compilerPath}`);
                 }
             } else {
-                this.outputChannel.appendLine(`   ❌ Not found: ${compilerPath}`);
+                this.outputChannel.appendLine(`   Not found: ${compilerPath}`);
             }
         }
 
@@ -774,7 +776,7 @@ export class ToolchainManager {
             const stats = fs.statSync(execPath);
 
             if (!stats.isFile()) {
-                this.outputChannel.appendLine(`      ❌ Not a file: ${execPath}`);
+                this.outputChannel.appendLine(`      Not a file: ${execPath}`);
                 return false;
             }
 
@@ -782,15 +784,15 @@ export class ToolchainManager {
             if (process.platform !== 'win32') {
                 const hasExecutePermission = (stats.mode & parseInt('111', 8)) !== 0;
                 if (!hasExecutePermission) {
-                    this.outputChannel.appendLine(`      ⚠️  File not executable: ${execPath}`);
+                    this.outputChannel.appendLine(`      File not executable: ${execPath}`);
                     return false;
                 }
             }
 
-            this.outputChannel.appendLine(`      ✅ Valid executable: ${execPath}`);
+            this.outputChannel.appendLine(`      Valid executable: ${execPath}`);
             return true;
         } catch (error) {
-            this.outputChannel.appendLine(`      ❌ Error verifying: ${error}`);
+            this.outputChannel.appendLine(`      Error verifying: ${error}`);
             return false;
         }
     }
@@ -800,13 +802,16 @@ export class ToolchainManager {
         const platform = PlatformUtils.getCurrentPlatform();
         const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
 
-        this.outputChannel.appendLine('🔍 Checking system TI installation locations...');
+        this.outputChannel.appendLine('Checking system TI installation locations...');
 
         // Define system-wide TI installation paths
         const systemPaths: string[] = [];
 
         if (platform.startsWith('win32')) {
             systemPaths.push(
+                // YuduRobotics plugin location (priority)
+                'C:\\YuduRobotics\\plugins\\ti-cgt-armllvm-4.0.3',
+                
                 // TI CCS standard locations
                 'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_4.0.3.LTS',
                 'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_3.2.2.LTS',
@@ -825,6 +830,8 @@ export class ToolchainManager {
             );
         } else if (platform.startsWith('darwin')) {
             systemPaths.push(
+                // YuduRobotics plugin location (priority)
+                path.join(os.homedir(), 'YuduRobotics', 'plugins', 'ti-cgt-armllvm-4.0.3'),
                 '/Applications/ti/ccs/tools/compiler/ti-cgt-armllvm_4.0.3.LTS',
                 '/Applications/ti/ccs/tools/compiler/ti-cgt-armllvm_3.2.2.LTS',
                 '/Applications/ti/ti-cgt-armllvm_4.0.3.LTS',
@@ -835,6 +842,8 @@ export class ToolchainManager {
         } else {
             // Linux paths (including your example from compiler commands)
             systemPaths.push(
+                // YuduRobotics plugin location (priority)
+                path.join(os.homedir(), 'YuduRobotics', 'plugins', 'ti-cgt-armllvm-4.0.3'),
                 '/home/ti-cgt-armllvm_3.2.2.LTS',  // From your example
                 '/home/ti-cgt-armllvm_4.0.3.LTS',
                 '/opt/ti/ti-cgt-armllvm_4.0.3.LTS',
@@ -849,7 +858,7 @@ export class ToolchainManager {
             this.outputChannel.appendLine(`   Checking system path: ${basePath}`);
 
             if (!fs.existsSync(basePath)) {
-                this.outputChannel.appendLine(`   ❌ Path doesn't exist`);
+                this.outputChannel.appendLine(`   Path doesn't exist`);
                 continue;
             }
 
@@ -857,12 +866,12 @@ export class ToolchainManager {
             this.outputChannel.appendLine(`   Checking compiler: ${compilerPath}`);
 
             if (fs.existsSync(compilerPath) && this.verifyCompilerExecutable(compilerPath)) {
-                this.outputChannel.appendLine(`   ✅ Valid system compiler found: ${compilerPath}`);
+                this.outputChannel.appendLine(`   Valid system compiler found: ${compilerPath}`);
                 return compilerPath;
             }
         }
 
-        this.outputChannel.appendLine('   ❌ No valid compiler in system locations');
+        this.outputChannel.appendLine('   No valid compiler in system locations');
         return undefined;
     }
 
@@ -871,7 +880,7 @@ export class ToolchainManager {
         const platform = PlatformUtils.getCurrentPlatform();
         const executableName = platform.startsWith('win32') ? 'tiarmclang.exe' : 'tiarmclang';
 
-        this.outputChannel.appendLine('🔍 Checking system PATH...');
+        this.outputChannel.appendLine('Checking system PATH...');
 
         try {
             const { execSync } = require('child_process');
@@ -886,11 +895,11 @@ export class ToolchainManager {
             const result = execSync(command, { encoding: 'utf8', timeout: 5000 }).toString().trim();
 
             if (result && fs.existsSync(result)) {
-                this.outputChannel.appendLine(`   ✅ Found in PATH: ${result}`);
+                this.outputChannel.appendLine(`   Found in PATH: ${result}`);
                 return result;
             }
         } catch (error) {
-            this.outputChannel.appendLine(`   ❌ Not found in PATH: ${error}`);
+            this.outputChannel.appendLine(`   Not found in PATH: ${error}`);
         }
 
         return undefined;

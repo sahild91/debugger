@@ -55,15 +55,15 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
 
   public setDebugActive(isActive: boolean): void {
     this.outputChannel.appendLine(
-      `🔴 Breakpoint view debug state: ${isActive ? "ACTIVE" : "INACTIVE"}`
+      `Breakpoint view debug state: ${isActive ? "ACTIVE" : "INACTIVE"}`
     );
     this.outputChannel.appendLine(
-      `🔴 Breakpoint addresses: ${
+      `Breakpoint addresses: ${
         this.addressMapper.getBreakpointAddresses().length
       }`
     );
     this.outputChannel.appendLine(
-      `🔴 Device breakpoints: ${this.deviceBreakpoints.length}`
+      `Device breakpoints: ${this.deviceBreakpoints.length}`
     );
     this.isDebugActive = isActive;
     this.refresh();
@@ -117,11 +117,11 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
   public async loadDisassembly(workspaceRoot: string): Promise<void> {
     const loaded = await this.addressMapper.loadDisassembly(workspaceRoot);
     if (loaded) {
-      this.outputChannel.appendLine("✅ Address mapper loaded successfully");
+      this.outputChannel.appendLine("Address mapper loaded successfully");
       this.refresh();
     } else {
       this.outputChannel.appendLine(
-        "⚠️  Could not load disassembly for address mapping"
+        "Could not load disassembly for address mapping"
       );
     }
   }
@@ -131,20 +131,20 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
    */
   public async updateDeviceBreakpoints(): Promise<void> {
     try {
-      this.outputChannel.appendLine("📍 Fetching device breakpoints...");
+      this.outputChannel.appendLine("Fetching device breakpoints...");
       const output = await this.executeSwdCommand(["bp", "--list"]);
 
       // Parse the output
       this.deviceBreakpoints = this.parseBreakpointList(output);
 
       this.outputChannel.appendLine(
-        `✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
+        `Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
       );
       this.refresh();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.outputChannel.appendLine(
-        `❌ Failed to fetch device breakpoints: ${errorMsg}`
+        `Failed to fetch device breakpoints: ${errorMsg}`
       );
       this.deviceBreakpoints = [];
       this.refresh();
@@ -183,14 +183,14 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
   public refresh() {
     if (!this._view) {
       this.outputChannel.appendLine(
-        "❌ BreakpointsViewProvider: No view available"
+        "BreakpointsViewProvider: No view available"
       );
       return;
     }
 
     const breakpointAddresses = this.addressMapper.getBreakpointAddresses();
 
-    this.outputChannel.appendLine(`🔄 BreakpointsViewProvider refresh:`);
+    this.outputChannel.appendLine(`BreakpointsViewProvider refresh:`);
     this.outputChannel.appendLine(`   - isDebugActive: ${this.isDebugActive}`);
     this.outputChannel.appendLine(
       `   - breakpointAddresses: ${breakpointAddresses.length}`
@@ -215,10 +215,10 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         deviceBreakpoints: this.deviceBreakpoints,
         breakpointStates: breakpointStatesObj,
       });
-      this.outputChannel.appendLine("✅ Message sent to webview successfully");
+      this.outputChannel.appendLine("Message sent to webview successfully");
     } catch (error) {
       this.outputChannel.appendLine(
-        `❌ Failed to send message to webview: ${error}`
+        `Failed to send message to webview: ${error}`
       );
     }
   }
@@ -293,7 +293,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         "Address not mapped. Please connect device and run debug again."
       );
       this.outputChannel.appendLine(
-        `⚠️  Cannot toggle breakpoint - address not mapped`
+        `Cannot toggle breakpoint - address not mapped`
       );
       return;
     }
@@ -305,11 +305,11 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
       if (enabled) {
         // Enable breakpoint: swd-debugger bp 0x08000100 ${address}
         this.outputChannel.appendLine(
-          `📍 Enabling breakpoint at ${address}...`
+          `Enabling breakpoint at ${address}...`
         );
         await this.executeSwdCommand(["bp", address]);
 
-        this.outputChannel.appendLine(`✅ Breakpoint enabled at ${address}`);
+        this.outputChannel.appendLine(`Breakpoint enabled at ${address}`);
         vscode.window.showInformationMessage(
           `Breakpoint enabled at ${address}`
         );
@@ -318,24 +318,24 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         const output = await this.executeSwdCommand(["bp", "--list"]);
         this.deviceBreakpoints = this.parseBreakpointList(output);
         this.outputChannel.appendLine(
-          `✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
+          `Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
         );
         this.refresh();
 
         // Automatically refresh the Data View (Variables) after breakpoint is enabled
         if (this.dataViewProvider) {
           this.outputChannel.appendLine(
-            `🔄 Auto-refreshing Data View after breakpoint enable...`
+            `Auto-refreshing Data View after breakpoint enable...`
           );
           await this.dataViewProvider.updateAll();
         }
       } else {
         // Disable breakpoint: swd-debugger bp --clear ${address}
         this.outputChannel.appendLine(
-          `📍 Disabling breakpoint at ${address}...`
+          `Disabling breakpoint at ${address}...`
         );
         await this.executeSwdCommand(["bp", "--clear", address]);
-        this.outputChannel.appendLine(`✅ Breakpoint cleared at ${address}`);
+        this.outputChannel.appendLine(`Breakpoint cleared at ${address}`);
 
         vscode.window.showInformationMessage(
           `Breakpoint cleared at ${address}`
@@ -345,14 +345,14 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         const output = await this.executeSwdCommand(["bp", "--list"]);
         this.deviceBreakpoints = this.parseBreakpointList(output);
         this.outputChannel.appendLine(
-          `✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
+          `Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
         );
         this.refresh();
 
         // Automatically refresh the Data View (Variables) after breakpoint is disabled
         if (this.dataViewProvider) {
           this.outputChannel.appendLine(
-            `🔄 Auto-refreshing Data View after breakpoint disable...`
+            `Auto-refreshing Data View after breakpoint disable...`
           );
           await this.dataViewProvider.updateAll();
         }
@@ -360,7 +360,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.outputChannel.appendLine(
-        `❌ Failed to toggle breakpoint: ${errorMsg}`
+        `Failed to toggle breakpoint: ${errorMsg}`
       );
       vscode.window.showErrorMessage(
         `Failed to toggle breakpoint: ${errorMsg}`
@@ -374,7 +374,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
   private async removeDeviceBreakpoint(slot: number) {
     try {
       this.outputChannel.appendLine(
-        `🗑️  Clearing device breakpoint at slot ${slot}...`
+        `Clearing device breakpoint at slot ${slot}...`
       );
 
       await this.executeSwdCommand([
@@ -385,7 +385,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
       ]);
 
       this.outputChannel.appendLine(
-        `✅ Device breakpoint cleared at slot ${slot}`
+        `Device breakpoint cleared at slot ${slot}`
       );
       vscode.window.showInformationMessage(
         `Device breakpoint cleared at slot ${slot}`
@@ -395,21 +395,21 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
       const output = await this.executeSwdCommand(["bp", "--list"]);
       this.deviceBreakpoints = this.parseBreakpointList(output);
       this.outputChannel.appendLine(
-        `✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
+        `Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
       );
       this.refresh();
 
       // Automatically refresh the Data View (Variables) after device breakpoint is removed
       if (this.dataViewProvider) {
         this.outputChannel.appendLine(
-          `🔄 Auto-refreshing Data View after device breakpoint removal...`
+          `Auto-refreshing Data View after device breakpoint removal...`
         );
         await this.dataViewProvider.updateAll();
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.outputChannel.appendLine(
-        `❌ Failed to clear device breakpoint: ${errorMsg}`
+        `Failed to clear device breakpoint: ${errorMsg}`
       );
       vscode.window.showErrorMessage(
         `Failed to clear device breakpoint: ${errorMsg}`
@@ -436,7 +436,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
       if (breakpointToRemove) {
         vscode.debug.removeBreakpoints([breakpointToRemove]);
         this.outputChannel.appendLine(
-          `🗑️  Removed breakpoint from VS Code: ${file}:${line}`
+          `Removed breakpoint from VS Code: ${file}:${line}`
         );
       }
 
@@ -446,11 +446,11 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         this.breakpointStates.delete(address);
 
         this.outputChannel.appendLine(
-          `🗑️  Clearing device breakpoint at ${address}...`
+          `Clearing device breakpoint at ${address}...`
         );
         await this.executeSwdCommand(["bp", "--clear", address]);
         this.outputChannel.appendLine(
-          `✅ Device breakpoint cleared at ${address}`
+          `Device breakpoint cleared at ${address}`
         );
         vscode.window.showInformationMessage(
           `Breakpoint removed at ${address}`
@@ -460,7 +460,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         const output = await this.executeSwdCommand(["bp", "--list"]);
         this.deviceBreakpoints = this.parseBreakpointList(output);
         this.outputChannel.appendLine(
-          `✅ Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
+          `Device breakpoints updated: ${this.deviceBreakpoints.length} breakpoints`
         );
       } else {
         vscode.window.showInformationMessage(`Breakpoint removed from VS Code`);
@@ -471,14 +471,14 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
       // Automatically refresh the Data View (Variables) after breakpoint is removed
       if (this.dataViewProvider) {
         this.outputChannel.appendLine(
-          `🔄 Auto-refreshing Data View after breakpoint removal...`
+          `Auto-refreshing Data View after breakpoint removal...`
         );
         await this.dataViewProvider.updateAll();
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.outputChannel.appendLine(
-        `❌ Failed to remove breakpoint: ${errorMsg}`
+        `Failed to remove breakpoint: ${errorMsg}`
       );
       vscode.window.showErrorMessage(
         `Failed to remove breakpoint: ${errorMsg}`
@@ -826,11 +826,11 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <div class="header">
-                <button class="refresh-btn" onclick="refreshBreakpoints()">🔄 Refresh</button>
+                <button class="refresh-btn" onclick="refreshBreakpoints()">Refresh</button>
             </div>
             <div class="container" id="breakpoints-container">
                 <div class="empty-state">
-                    <div class="empty-icon">📋</div>
+                    <div class="empty-icon">[List]</div>
                     <div class="empty-title">No Debug Session</div>
                     <div class="empty-description">Start debugging to see Breakpoints</div>
                 </div>
@@ -842,7 +842,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
 
                 window.addEventListener('message', event => {
                     const message = event.data;
-                    console.log('📨 Webview received message:', message.type);
+                    console.log('Webview received message:', message.type);
                     console.log('   isDebugActive:', message.isDebugActive);
                     console.log('   breakpointAddresses count:', message.breakpointAddresses?.length);
                     console.log('   deviceBreakpoints count:', message.deviceBreakpoints?.length);
@@ -855,7 +855,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
                 });
 
                 function renderBreakpoints(data, isDebugActive, breakpointAddresses, deviceBreakpoints, breakpointStates) {
-                  console.log('🎨 Rendering breakpoints:', {
+                  console.log('Rendering breakpoints:', {
                     isDebugActive: isDebugActive,
                     breakpointAddresses: breakpointAddresses,
                     deviceBreakpoints: deviceBreakpoints
@@ -867,7 +867,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
                   // If debug is NOT active, show the "No Debug Session " message
                   if (!isDebugActive) {
                       html = '<div class="empty-state">' +
-                          '<div class="empty-icon">📋</div>' +
+                          '<div class="empty-icon">[List]</div>' +
                           '<div class="empty-title">No Debug Session</div>' +
                           '<div class="empty-description">Start debugging to see Breakpoints</div>' +
                           '</div>';
@@ -876,7 +876,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
                   else if ((!breakpointAddresses || breakpointAddresses.length === 0) && 
                            (!deviceBreakpoints || deviceBreakpoints.length === 0)) {
                       html = '<div class="empty-state">' +
-                          '<div class="empty-icon">📋</div>' +
+                          '<div class="empty-icon">[List]</div>' +
                           '<div class="empty-title">No Breakpoints Set</div>' +
                           '<div class="empty-description">Click in the gutter to set breakpoints</div>' +
                           '</div>';
@@ -905,7 +905,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
                                   '<span class="variable-address">' + address + '</span>' +
                                   '<button class="breakpoint-close-btn" ' +
                                   'onclick="removeBreakpoint(\\'' + address + '\\', \\'' + bp.file + '\\', ' + bp.line + '); event.stopPropagation();" ' +
-                                  'title="Remove breakpoint">✕</button>' +
+                                  'title="Remove breakpoint">X</button>' +
                                   '</div>';
                           });
                       }
@@ -923,7 +923,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
                                   '<span class="variable-address">' + bp.address + '</span>' +
                                   '<button class="breakpoint-close-btn" ' +
                                   'onclick="removeDeviceBreakpoint(' + bp.slot + '); event.stopPropagation();" ' +
-                                  'title="Remove device breakpoint">✕</button>' +
+                                  'title="Remove device breakpoint">X</button>' +
                                   '</div>';
                           });
                       }
@@ -937,7 +937,7 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
                   }
 
                   container.innerHTML = html;
-                  console.log('✅ Render completed. HTML length:', html.length);
+                  console.log('Render completed. HTML length:', html.length);
               }
 
                 function navigateToBreakpoint(breakpoint) {
@@ -961,9 +961,9 @@ export class BreakpointsViewProvider implements vscode.WebviewViewProvider {
                 }
 
                 // Log when the webview is loaded
-                console.log('🔄 Breakpoints webview loaded and ready');
+                console.log('Breakpoints webview loaded and ready');
                 if (lastMessage) {
-                    console.log('📋 Last message available, re-rendering...');
+                    console.log('Last message available, re-rendering...');
                     renderBreakpoints(lastMessage.data, lastMessage.isDebugActive, lastMessage.breakpointAddresses, lastMessage.deviceBreakpoints, lastMessage.breakpointStates);
                 }
             </script>

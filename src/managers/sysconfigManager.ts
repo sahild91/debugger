@@ -42,7 +42,7 @@ export class SysConfigManager {
     constructor(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
         this.context = context;
         this.outputChannel = outputChannel;
-        this.sysConfigPath = path.join(context.globalStorageUri.fsPath, this.SYSCONFIG_FOLDER_NAME);
+        this.sysConfigPath = path.join(DownloadUtils.getBaseInstallPath(), this.SYSCONFIG_FOLDER_NAME);
         this.downloadUtils = new DownloadUtils(outputChannel);
     }
 
@@ -56,9 +56,9 @@ export class SysConfigManager {
                 await this.context.globalState.update(this.SYSCONFIG_CLI_PATH_KEY, cliPath);
             }
             await this.context.globalState.update(this.SYSCONFIG_LAST_DETECTED_KEY, new Date().toISOString());
-            this.outputChannel.appendLine(`💾 Saved SysConfig path: ${basePath}`);
+            this.outputChannel.appendLine(`Saved SysConfig path: ${basePath}`);
         } catch (error) {
-            this.outputChannel.appendLine(`⚠️  Failed to save SysConfig path: ${error}`);
+            this.outputChannel.appendLine(`Failed to save SysConfig path: ${error}`);
         }
     }
 
@@ -68,7 +68,7 @@ export class SysConfigManager {
     private async loadSavedSysConfigCliPath(): Promise<string | undefined> {
         const savedPath = this.context.globalState.get<string>(this.SYSCONFIG_CLI_PATH_KEY);
         if (savedPath && fs.existsSync(savedPath)) {
-            this.outputChannel.appendLine(`📂 Loaded saved SysConfig CLI path: ${savedPath}`);
+            this.outputChannel.appendLine(`Loaded saved SysConfig CLI path: ${savedPath}`);
             return savedPath;
         }
         return undefined;
@@ -96,6 +96,9 @@ export class SysConfigManager {
             const searchPaths = [
                 // Our preferred location (global storage)
                 this.sysConfigPath,
+                // YuduRobotics plugin locations
+                'C:\\YuduRobotics\\plugins\\sysconfig-1.24.2',
+                path.join(os.homedir(), 'YuduRobotics', 'plugins', 'sysconfig-1.24.2'),
                 // Common TI installation locations
                 'C:\\ti\\sysconfig_1.24.2',
                 'C:\\Program Files\\Texas Instruments\\sysconfig_1.24.2',
@@ -139,15 +142,15 @@ export class SysConfigManager {
 
                     const sysConfigInfo = await this.validateSysConfigAtPath(searchPath);
                     if (sysConfigInfo.isInstalled) {
-                        this.outputChannel.appendLine(`✅ Valid SysConfig found at: ${searchPath}`);
+                        this.outputChannel.appendLine(`Valid SysConfig found at: ${searchPath}`);
                         // Update our internal path to the actual location
                         this.sysConfigPath = searchPath;
                         return sysConfigInfo;
                     } else {
-                        this.outputChannel.appendLine(`❌ Directory exists but no valid SysConfig found`);
+                        this.outputChannel.appendLine(`Directory exists but no valid SysConfig found`);
                     }
                 } else {
-                    this.outputChannel.appendLine(`❌ Directory does not exist`);
+                    this.outputChannel.appendLine(`Directory does not exist`);
                 }
             }
 
@@ -162,7 +165,7 @@ export class SysConfigManager {
                 }
             }
 
-            this.outputChannel.appendLine('❌ SysConfig not found in any expected location');
+            this.outputChannel.appendLine('SysConfig not found in any expected location');
             return defaultInfo;
 
         } catch (error) {
@@ -187,7 +190,7 @@ export class SysConfigManager {
             for (const possiblePath of possibleCliPaths) {
                 this.outputChannel.appendLine(`  Checking CLI executable: ${possiblePath}`);
                 if (fs.existsSync(possiblePath)) {
-                    this.outputChannel.appendLine(`  ✅ Found SysConfig CLI: ${possiblePath}`);
+                    this.outputChannel.appendLine(`  Found SysConfig CLI: ${possiblePath}`);
 
                     // Try to get version information
                     const version = await this.getSysConfigVersion(possiblePath);
@@ -199,7 +202,7 @@ export class SysConfigManager {
                         cliPath: possiblePath
                     };
                 } else {
-                    this.outputChannel.appendLine(`  ❌ Not found: ${possiblePath}`);
+                    this.outputChannel.appendLine(`  Not found: ${possiblePath}`);
                 }
             }
 
@@ -377,8 +380,10 @@ export class SysConfigManager {
             });
 
             // Ensure global storage directory exists
-            if (!fs.existsSync(this.context.globalStorageUri.fsPath)) {
-                fs.mkdirSync(this.context.globalStorageUri.fsPath, { recursive: true });
+            const baseInstallPath = DownloadUtils.getBaseInstallPath();
+            if (!fs.existsSync(baseInstallPath)) {
+                fs.mkdirSync(baseInstallPath, { recursive: true });
+                this.outputChannel.appendLine(`Created base install directory: ${baseInstallPath}`);
             }
 
             this.outputChannel.appendLine(`Downloading TI SysConfig for ${platform}`);
