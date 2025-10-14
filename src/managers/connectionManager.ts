@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { EventEmitter } from 'events';
 
 const execAsync = promisify(exec);
 
@@ -24,7 +25,10 @@ export class ConnectionManager {
     private outputChannel: vscode.OutputChannel;
     private selectedPort: string | null = null;
     private selectedPortInfo: SerialPort | null = null;
-    
+    private deviceCheckInterval: NodeJS.Timeout | null = null;
+    private lastKnownPorts: string[] = [];
+    private eventEmitter: EventEmitter = new EventEmitter();
+
     // GlobalState keys for persistent storage
     private readonly SELECTED_PORT_KEY = 'mspm0.selectedPort';
     private readonly SELECTED_PORT_INFO_KEY = 'mspm0.selectedPortInfo';
@@ -33,9 +37,12 @@ export class ConnectionManager {
     constructor(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
         this.context = context;
         this.outputChannel = outputChannel;
-        
+
         // Auto-load saved port on initialization
         this.loadSavedPort();
+
+        // ✅ Start monitoring port changes
+        this.startPortMonitoring();
     }
 
     /**
@@ -54,6 +61,68 @@ export class ConnectionManager {
         }
     }
 
+    private startPortMonitoring(): void {
+        this.deviceCheckInterval = setInterval(async () => {
+            try {
+                const currentPorts = await this.getAvailablePorts();
+                const currentPortPaths = currentPorts.map(p => p.path);
+
+                // Check if any ports were removed
+                const removedPorts = this.lastKnownPorts.filter(
+                    port => !currentPortPaths.includes(port)
+                );
+
+                // Check if the selected port was removed
+                if (this.selectedPort && removedPorts.includes(this.selectedPort)) {
+                    this.outputChannel.appendLine(`Selected port ${this.selectedPort} was disconnected`);
+                    this.eventEmitter.emit('portDisconnected', this.selectedPort);
+
+                    // Clear the selected port
+                    this.selectedPort = null;
+                    this.selectedPortInfo = null;
+                    await this.clearSavedPort();
+                }
+
+                // Check if new ports were added
+                const addedPorts = currentPortPaths.filter(
+                    port => !this.lastKnownPorts.includes(port)
+                );
+
+                if (addedPorts.length > 0) {
+                    this.eventEmitter.emit('portAdded', addedPorts);
+                }
+
+                this.lastKnownPorts = currentPortPaths;
+            } catch (error) {
+                // Ignore errors during monitoring
+            }
+        }, 5000);  // Check every 2 seconds
+    }
+
+    /**
+     * Listen for port disconnection events
+     */
+    public onPortDisconnected(callback: (port: string) => void): void {
+        this.eventEmitter.on('portDisconnected', callback);
+    }
+
+    /**
+     * Listen for port added events
+     */
+    public onPortAdded(callback: (ports: string[]) => void): void {
+        this.eventEmitter.on('portAdded', callback);
+    }
+
+    /**
+     * Stop port monitoring (cleanup)
+     */
+    public stopPortMonitoring(): void {
+        if (this.deviceCheckInterval) {
+            clearInterval(this.deviceCheckInterval);
+            this.deviceCheckInterval = null;
+        }
+    }
+
     /**
      * Load saved port from globalState
      */
@@ -61,12 +130,12 @@ export class ConnectionManager {
         try {
             const savedPort = this.context.globalState.get<string>(this.SELECTED_PORT_KEY);
             const savedPortInfo = this.context.globalState.get<SerialPort>(this.SELECTED_PORT_INFO_KEY);
-            
+
             if (savedPort) {
                 // Verify the port still exists
                 const availablePorts = await this.getAvailablePorts();
                 const portExists = availablePorts.find(p => p.path === savedPort);
-                
+
                 if (portExists) {
                     this.selectedPort = savedPort;
                     this.selectedPortInfo = savedPortInfo || portExists;
@@ -376,7 +445,7 @@ export class ConnectionManager {
         }
         this.selectedPort = null;
         this.selectedPortInfo = null;
-        
+
         // Clear from globalState
         await this.clearSavedPort();
     }
@@ -403,7 +472,7 @@ export class ConnectionManager {
         try {
             this.outputChannel.appendLine('Detecting boards...');
             const ports = await this.getAvailablePorts();
-            
+
             // Convert to BoardInfo format
             const boards: BoardInfo[] = ports.map(port => ({
                 ...port,
@@ -444,12 +513,12 @@ export class ConnectionManager {
      */
     async getDefaultBoard(): Promise<BoardInfo | null> {
         const mspm0Boards = await this.getConnectedMSPM0Boards();
-        
+
         if (mspm0Boards.length === 0) {
             const allBoards = await this.detectBoards();
             return allBoards.length > 0 ? allBoards[0] : null;
         }
-        
+
         return mspm0Boards[0];
     }
 
@@ -513,11 +582,11 @@ export class ConnectionManager {
     async connectToBoard(port: string, options?: any): Promise<void> {
         try {
             this.outputChannel.appendLine(`Connecting to board on ${port}...`);
-            
+
             // Verify the port exists
             const availablePorts = await this.getAvailablePorts();
             const portInfo = availablePorts.find(p => p.path === port);
-            
+
             if (!portInfo) {
                 throw new Error(`Port ${port} not found. Please check the connection.`);
             }
@@ -551,7 +620,7 @@ export class ConnectionManager {
         try {
             if (this.selectedPort === port) {
                 this.outputChannel.appendLine(`Disconnecting from ${port}...`);
-                
+
                 this.selectedPort = null;
                 this.selectedPortInfo = null;
 

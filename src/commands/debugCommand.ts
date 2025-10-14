@@ -38,6 +38,7 @@ export class DebugCommand {
     private monitorProcess: ChildProcess | null = null;
     private isMonitoring: boolean = false;
     private eventEmitter: EventEmitter = new EventEmitter();
+    private disconnectCheckInterval: NodeJS.Timeout | null = null;
 
     constructor(
         context: vscode.ExtensionContext,
@@ -49,10 +50,115 @@ export class DebugCommand {
         this.outputChannel = outputChannel;
         this.connectionManager = connectionManager;
         this.cliManager = cliManager;
+        this.connectionManager.onPortDisconnected((port) => {
+        if (this.currentSession?.board.path === port) {
+            this.outputChannel.appendLine(`Debug device ${port} was disconnected!`);
+            this.handleDeviceDisconnect();
+        }
+    });
     }
 
     public onBreakpointHit(callback: () => void): void {
         this.eventEmitter.on('breakpointHit', callback);
+    }
+
+    /**
+     * Start monitoring for device disconnection
+     */
+    private startDisconnectMonitoring(): void {
+        // Clear any existing interval
+        if (this.disconnectCheckInterval) {
+            clearInterval(this.disconnectCheckInterval);
+        }
+
+        // Check every 2 seconds if the device is still connected
+        this.disconnectCheckInterval = setInterval(async () => {
+            if (!this.currentSession?.isActive) {
+                return;
+            }
+
+            try {
+                const boards = await this.connectionManager.detectBoards();
+                const currentPort = this.currentSession.board.path;
+                const stillConnected = boards.some(board => board.path === currentPort);
+
+                if (!stillConnected) {
+                    this.outputChannel.appendLine(`WARNING: Device at ${currentPort} was disconnected!`);
+                    await this.handleDeviceDisconnect();
+                }
+            } catch (error) {
+                // Ignore errors during disconnect check
+            }
+        }, 5000);  // Check every 2 seconds
+    }
+
+    /**
+     * Stop monitoring for device disconnection
+     */
+    private stopDisconnectMonitoring(): void {
+        if (this.disconnectCheckInterval) {
+            clearInterval(this.disconnectCheckInterval);
+            this.disconnectCheckInterval = null;
+        }
+    }
+
+    /**
+     * Handle device disconnection
+     */
+    private async handleDeviceDisconnect(): Promise<void> {
+        this.outputChannel.appendLine('Handling device disconnection...');
+
+        // Stop disconnect monitoring to avoid recursive calls
+        this.stopDisconnectMonitoring();
+
+        // Stop monitoring process if running
+        if (this.isMonitoring) {
+            this.outputChannel.appendLine('Killing monitoring process due to device disconnect...');
+            this.forceStopMonitoring();
+        }
+
+        // Kill any DAP process
+        if (this.dapProcess) {
+            this.outputChannel.appendLine('Killing DAP process due to device disconnect...');
+            this.dapProcess.kill('SIGKILL');
+            this.dapProcess = null;
+        }
+
+        // Mark session as inactive
+        if (this.currentSession) {
+            this.currentSession.isActive = false;
+            this.outputChannel.appendLine(`Debug session terminated: ${this.currentSession.id}`);
+        }
+
+        // Notify user
+        vscode.window.showErrorMessage(
+            'Debug device was disconnected. Debug session terminated.',
+            'OK'
+        );
+
+        // Emit event so UI can update
+        this.eventEmitter.emit('deviceDisconnected');
+    }
+
+    /**
+     * Force stop monitoring immediately (for disconnect scenarios)
+     */
+    private forceStopMonitoring(): void {
+        if (!this.monitorProcess) {
+            return;
+        }
+
+        this.outputChannel.appendLine('Force stopping monitor process...');
+
+        try {
+            // Kill immediately with SIGKILL
+            this.monitorProcess.kill('SIGKILL');
+        } catch (error) {
+            this.outputChannel.appendLine(`Error force stopping monitor: ${error}`);
+        } finally {
+            this.isMonitoring = false;
+            this.monitorProcess = null;
+        }
     }
 
     async start(port?: string): Promise<DebugSession> {
@@ -109,6 +215,7 @@ export class DebugCommand {
                 // Halt the target to prepare for debugging
                 this.outputChannel.appendLine('Halting target for inspection...');
                 await this.halt();
+                this.startDisconnectMonitoring();
 
                 return session;
             } else {
@@ -158,7 +265,7 @@ export class DebugCommand {
 
             // Stop monitoring if active
             if (this.isMonitoring) {
-                await this.stopMonitoring();
+                this.stopMonitoring();
             }
 
             // Stop DAP process
@@ -174,11 +281,17 @@ export class DebugCommand {
                 this.currentSession = null;
             }
 
+            this.stopDisconnectMonitoring();
+
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             this.outputChannel.appendLine(`Error stopping debug session: ${errorMessage}`);
             throw error;
         }
+    }
+
+    public onDeviceDisconnected(callback: () => void): void {
+        this.eventEmitter.on('deviceDisconnected', callback);
     }
 
     async halt(): Promise<void> {
@@ -223,11 +336,11 @@ export class DebugCommand {
     private startResumeWithMonitoring(): void {
         // If already monitoring, stop it first
         if (this.monitorProcess) {
-            this.stopMonitoring();  // ✅ Synchronous stop attempt
+            this.forceStopMonitoring();
         }
 
         const config = vscode.workspace.getConfiguration('port11-debugger');
-        const cliPath = this.cliManager.getExecutablePath();  // ✅ Use unsanitized for spawn
+        const cliPath = this.cliManager.getExecutablePath();
         const board = this.currentSession?.board;
 
         if (!board || !cliPath) {
@@ -247,6 +360,7 @@ export class DebugCommand {
 
         let stdout = '';
         let stderr = '';
+        let consecutiveErrors = 0;  // ✅ Track consecutive errors
 
         this.monitorProcess.stdout?.on('data', (data) => {
             const output = data.toString();
@@ -263,7 +377,20 @@ export class DebugCommand {
             const output = data.toString();
             stderr += output;
 
-            // ✅ Filter out transient monitor errors to reduce noise
+            // ✅ Check for disconnect-related errors
+            if (this.isDisconnectError(output)) {
+                consecutiveErrors++;
+
+                if (consecutiveErrors >= 5) {  // 5 consecutive errors = likely disconnected
+                    this.outputChannel.appendLine('Multiple consecutive errors detected - device may be disconnected');
+                    this.handleDeviceDisconnect();
+                    return;
+                }
+            } else {
+                consecutiveErrors = 0;  // Reset counter on success
+            }
+
+            // Filter out transient monitor errors to reduce noise
             if (!output.includes('Monitor sample failed')) {
                 this.outputChannel.append(output);
             }
@@ -273,13 +400,44 @@ export class DebugCommand {
             this.outputChannel.appendLine(`Monitor process ended with code ${code}`);
             this.isMonitoring = false;
             this.monitorProcess = null;
+
+            // ✅ Check if close was due to disconnect
+            if (code && code !== 0 && stderr.includes('Failed to connect')) {
+                this.outputChannel.appendLine('Monitor process closed due to connection failure');
+                this.handleDeviceDisconnect();
+            }
         });
 
         this.monitorProcess.on('error', (error) => {
             this.outputChannel.appendLine(`Monitor process error: ${error.message}`);
             this.isMonitoring = false;
             this.monitorProcess = null;
+
+            // ✅ Check if error is disconnect-related
+            if (this.isDisconnectError(error.message)) {
+                this.handleDeviceDisconnect();
+            }
         });
+    }
+
+    private isDisconnectError(errorMessage: string): boolean {
+        const disconnectPatterns = [
+            'Failed to connect',
+            'Access is denied',
+            'No such file or directory',
+            'Device not found',
+            'Port not found',
+            'Connection refused',
+            'Permission denied',
+            'device does not recognize the command',
+            'Invalid handle',
+            'The system cannot find the file specified'
+        ];
+
+        const lowerError = errorMessage.toLowerCase();
+        return disconnectPatterns.some(pattern =>
+            lowerError.includes(pattern.toLowerCase())
+        );
     }
 
     private checkForBreakpointHit(output: string): boolean {
