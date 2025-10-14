@@ -40,14 +40,14 @@ async function findSourceLocationForPC(
   outputChannel: vscode.OutputChannel
 ): Promise<{ file: string; line: number; functionName?: string } | undefined> {
   try {
-    outputChannel.appendLine(`🔍 Looking up PC address: ${pcAddress}`);
+    outputChannel.appendLine(`Looking up PC address: ${pcAddress}`);
 
     // FAST PATH: Try addressMapper first (already loaded in memory)
     if (breakpointsViewProvider) {
       const addressMapper = (breakpointsViewProvider as any).addressMapper;
 
       if (addressMapper && addressMapper.isLoaded()) {
-        outputChannel.appendLine(`⚡ Using fast path: addressMapper lookup`);
+        outputChannel.appendLine(`Using fast path: addressMapper lookup`);
 
         // Debug: Show mapper stats
         const stats = addressMapper.getStats();
@@ -57,11 +57,11 @@ async function findSourceLocationForPC(
 
         if (result) {
           outputChannel.appendLine(
-            `✅ Fast path found: ${result.file}:${result.line}${result.functionName ? ` (${result.functionName})` : ''}`
+            `Fast path found: ${result.file}:${result.line}${result.functionName ? ` (${result.functionName})` : ''}`
           );
           return result;
         } else {
-          outputChannel.appendLine(`⚠️  Fast path: address not found in mapper`);
+          outputChannel.appendLine(`Fast path: address not found in mapper`);
 
           // Debug: Try to see what addresses are near this one
           outputChannel.appendLine(`   Searching for PC: ${pcAddress}`);
@@ -72,14 +72,14 @@ async function findSourceLocationForPC(
           outputChannel.appendLine(`   Sample addresses in map: ${sampleAddresses.join(', ')}`);
         }
       } else {
-        outputChannel.appendLine(`⚠️  Fast path unavailable: addressMapper not loaded, using fallback...`);
+        outputChannel.appendLine(`Fast path unavailable: addressMapper not loaded, using fallback...`);
       }
     } else {
-      outputChannel.appendLine(`⚠️  Fast path unavailable: breakpointsViewProvider not initialized, using fallback...`);
+      outputChannel.appendLine(`Fast path unavailable: breakpointsViewProvider not initialized, using fallback...`);
     }
 
     // FALLBACK: Parse full_disasm.txt file
-    outputChannel.appendLine(`📂 Using fallback: parsing full_disasm.txt`);
+    outputChannel.appendLine(`Using fallback: parsing full_disasm.txt`);
 
     // Convert PC address format: 0x000002A4 -> 2a4
     const cleanAddress = pcAddress.replace("0x", "").toLowerCase();
@@ -87,7 +87,7 @@ async function findSourceLocationForPC(
     // Get workspace folder
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!workspaceFolder) {
-      outputChannel.appendLine("⚠️  No workspace folder found");
+      outputChannel.appendLine("No workspace folder found");
       return undefined;
     }
 
@@ -96,7 +96,7 @@ async function findSourceLocationForPC(
     const fs = require("fs");
 
     if (!fs.existsSync(disasmPath)) {
-      outputChannel.appendLine(`⚠️  Disassembly file not found: ${disasmPath}`);
+      outputChannel.appendLine(`Disassembly file not found: ${disasmPath}`);
       return undefined;
     }
 
@@ -120,7 +120,7 @@ async function findSourceLocationForPC(
         if (parseInt(funcAddress, 16) === parseInt(cleanAddress, 16)) {
           functionName = funcName;
           outputChannel.appendLine(
-            `✅ Found function at address: ${funcName} at ${funcAddress}`
+            `Found function at address: ${funcName} at ${funcAddress}`
           );
           break;
         }
@@ -129,14 +129,14 @@ async function findSourceLocationForPC(
 
     if (!functionName) {
       outputChannel.appendLine(
-        `⚠️  No function found at address ${cleanAddress}`
+        `No function found at address ${cleanAddress}`
       );
       return undefined;
     }
 
     // Step 2: Search backwards for "bl 0x2a4 <functionName>" to find the call site
     outputChannel.appendLine(
-      `🔍 Searching for call to function: ${functionName}`
+      `Searching for call to function: ${functionName}`
     );
 
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -157,7 +157,7 @@ async function findSourceLocationForPC(
         // Check if this calls our function
         if (calledFunc === functionName) {
           outputChannel.appendLine(
-            `✅ Found call to ${functionName} at address ${callAddress}`
+            `Found call to ${functionName} at address ${callAddress}`
           );
 
           // Look backwards for source location comment
@@ -174,7 +174,7 @@ async function findSourceLocationForPC(
               const lineNum = parseInt(sourceMatch[2], 10);
 
               outputChannel.appendLine(
-                `✅ Found source location: ${file}:${lineNum}`
+                `Found source location: ${file}:${lineNum}`
               );
 
               return { file, line: lineNum, functionName };
@@ -188,12 +188,12 @@ async function findSourceLocationForPC(
     }
 
     outputChannel.appendLine(
-      `⚠️  Could not find call site for function ${functionName}`
+      `Could not find call site for function ${functionName}`
     );
     return undefined;
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    outputChannel.appendLine(`❌ Error parsing disassembly: ${errorMsg}`);
+    outputChannel.appendLine(`Error parsing disassembly: ${errorMsg}`);
     return undefined;
   }
 }
@@ -204,7 +204,7 @@ async function showArrowAtPC(
   outputChannel: vscode.OutputChannel
 ): Promise<void> {
   try {
-    outputChannel.appendLine(`🎯 Showing arrow at PC: ${pcAddress}`);
+    outputChannel.appendLine(`Showing arrow at PC: ${pcAddress}`);
 
     // Clear previous arrow decoration
     if (currentPCDecoration) {
@@ -216,7 +216,7 @@ async function showArrowAtPC(
     const location = await findSourceLocationForPC(pcAddress, outputChannel);
 
     if (!location) {
-      outputChannel.appendLine("⚠️  Could not find source location for PC");
+      outputChannel.appendLine("Could not find source location for PC");
       return;
     }
 
@@ -229,7 +229,7 @@ async function showArrowAtPC(
       // Relative path
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       if (!workspaceFolder) {
-        outputChannel.appendLine("⚠️  No workspace folder found");
+        outputChannel.appendLine("No workspace folder found");
         return;
       }
       fileUri = vscode.Uri.joinPath(workspaceFolder.uri, location.file);
@@ -270,11 +270,11 @@ async function showArrowAtPC(
     ]);
 
     outputChannel.appendLine(
-      `✅ Arrow shown at ${location.file}:${location.line}`
+      `Arrow shown at ${location.file}:${location.line}`
     );
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    outputChannel.appendLine(`❌ Error showing arrow at PC: ${errorMsg}`);
+    outputChannel.appendLine(`Error showing arrow at PC: ${errorMsg}`);
   }
 }
 
@@ -294,7 +294,12 @@ function executeSwdDebuggerCommand(
   requiresWorkspace: boolean = false
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const executablePath = cliManager.getExecutablePath();
+    const executablePath = cliManager.getSanitizedExecutablePath();
+    
+    // Properly quote executable path if it contains spaces
+    const quotedExecutablePath = executablePath.includes(" ") 
+      ? `"${executablePath}"` 
+      : executablePath;
 
     // Check if a port is selected and add --port parameter
     const selectedPort = connectionManager.getSelectedPort();
@@ -303,7 +308,7 @@ function executeSwdDebuggerCommand(
     if (requiresPort && !selectedPort) {
       const errorMessage =
         "No port connected. Please select a port first using the Connect button.";
-      outputChannel.appendLine(`❌ ${errorMessage}`);
+      outputChannel.appendLine(`ERROR: ${errorMessage}`);
       vscode.window
         .showErrorMessage(errorMessage, "Connect Port")
         .then((selection) => {
@@ -318,9 +323,9 @@ function executeSwdDebuggerCommand(
     let command: string;
 
     if (selectedPort) {
-      command = `${executablePath} --port ${selectedPort} ${args}`;
+      command = `${quotedExecutablePath} --port ${selectedPort} ${args}`;
     } else {
-      command = `${executablePath} ${args}`;
+      command = `${quotedExecutablePath} ${args}`;
     }
 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
@@ -329,13 +334,13 @@ function executeSwdDebuggerCommand(
     if (requiresWorkspace && !workspaceFolder) {
       const errorMessage =
         "No workspace folder open. Cannot determine file paths.";
-      outputChannel.appendLine(`❌ ${errorMessage}`);
+      outputChannel.appendLine(`ERROR: ${errorMessage}`);
       vscode.window.showErrorMessage(errorMessage);
       reject(new Error(errorMessage));
       return;
     }
 
-    outputChannel.appendLine(`🚀 Executing: ${command}`);
+    outputChannel.appendLine(`Executing: ${command}`);
     outputChannel.show();
 
     // Use workspace folder as cwd if available, otherwise use undefined (will use current working directory)
@@ -344,7 +349,7 @@ function executeSwdDebuggerCommand(
       { cwd: workspaceFolder || undefined },
       (error: Error | null, stdout: string, stderr: string) => {
         if (error) {
-          outputChannel.appendLine(`❌ Error: ${error.message}`);
+          outputChannel.appendLine(`ERROR: ${error.message}`);
           outputChannel.appendLine(`stderr: ${stderr}`);
           vscode.window.showErrorMessage(`Command failed: ${error.message}`);
           reject(error);
@@ -356,7 +361,7 @@ function executeSwdDebuggerCommand(
         }
 
         outputChannel.appendLine(`stdout: ${stdout}`);
-        outputChannel.appendLine(`✅ ${successMessage}`);
+        outputChannel.appendLine(`SUCCESS: ${successMessage}`);
         vscode.window.showInformationMessage(successMessage);
         resolve();
       }
@@ -428,7 +433,7 @@ export async function activate(context: vscode.ExtensionContext) {
     "extension.flashCommand",
     async () => {
       try {
-        outputChannel.appendLine("⚡ Flash command triggered");
+        outputChannel.appendLine("Flash command triggered");
         outputChannel.show();
 
         const binPath = getAbsolutePath("build/main.hex");
@@ -439,7 +444,7 @@ export async function activate(context: vscode.ExtensionContext) {
           true
         );
       } catch (error) {
-        outputChannel.appendLine(`❌ Flash command failed: ${error}`);
+        outputChannel.appendLine(`ERROR: Flash command failed: ${error}`);
       }
     }
   );
@@ -449,11 +454,11 @@ export async function activate(context: vscode.ExtensionContext) {
     "extension.haltCommand",
     async () => {
       try {
-        outputChannel.appendLine("⏸️ Halt command triggered");
+        outputChannel.appendLine("Halt command triggered");
         outputChannel.show();
         await executeSwdDebuggerCommand("halt", "Target halted successfully!");
       } catch (error) {
-        outputChannel.appendLine(`❌ Halt command failed: ${error}`);
+        outputChannel.appendLine(`ERROR: Halt command failed: ${error}`);
       }
     }
   );
@@ -463,7 +468,7 @@ export async function activate(context: vscode.ExtensionContext) {
     "extension.resumeCommand",
     async () => {
       try {
-        outputChannel.appendLine("▶️ Resume command triggered");
+        outputChannel.appendLine("Resume command triggered");
         outputChannel.show();
         await executeSwdDebuggerCommand(
           "resume",
@@ -471,7 +476,7 @@ export async function activate(context: vscode.ExtensionContext) {
         );
 
         // After resume completes (target has halted), refresh variables
-        outputChannel.appendLine("⏸️ Target halted after resume - updating variables...");
+        outputChannel.appendLine("Target halted after resume - updating variables...");
 
         // Update registry data in DataViewProvider
         try {
@@ -508,7 +513,7 @@ export async function activate(context: vscode.ExtensionContext) {
           outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
         }
        } catch (error) {
-        outputChannel.appendLine(`❌ Resume command failed: ${error}`);
+        outputChannel.appendLine(`Resume command failed: ${error}`);
       }
     }
   );
@@ -518,14 +523,14 @@ export async function activate(context: vscode.ExtensionContext) {
     "extension.eraseCommand",
     async () => {
       try {
-        outputChannel.appendLine("🗑️ Erase command triggered");
+        outputChannel.appendLine("Erase command triggered");
         outputChannel.show();
         await executeSwdDebuggerCommand(
           "erase 0x00000000 0x0001FFFF",
           "Flash memory erased successfully!"
         );
       } catch (error) {
-        outputChannel.appendLine(`❌ Erase command failed: ${error}`);
+        outputChannel.appendLine(`Erase command failed: ${error}`);
       }
     }
   );
@@ -535,7 +540,7 @@ export async function activate(context: vscode.ExtensionContext) {
     "extension.connectCommand",
     async () => {
       try {
-        outputChannel.appendLine("🔌 Connect command triggered");
+        outputChannel.appendLine("Connect command triggered");
         outputChannel.show();
 
         // Check if already connected and offer disconnect option
@@ -544,11 +549,11 @@ export async function activate(context: vscode.ExtensionContext) {
           const action = await vscode.window.showQuickPick(
             [
               {
-                label: "🔌 Select Different Port",
+                label: "Select Different Port",
                 description: "Choose a new serial port",
               },
               {
-                label: "🔌 Disconnect",
+                label: "Disconnect",
                 description: `Disconnect from ${currentPort}`,
               },
             ],
@@ -570,15 +575,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
         const selectedPort = await connectionManager.showPortSelection();
         if (selectedPort) {
-          outputChannel.appendLine(`📍 Selected port: ${selectedPort}`);
+          outputChannel.appendLine(`Selected port: ${selectedPort}`);
           // Update connect status bar to show selected port
           updateConnectStatusBar();
           treeViewProvider.refresh();
         } else {
-          outputChannel.appendLine("❌ No port selected");
+          outputChannel.appendLine("No port selected");
         }
       } catch (error) {
-        outputChannel.appendLine(`❌ Connect command failed: ${error}`);
+        outputChannel.appendLine(`Connect command failed: ${error}`);
       }
     }
   );
@@ -688,34 +693,34 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Initialize managers
   try {
-    outputChannel.appendLine("🔧 Initializing core managers...");
+    outputChannel.appendLine("Initializing core managers...");
     sdkManager = new SDKManager(context, outputChannel);
-    outputChannel.appendLine("  ✅ SDK Manager initialized");
+    outputChannel.appendLine("  SDK Manager initialized");
 
     toolchainManager = new ToolchainManager(context, outputChannel);
-    outputChannel.appendLine("  ✅ Toolchain Manager initialized");
+    outputChannel.appendLine("  Toolchain Manager initialized");
 
     sysConfigManager = new SysConfigManager(context, outputChannel);
-    outputChannel.appendLine("  ✅ SysConfig Manager initialized");
+    outputChannel.appendLine("  SysConfig Manager initialized");
 
     connectionManager = new ConnectionManager(context, outputChannel);
-    outputChannel.appendLine("  ✅ Connection Manager initialized");
+    outputChannel.appendLine("  Connection Manager initialized");
 
-    outputChannel.appendLine("🔧 Initializing CLI Manager...");
+    outputChannel.appendLine("Initializing CLI Manager...");
     cliManager = new CliManager(context);
     try {
       await cliManager.initialize();
       outputChannel.appendLine(
-        "  ✅ CLI Manager initialized and swd-debugger ready"
+        "  CLI Manager initialized and swd-debugger ready"
       );
     } catch (error) {
       outputChannel.appendLine(
-        `  ❌ CLI Manager initialization failed: ${error}`
+        `  CLI Manager initialization failed: ${error}`
       );
       throw error;
     }
 
-    outputChannel.appendLine("🎉 All managers initialized successfully");
+    outputChannel.appendLine("All managers initialized successfully");
     outputChannel.appendLine("");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -752,7 +757,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Listen for breakpoint hits to update UI automatically
     debugCommand.onBreakpointHit(async () => {
-      outputChannel.appendLine("🎯 Breakpoint hit - updating UI...");
+      outputChannel.appendLine("Breakpoint hit - updating UI...");
 
       // Update registry data in DataViewProvider
       try {
@@ -796,7 +801,7 @@ export async function activate(context: vscode.ExtensionContext) {
     });
 
     debugCommand.onStepCompleted(async () => {
-      outputChannel.appendLine("👟 Step completed - updating UI...");
+      outputChannel.appendLine("Step completed - updating UI...");
 
       // Update registry data in DataViewProvider
       try {
@@ -839,7 +844,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Listen for halt events to update UI automatically (after resume halts)
     debugCommand.onHaltDetected(async () => {
-      outputChannel.appendLine("⏸️ Halt detected - updating UI...");
+      outputChannel.appendLine("Halt detected - updating UI...");
 
       // Update registry data in DataViewProvider
       try {
@@ -884,7 +889,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Initialize TreeView Provider
     try {
-      outputChannel.appendLine("🌲 Initializing TreeView provider...");
+      outputChannel.appendLine("Initializing TreeView provider...");
       treeViewProvider = new Port11TreeViewProvider(context, outputChannel, {
         connectionManager,
         sdkManager,
@@ -892,7 +897,7 @@ export async function activate(context: vscode.ExtensionContext) {
         sysConfigManager,
       });
       outputChannel.appendLine(
-        "  ✅ TreeView provider initialized successfully"
+        "  TreeView provider initialized successfully"
       );
       outputChannel.appendLine("");
     } catch (error) {
@@ -908,7 +913,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // It's used for internal state management only
 
     // Initialize and Register Console View Provider
-    outputChannel.appendLine("🖥️ Initializing Console View...");
+    outputChannel.appendLine("Initializing Console View...");
     consoleViewProvider = new ConsoleViewProvider(context.extensionUri);
     context.subscriptions.push(
       vscode.window.registerWebviewViewProvider(
@@ -916,10 +921,10 @@ export async function activate(context: vscode.ExtensionContext) {
         consoleViewProvider
       )
     );
-    outputChannel.appendLine("  ✅ Console View initialized successfully");
+    outputChannel.appendLine("  Console View initialized successfully");
 
     // Initialize and Register Call Stack View Provider
-    outputChannel.appendLine("📚 Initializing Call Stack View...");
+    outputChannel.appendLine("Initializing Call Stack View...");
     callStackViewProvider = new CallStackViewProvider(
       context.extensionUri,
       outputChannel
@@ -930,12 +935,12 @@ export async function activate(context: vscode.ExtensionContext) {
         callStackViewProvider
       )
     );
-    outputChannel.appendLine("  ✅ Call Stack View initialized successfully");
+    outputChannel.appendLine("  Call Stack View initialized successfully");
 
     // Initialize and Register Data View Provider FIRST
     // (so we can pass it to BreakpointsViewProvider)
-    outputChannel.appendLine("📊 Initializing Data View...");
-    const swdDebuggerPath = cliManager.getExecutablePath();
+    outputChannel.appendLine("Initializing Data View...");
+    const swdDebuggerPath = cliManager.getSanitizedExecutablePath();
     dataViewProvider = new DataViewProvider(
       context.extensionUri,
       outputChannel,
@@ -947,11 +952,11 @@ export async function activate(context: vscode.ExtensionContext) {
         dataViewProvider
       )
     );
-    outputChannel.appendLine("  ✅ Data View initialized successfully");
+    outputChannel.appendLine("  Data View initialized successfully");
 
     // Initialize and Register Breakpoints View Provider
     // (pass dataViewProvider reference for auto-refresh)
-    outputChannel.appendLine("🔴 Initializing Breakpoints View...");
+    outputChannel.appendLine("Initializing Breakpoints View...");
     breakpointsViewProvider = new BreakpointsViewProvider(
       context.extensionUri,
       outputChannel,
@@ -964,10 +969,10 @@ export async function activate(context: vscode.ExtensionContext) {
         breakpointsViewProvider
       )
     );
-    outputChannel.appendLine("  ✅ Breakpoints View initialized successfully");
+    outputChannel.appendLine("  Breakpoints View initialized successfully");
 
     // Initialize and Register Boards View Provider
-    outputChannel.appendLine("📱 Initializing Boards View...");
+    outputChannel.appendLine("Initializing Boards View...");
     boardsViewProvider = new BoardsViewProvider(
       context.extensionUri,
       connectionManager,
@@ -979,10 +984,10 @@ export async function activate(context: vscode.ExtensionContext) {
         boardsViewProvider
       )
     );
-    outputChannel.appendLine("  ✅ Boards View initialized successfully");
+    outputChannel.appendLine("  Boards View initialized successfully");
 
     // Initialize and Register Setup View Provider
-    outputChannel.appendLine("⚙️ Initializing Setup View...");
+    outputChannel.appendLine("Initializing Setup View...");
     setupViewProvider = new SetupViewProvider(
       context.extensionUri,
       { sdkManager, toolchainManager, sysConfigManager },
@@ -994,7 +999,7 @@ export async function activate(context: vscode.ExtensionContext) {
         setupViewProvider
       )
     );
-    outputChannel.appendLine("  ✅ Setup View initialized successfully");
+    outputChannel.appendLine("  Setup View initialized successfully");
     outputChannel.appendLine("");
 
     // Register all commands
@@ -1065,19 +1070,19 @@ export async function activate(context: vscode.ExtensionContext) {
               await breakpointsViewProvider?.updateDeviceBreakpoints();
             } else {
               outputChannel.appendLine(
-                "⚠️  Skipping device breakpoints in offline mode"
+                "Skipping device breakpoints in offline mode"
               );
             }
           } catch (error) {
             outputChannel.appendLine(
-              `⚠️  Failed to get device breakpoints (continuing anyway): ${error}`
+              `Failed to get device breakpoints (continuing anyway): ${error}`
             );
           }
 
           // IMPORTANT: Add a small delay and force refresh
           setTimeout(() => {
             outputChannel.appendLine(
-              "🔄 Forcing final breakpoint view refresh..."
+              "Forcing final breakpoint view refresh..."
             );
             breakpointsViewProvider?.refresh();
           }, 500);
@@ -1166,7 +1171,7 @@ export async function activate(context: vscode.ExtensionContext) {
             dataViewProvider?.updateVariables([], [], false);
 
             outputChannel.appendLine(
-              "✅ Target resumed - monitoring for breakpoints..."
+              "Target resumed - monitoring for breakpoints..."
             );
           } catch (error) {
             outputChannel.appendLine(`Failed to resume: ${error}`);
@@ -1356,10 +1361,10 @@ async function highlightBreakpointLine(
   try {
     // Read the Program Counter to get current execution address
     const pc = await debugCommand.readPC();
-    outputChannel.appendLine(`📍 Current PC: ${pc}`);
+    outputChannel.appendLine(`Current PC: ${pc}`);
 
     if (!breakpointsViewProvider) {
-      outputChannel.appendLine("⚠️  Breakpoints view not available");
+      outputChannel.appendLine("Breakpoints view not available");
       return;
     }
 
@@ -1368,7 +1373,7 @@ async function highlightBreakpointLine(
 
     if (!addressMapper || !addressMapper.isLoaded()) {
       outputChannel.appendLine(
-        "⚠️  Address mapper not loaded - cannot map PC to source line"
+        "Address mapper not loaded - cannot map PC to source line"
       );
       return;
     }
@@ -1387,13 +1392,13 @@ async function highlightBreakpointLine(
       // Compare with and without Thumb bit (bit 0)
       if (pcValue === bpAddress || (pcValue & ~1) === (bpAddress & ~1)) {
         outputChannel.appendLine(
-          `✅ Found source location: ${bp.file}:${bp.line}`
+          `Found source location: ${bp.file}:${bp.line}`
         );
 
         // Navigate to the source location
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
-          outputChannel.appendLine("⚠️  No workspace folder found");
+          outputChannel.appendLine("No workspace folder found");
           return;
         }
 
@@ -1449,17 +1454,17 @@ async function highlightBreakpointLine(
         }
 
         outputChannel.appendLine(
-          `✅ Highlighted line ${bp.line} in ${bp.file}`
+          `Highlighted line ${bp.line} in ${bp.file}`
         );
         return; // Found and highlighted, exit
       }
     }
 
-    outputChannel.appendLine(`⚠️  No source mapping found for PC: ${pc}`);
+    outputChannel.appendLine(`No source mapping found for PC: ${pc}`);
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     outputChannel.appendLine(
-      `❌ Error highlighting breakpoint line: ${errorMsg}`
+      `Error highlighting breakpoint line: ${errorMsg}`
     );
     throw error;
   }

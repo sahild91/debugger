@@ -48,9 +48,9 @@ export class ConnectionManager {
                 await this.context.globalState.update(this.SELECTED_PORT_INFO_KEY, portInfo);
             }
             await this.context.globalState.update(this.PORT_LAST_SELECTED_KEY, new Date().toISOString());
-            this.outputChannel.appendLine(`💾 Saved selected port: ${port}`);
+            this.outputChannel.appendLine(`Saved selected port: ${port}`);
         } catch (error) {
-            this.outputChannel.appendLine(`⚠️  Failed to save selected port: ${error}`);
+            this.outputChannel.appendLine(`Failed to save selected port: ${error}`);
         }
     }
 
@@ -70,14 +70,14 @@ export class ConnectionManager {
                 if (portExists) {
                     this.selectedPort = savedPort;
                     this.selectedPortInfo = savedPortInfo || portExists;
-                    this.outputChannel.appendLine(`📂 Loaded saved port: ${savedPort}`);
+                    this.outputChannel.appendLine(`Loaded saved port: ${savedPort}`);
                 } else {
-                    this.outputChannel.appendLine(`⚠️  Saved port ${savedPort} no longer available`);
+                    this.outputChannel.appendLine(`Saved port ${savedPort} no longer available`);
                     await this.clearSavedPort();
                 }
             }
         } catch (error) {
-            this.outputChannel.appendLine(`⚠️  Failed to load saved port: ${error}`);
+            this.outputChannel.appendLine(`Failed to load saved port: ${error}`);
         }
     }
 
@@ -105,7 +105,7 @@ export class ConnectionManager {
                     throw new Error(`Unsupported platform: ${platform}`);
             }
         } catch (error) {
-            this.outputChannel.appendLine(`❌ Error getting ports: ${error}`);
+            this.outputChannel.appendLine(`Error getting ports: ${error}`);
             throw error;
         }
     }
@@ -339,10 +339,10 @@ export class ConnectionManager {
                 ].filter(Boolean).join('\n');
 
                 vscode.window.showInformationMessage(`Connected to:\n${deviceInfo}`);
-                this.outputChannel.appendLine(`🔌 Connected to port: ${selectedPortInfo.path}`);
+                this.outputChannel.appendLine(`Connected to port: ${selectedPortInfo.path}`);
 
                 if (selectedPortInfo.deviceType !== 'Unknown') {
-                    this.outputChannel.appendLine(`📱 Device type: ${selectedPortInfo.deviceType}`);
+                    this.outputChannel.appendLine(`Device type: ${selectedPortInfo.deviceType}`);
                 }
 
                 return selectedPortInfo.path;
@@ -352,7 +352,7 @@ export class ConnectionManager {
         } catch (error) {
             const errorMessage = `Failed to get available ports: ${error}`;
             vscode.window.showErrorMessage(errorMessage);
-            this.outputChannel.appendLine(`❌ ${errorMessage}`);
+            this.outputChannel.appendLine(`${errorMessage}`);
             return undefined;
         }
     }
@@ -371,7 +371,7 @@ export class ConnectionManager {
 
     async disconnect(): Promise<void> {
         if (this.selectedPort) {
-            this.outputChannel.appendLine(`🔌 Disconnected from port: ${this.selectedPort}`);
+            this.outputChannel.appendLine(`Disconnected from port: ${this.selectedPort}`);
             vscode.window.showInformationMessage(`Disconnected from ${this.selectedPort}`);
         }
         this.selectedPort = null;
@@ -401,7 +401,7 @@ export class ConnectionManager {
      */
     async detectBoards(): Promise<BoardInfo[]> {
         try {
-            this.outputChannel.appendLine('🔍 Detecting boards...');
+            this.outputChannel.appendLine('Detecting boards...');
             const ports = await this.getAvailablePorts();
             
             // Convert to BoardInfo format
@@ -478,7 +478,7 @@ export class ConnectionManager {
             if (this.selectedPort) {
                 const ports = await this.getAvailablePorts();
                 if (ports.find(p => p.path === this.selectedPort)) {
-                    this.outputChannel.appendLine(`✅ Auto-selected saved port: ${this.selectedPort}`);
+                    this.outputChannel.appendLine(`Auto-selected saved port: ${this.selectedPort}`);
                     return true;
                 }
             }
@@ -489,13 +489,13 @@ export class ConnectionManager {
                 this.selectedPort = mspm0Boards[0].path;
                 this.selectedPortInfo = mspm0Boards[0];
                 await this.saveSelectedPort(this.selectedPort, this.selectedPortInfo);
-                this.outputChannel.appendLine(`✅ Auto-selected MSPM0 board: ${this.selectedPort}`);
+                this.outputChannel.appendLine(`Auto-selected MSPM0 board: ${this.selectedPort}`);
                 return true;
             }
 
             return false;
         } catch (error) {
-            this.outputChannel.appendLine(`⚠️  Auto-select failed: ${error}`);
+            this.outputChannel.appendLine(`Auto-select failed: ${error}`);
             return false;
         }
     }
@@ -512,7 +512,7 @@ export class ConnectionManager {
      */
     async connectToBoard(port: string, options?: any): Promise<void> {
         try {
-            this.outputChannel.appendLine(`🔌 Connecting to board on ${port}...`);
+            this.outputChannel.appendLine(`Connecting to board on ${port}...`);
             
             // Verify the port exists
             const availablePorts = await this.getAvailablePorts();
@@ -529,7 +529,7 @@ export class ConnectionManager {
             // Save to globalState
             await this.saveSelectedPort(port, portInfo);
 
-            this.outputChannel.appendLine(`✅ Connected to ${port}`);
+            this.outputChannel.appendLine(`Connected to ${port}`);
             if (portInfo.deviceType !== 'Unknown') {
                 this.outputChannel.appendLine(`   Device type: ${portInfo.deviceType}`);
             }
@@ -538,7 +538,7 @@ export class ConnectionManager {
             // This method just manages the connection state for the extension
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            this.outputChannel.appendLine(`❌ Connection failed: ${errorMessage}`);
+            this.outputChannel.appendLine(`Connection failed: ${errorMessage}`);
             throw error;
         }
     }
@@ -550,7 +550,7 @@ export class ConnectionManager {
     async disconnectFromBoard(port: string): Promise<void> {
         try {
             if (this.selectedPort === port) {
-                this.outputChannel.appendLine(`🔌 Disconnecting from ${port}...`);
+                this.outputChannel.appendLine(`Disconnecting from ${port}...`);
                 
                 this.selectedPort = null;
                 this.selectedPortInfo = null;
@@ -558,13 +558,13 @@ export class ConnectionManager {
                 // Clear from globalState
                 await this.clearSavedPort();
 
-                this.outputChannel.appendLine(`✅ Disconnected from ${port}`);
+                this.outputChannel.appendLine(`Disconnected from ${port}`);
             } else {
-                this.outputChannel.appendLine(`⚠️  Port ${port} is not the currently selected port`);
+                this.outputChannel.appendLine(`Port ${port} is not the currently selected port`);
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            this.outputChannel.appendLine(`❌ Disconnection failed: ${errorMessage}`);
+            this.outputChannel.appendLine(`Disconnection failed: ${errorMessage}`);
             throw error;
         }
     }

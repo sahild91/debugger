@@ -59,7 +59,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
    */
   public async updateAll(): Promise<void> {
     try {
-      this.outputChannel.appendLine('🔄 Updating Data View (Registry + Variables)...');
+      this.outputChannel.appendLine('Updating Data View (Registry + Variables)...');
       
       // Update registry data
       await this.updateRegistryData();
@@ -69,7 +69,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
       
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      this.outputChannel.appendLine(`❌ Failed to update data view: ${errorMsg}`);
+      this.outputChannel.appendLine(`Failed to update data view: ${errorMsg}`);
     }
   }
 
@@ -78,7 +78,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
    */
   public async updateRegistryData(): Promise<void> {
     try {
-      this.outputChannel.appendLine('📊 Reading registry data...');
+      this.outputChannel.appendLine('Reading registry data...');
       const output = await this.executeSwdCommand(['read-all']);
       
       // Parse the output
@@ -87,11 +87,11 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
       // Sort registers with PC at the top
       this.dataContent.registers = this.sortRegisters(registers);
 
-      this.outputChannel.appendLine(`✅ Registry data updated: ${this.dataContent.registers.length} registers`);
+      this.outputChannel.appendLine(`Registry data updated: ${this.dataContent.registers.length} registers`);
       this.refresh();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      this.outputChannel.appendLine(`❌ Failed to read registry data: ${errorMsg}`);
+      this.outputChannel.appendLine(`Failed to read registry data: ${errorMsg}`);
       this.dataContent.registers = [];
       this.refresh();
     }
@@ -101,7 +101,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
    * Update variables data (called from extension.ts with data from debugCommand.getVariables())
    */
   public updateVariables(localVars: VariableInfo[], globalVars: VariableInfo[], isActive: boolean): void {
-    this.outputChannel.appendLine(`📋 Updating variables: ${localVars.length} local, ${globalVars.length} global`);
+    this.outputChannel.appendLine(`Updating variables: ${localVars.length} local, ${globalVars.length} global`);
     
     this.dataContent.localVariables = localVars;
     this.dataContent.globalVariables = globalVars;
@@ -205,7 +205,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    this.outputChannel.appendLine(`🔄 Refreshing Data View webview...`);
+    this.outputChannel.appendLine(`Refreshing Data View webview...`);
     
     this._view.webview.postMessage({
       type: "update",
@@ -460,11 +460,11 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <div class="header">
-                <button class="refresh-btn" onclick="refreshData()">🔄 Refresh</button>
+                <button class="refresh-btn" onclick="refreshData()">Refresh</button>
             </div>
             <div class="container" id="data-container">
                 <div class="empty-state">
-                    <div class="empty-icon">📊</div>
+                    <div class="empty-icon">[Data]</div>
                     <div class="empty-title">No Data Available</div>
                     <div class="empty-description">Start debugging and halt to see data</div>
                 </div>
@@ -486,7 +486,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
                     if (!data || (!data.registers.length && !data.localVariables.length && !data.globalVariables.length)) {
                         container.innerHTML = \`
                             <div class="empty-state">
-                                <div class="empty-icon">📊</div>
+                                <div class="empty-icon">[Data]</div>
                                 <div class="empty-title">No Data Available</div>
                                 <div class="empty-description">Start debugging and halt to see data</div>
                             </div>
@@ -500,7 +500,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
                     if (data.registers && data.registers.length > 0) {
                         html += \`
                             <div class="section-header">
-                                <span class="section-icon">📋</span>
+                                <span class="section-icon">[List]</span>
                                 <span>Registry</span>
                                 <span class="section-count">\${data.registers.length}</span>
                             </div>
@@ -524,7 +524,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
                     if (data.localVariables && data.localVariables.length > 0) {
                         html += \`
                             <div class="section-header" style="margin-top: 16px;">
-                                <span class="section-icon">🔧</span>
+                                <span class="section-icon">[Setup]</span>
                                 <span>Local Variables</span>
                                 <span class="section-count">\${data.localVariables.length}</span>
                             </div>
@@ -539,7 +539,7 @@ export class DataViewProvider implements vscode.WebviewViewProvider {
                     if (data.globalVariables && data.globalVariables.length > 0) {
                         html += \`
                             <div class="section-header" style="margin-top: 16px;">
-                                <span class="section-icon">🌍</span>
+                                <span class="section-icon">[Global]</span>
                                 <span>Global Variables</span>
                                 <span class="section-count">\${data.globalVariables.length}</span>
                             </div>

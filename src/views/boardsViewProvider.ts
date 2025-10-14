@@ -207,11 +207,11 @@ export class BoardsViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <div class="header">
-                <button class="detect-btn" onclick="detectBoards()">🔍 Detect</button>
+                <button class="detect-btn" onclick="detectBoards()">Detect</button>
             </div>
             <div class="container" id="boards-container">
                 <div class="empty-state">
-                    <div class="scan-icon">📡</div>
+                    <div class="scan-icon">[Scan]</div>
                     <div>No boards detected</div>
                     <div style="font-size: 10px; margin-top: 8px;">Click Detect to scan</div>
                 </div>
@@ -233,7 +233,7 @@ export class BoardsViewProvider implements vscode.WebviewViewProvider {
                     if (boards.length === 0) {
                         container.innerHTML = \`
                             <div class="empty-state">
-                                <div class="scan-icon">📡</div>
+                                <div class="scan-icon">[Scan]</div>
                                 <div>No boards detected</div>
                                 <div style="font-size: 10px; margin-top: 8px;">Click Detect to scan</div>
                             </div>
@@ -243,7 +243,7 @@ export class BoardsViewProvider implements vscode.WebviewViewProvider {
 
                     let html = '';
                     boards.forEach(board => {
-                        const icon = board.isConnected ? '🟢' : '⚪';
+                        const icon = board.isConnected ? '[Connected]' : '[Disconnected]';
                         const statusClass = board.isConnected ? 'connected' : '';
                         const statusText = board.isConnected ? 'Connected' : 'Available';
 

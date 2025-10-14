@@ -56,9 +56,9 @@ export class SysConfigManager {
                 await this.context.globalState.update(this.SYSCONFIG_CLI_PATH_KEY, cliPath);
             }
             await this.context.globalState.update(this.SYSCONFIG_LAST_DETECTED_KEY, new Date().toISOString());
-            this.outputChannel.appendLine(`💾 Saved SysConfig path: ${basePath}`);
+            this.outputChannel.appendLine(`Saved SysConfig path: ${basePath}`);
         } catch (error) {
-            this.outputChannel.appendLine(`⚠️  Failed to save SysConfig path: ${error}`);
+            this.outputChannel.appendLine(`Failed to save SysConfig path: ${error}`);
         }
     }
 
@@ -68,7 +68,7 @@ export class SysConfigManager {
     private async loadSavedSysConfigCliPath(): Promise<string | undefined> {
         const savedPath = this.context.globalState.get<string>(this.SYSCONFIG_CLI_PATH_KEY);
         if (savedPath && fs.existsSync(savedPath)) {
-            this.outputChannel.appendLine(`📂 Loaded saved SysConfig CLI path: ${savedPath}`);
+            this.outputChannel.appendLine(`Loaded saved SysConfig CLI path: ${savedPath}`);
             return savedPath;
         }
         return undefined;
@@ -139,15 +139,15 @@ export class SysConfigManager {
 
                     const sysConfigInfo = await this.validateSysConfigAtPath(searchPath);
                     if (sysConfigInfo.isInstalled) {
-                        this.outputChannel.appendLine(`✅ Valid SysConfig found at: ${searchPath}`);
+                        this.outputChannel.appendLine(`Valid SysConfig found at: ${searchPath}`);
                         // Update our internal path to the actual location
                         this.sysConfigPath = searchPath;
                         return sysConfigInfo;
                     } else {
-                        this.outputChannel.appendLine(`❌ Directory exists but no valid SysConfig found`);
+                        this.outputChannel.appendLine(`Directory exists but no valid SysConfig found`);
                     }
                 } else {
-                    this.outputChannel.appendLine(`❌ Directory does not exist`);
+                    this.outputChannel.appendLine(`Directory does not exist`);
                 }
             }
 
@@ -162,7 +162,7 @@ export class SysConfigManager {
                 }
             }
 
-            this.outputChannel.appendLine('❌ SysConfig not found in any expected location');
+            this.outputChannel.appendLine('SysConfig not found in any expected location');
             return defaultInfo;
 
         } catch (error) {
@@ -187,7 +187,7 @@ export class SysConfigManager {
             for (const possiblePath of possibleCliPaths) {
                 this.outputChannel.appendLine(`  Checking CLI executable: ${possiblePath}`);
                 if (fs.existsSync(possiblePath)) {
-                    this.outputChannel.appendLine(`  ✅ Found SysConfig CLI: ${possiblePath}`);
+                    this.outputChannel.appendLine(`  Found SysConfig CLI: ${possiblePath}`);
 
                     // Try to get version information
                     const version = await this.getSysConfigVersion(possiblePath);
@@ -199,7 +199,7 @@ export class SysConfigManager {
                         cliPath: possiblePath
                     };
                 } else {
-                    this.outputChannel.appendLine(`  ❌ Not found: ${possiblePath}`);
+                    this.outputChannel.appendLine(`  Not found: ${possiblePath}`);
                 }
             }
 

@@ -107,7 +107,7 @@ export class BuildCommand {
         const stageIcon = this.getStageIcon(stage);
 
         if (stage === 'error') {
-            this.outputChannel.appendLine(`[${timestamp}] ${stageIcon} ❌ BUILD FAILED: ${message}`);
+            this.outputChannel.appendLine(`[${timestamp}] ${stageIcon} BUILD FAILED: ${message}`);
             this.outputChannel.appendLine('Build process terminated due to error.');
         } else {
             this.outputChannel.appendLine(`[${timestamp}] ${stageIcon} ${message}`);
@@ -123,13 +123,13 @@ export class BuildCommand {
 
     private getStageIcon(stage: BuildProgress['stage']): string {
         switch (stage) {
-            case 'setup': return '🔧';
-            case 'sysconfig': return '⚙️';
-            case 'compile': return '🔨';
-            case 'link': return '🔗';
-            case 'complete': return '✅';
-            case 'error': return '❌';
-            default: return '📝';
+            case 'setup': return '[Setup]';
+            case 'sysconfig': return '[Config]';
+            case 'compile': return '[Build]';
+            case 'link': return '[Link]';
+            case 'complete': return 'SUCCESS:';
+            case 'error': return 'ERROR:';
+            default: return 'NOTE:';
         }
     }
 
@@ -140,7 +140,7 @@ export class BuildCommand {
     async cancelBuild(): Promise<void> {
         if (this.buildProcess) {
             this.updateProgress('error', 'Cancelling build process', 100);
-            this.outputChannel.appendLine('🛑 Build cancelled by user');
+            this.outputChannel.appendLine('Build cancelled by user');
 
             // First try graceful termination
             this.buildProcess.kill('SIGTERM');
@@ -148,7 +148,7 @@ export class BuildCommand {
             // Force kill after 3 seconds if it doesn't respond
             setTimeout(() => {
                 if (this.buildProcess && !this.buildProcess.killed) {
-                    this.outputChannel.appendLine('🔫 Force killing build process...');
+                    this.outputChannel.appendLine('Force killing build process...');
                     this.buildProcess.kill('SIGKILL');
                 }
             }, 3000);
@@ -158,7 +158,7 @@ export class BuildCommand {
 
             vscode.window.showWarningMessage('Build process cancelled');
         } else {
-            this.outputChannel.appendLine('ℹ️  No active build process to cancel');
+            this.outputChannel.appendLine('No active build process to cancel');
         }
     }
 
@@ -170,8 +170,8 @@ export class BuildCommand {
 
         this.outputChannel.show(true);  // Force reveal
         this.outputChannel.appendLine('='.repeat(50));
-        this.outputChannel.appendLine('🚀 DEBUG: Build command execute() called');
-        this.outputChannel.appendLine(`🚀 DEBUG: Options: ${JSON.stringify(options)}`);
+        this.outputChannel.appendLine('DEBUG: Build command execute() called');
+        this.outputChannel.appendLine(`DEBUG: Options: ${JSON.stringify(options)}`);
         this.outputChannel.appendLine('='.repeat(50));
 
         this.buildStartTime = Date.now();
@@ -185,7 +185,7 @@ export class BuildCommand {
             // Show output channel
             this.outputChannel.show(true);
             this.outputChannel.appendLine('='.repeat(80));
-            this.outputChannel.appendLine('🚀 MSPM0 BUILD PROCESS STARTING');
+            this.outputChannel.appendLine('MSPM0 BUILD PROCESS STARTING');
             this.outputChannel.appendLine('='.repeat(80));
 
             // Stage 1: Setup and validation (0-15%)
@@ -218,9 +218,9 @@ export class BuildCommand {
                 throw error;  // Stop immediately on config failure
             }
 
-            this.outputChannel.appendLine(`📁 Project: ${path.basename(projectInfo.rootPath)} (${projectInfo.rootPath})`);
-            this.outputChannel.appendLine(`🔧 Toolchain: ${path.basename(buildConfig.compilerPath)}`);
-            this.outputChannel.appendLine(`⚙️ Mode: ${options.optimization === 'release' ? 'Release' : 'Debug'}`);
+            this.outputChannel.appendLine(`Project: ${path.basename(projectInfo.rootPath)} (${projectInfo.rootPath})`);
+            this.outputChannel.appendLine(`Toolchain: ${path.basename(buildConfig.compilerPath)}`);
+            this.outputChannel.appendLine(`Mode: ${options.optimization === 'release' ? 'Release' : 'Debug'}`);
             this.outputChannel.appendLine('');
 
             // Stage 2: SysConfig generation (15-35%)
@@ -248,12 +248,12 @@ export class BuildCommand {
             this.updateProgress('error', error instanceof Error ? error.message : 'Unknown error', 100);
 
             const errorMessage = error instanceof Error ? error.message : String(error);
-            this.outputChannel.appendLine(`❌ Build Error: ${errorMessage}`);
+            this.outputChannel.appendLine(`Build Error: ${errorMessage}`);
             this.outputChannel.appendLine('='.repeat(80));
 
             // Stop any running processes
             if (this.buildProcess && !(this.buildProcess as ChildProcess).killed) {
-                this.outputChannel.appendLine('🛑 Terminating build process...');
+                this.outputChannel.appendLine('Terminating build process...');
                 (this.buildProcess as ChildProcess).kill('SIGTERM');
                 this.buildProcess = null;
             }
@@ -319,7 +319,7 @@ export class BuildCommand {
     private async detectProject(): Promise<any> {
         const workspaceFolders = vscode.workspace.workspaceFolders!;
 
-        this.outputChannel.appendLine('🔍 Searching for MSPM0 project indicators...');
+        this.outputChannel.appendLine('Searching for MSPM0 project indicators...');
 
         const projectFiles: string[] = [];
 
@@ -357,9 +357,9 @@ export class BuildCommand {
                     foundEssential++;
                     foundFileTypes.push(pattern);
                     projectFiles.push(...files.map(f => f.fsPath));
-                    this.outputChannel.appendLine(`     ✅ Found ${files.length} ${pattern} file(s)`);
+                    this.outputChannel.appendLine(`     Found ${files.length} ${pattern} file(s)`);
                 } else {
-                    this.outputChannel.appendLine(`     ❌ No ${pattern} files found`);
+                    this.outputChannel.appendLine(`     No ${pattern} files found`);
                 }
             }
 
@@ -375,13 +375,13 @@ export class BuildCommand {
                     foundOptional++;
                     foundFileTypes.push(pattern);
                     projectFiles.push(...files.map(f => f.fsPath));
-                    this.outputChannel.appendLine(`     ✅ Found ${files.length} ${pattern} file(s)`);
+                    this.outputChannel.appendLine(`     Found ${files.length} ${pattern} file(s)`);
                 }
             }
 
             // Require at least both essential file types (C files AND syscfg files)
             if (foundEssential >= 2) {  // Both *.c and *.syscfg must be present
-                this.outputChannel.appendLine(`   ✅ Valid MSPM0 project detected in ${folderPath}`);
+                this.outputChannel.appendLine(`   Valid MSPM0 project detected in ${folderPath}`);
                 this.outputChannel.appendLine(`      Essential files: ${foundEssential}/2, Optional files: ${foundOptional}`);
 
                 return {
@@ -393,7 +393,7 @@ export class BuildCommand {
                     foundFileTypes
                 };
             } else {
-                this.outputChannel.appendLine(`   ❌ Insufficient project files in ${folderPath}`);
+                this.outputChannel.appendLine(`   Insufficient project files in ${folderPath}`);
                 this.outputChannel.appendLine(`      Essential files found: ${foundEssential}/2 required`);
                 this.outputChannel.appendLine(`      Missing: ${essentialFiles.filter((_, i) => !foundFileTypes.includes(essentialFiles[i])).join(', ')}`);
             }
@@ -415,7 +415,7 @@ export class BuildCommand {
     }
 
     private async prepareBuildConfig(projectInfo: any, options: BuildOptions): Promise<any> {
-        this.outputChannel.appendLine('🔧 Preparing build configuration...');
+        this.outputChannel.appendLine('Preparing build configuration...');
 
         // Get compiler path with detailed logging
         const compilerPath = this.toolchainManager.getCompilerPath();
@@ -423,18 +423,18 @@ export class BuildCommand {
         if (!compilerPath) {
             const errorMessage = `ARM-CGT-CLANG compiler not found!
 
-    🚨 The extension could not find the TI ARM-CGT-CLANG compiler in any of these locations:
+    The extension could not find the TI ARM-CGT-CLANG compiler in any of these locations:
 
     1. Extension Storage: ${this.context.globalStorageUri.fsPath}
     2. System TI Installations (C:\\ti\\, /opt/ti/, etc.)
     3. System PATH
 
-    💡 Solutions:
+    Solutions:
     1. Run "Port11 Debugger: Setup Toolchain" command to auto-install
     2. Manually install TI ARM-CGT-CLANG from: https://www.ti.com/tool/ARM-CGT
     3. Add existing installation to your system PATH
 
-    🔧 Supported Versions: 3.2.1.LTS, 3.2.2.LTS, 4.0.2.LTS, 4.0.3.LTS`;
+    Supported Versions: 3.2.1.LTS, 3.2.2.LTS, 4.0.2.LTS, 4.0.3.LTS`;
 
             throw new Error(errorMessage);
         }
@@ -456,12 +456,12 @@ export class BuildCommand {
         ];
 
         // Log successful configuration
-        this.outputChannel.appendLine('✅ Build configuration prepared successfully:');
-        this.outputChannel.appendLine(`   📄 Project: ${path.basename(projectInfo.rootPath)}`);
-        this.outputChannel.appendLine(`   🔧 Compiler: ${compilerPath}`);
-        this.outputChannel.appendLine(`   📚 SDK: ${sdkPath}`);
-        this.outputChannel.appendLine(`   📁 Include paths: ${includePaths.length} directories`);
-        this.outputChannel.appendLine(`   📦 Library paths: ${libraryPaths.length} directories`);
+        this.outputChannel.appendLine('Build configuration prepared successfully:');
+        this.outputChannel.appendLine(`   Project: ${path.basename(projectInfo.rootPath)}`);
+        this.outputChannel.appendLine(`   Compiler: ${compilerPath}`);
+        this.outputChannel.appendLine(`   SDK: ${sdkPath}`);
+        this.outputChannel.appendLine(`   Include paths: ${includePaths.length} directories`);
+        this.outputChannel.appendLine(`   Library paths: ${libraryPaths.length} directories`);
         this.outputChannel.appendLine('');
 
         return {
@@ -502,7 +502,7 @@ export class BuildCommand {
                 // Ensure build directory exists
                 if (!fs.existsSync(config.outputPath)) {
                     fs.mkdirSync(config.outputPath, { recursive: true });
-                    this.outputChannel.appendLine(`📁 Created build directory: ${config.outputPath}`);
+                    this.outputChannel.appendLine(`Created build directory: ${config.outputPath}`);
                 }
 
                 // Filter source files to only include ones that actually exist
@@ -511,7 +511,7 @@ export class BuildCommand {
                     throw new Error('No valid source files found for compilation');
                 }
 
-                this.outputChannel.appendLine(`📝 Compiling ${validSourceFiles.length} source files:`);
+                this.outputChannel.appendLine(`Compiling ${validSourceFiles.length} source files:`);
                 validSourceFiles.forEach(file => {
                     this.outputChannel.appendLine(`   • ${path.relative(config.projectPath, file)}`);
                 });
@@ -558,9 +558,9 @@ export class BuildCommand {
                 if (fs.existsSync(linkerScript)) {
                     // Use TI linker syntax - single argument with proper path
                     args.push(`-Wl,-l${linkerScript}`);
-                    this.outputChannel.appendLine(`🔗 Using linker script: ${path.basename(linkerScript)}`);
+                    this.outputChannel.appendLine(`Using linker script: ${path.basename(linkerScript)}`);
                 } else {
-                    this.outputChannel.appendLine(`⚠️  Linker script not found: ${linkerScript}`);
+                    this.outputChannel.appendLine(`Linker script not found: ${linkerScript}`);
                     this.outputChannel.appendLine(`   This may cause linking issues. Ensure SysConfig generation completed successfully.`);
                 }
                 // Additional linker flags
@@ -581,7 +581,7 @@ export class BuildCommand {
 
                 if (fs.existsSync(driverlibDir)) {
                     args.push(`-Wl,--library=driverlib.a`);
-                    this.outputChannel.appendLine(`🔗 Added driverlib: ${driverlibDir}`);
+                    this.outputChannel.appendLine(`Added driverlib: ${driverlibDir}`);
                 }
 
                 // Add map file generation for debugging
@@ -589,18 +589,18 @@ export class BuildCommand {
                 args.push(`-Wl,-m${path.basename(mapFile)}`);
 
                 // const driverlibPath = path.join(this.sdkManager.getSDKPath(), 'source', 'ti', 'driverlib', 'lib', 'ticlang', 'm0p', 'mspm0g1x0x_g3x0x');
-                // this.outputChannel.appendLine(`🔗 $$$$$ Using driverlib: ${driverlibPath}`);
+                // this.outputChannel.appendLine(`$$$$$ Using driverlib: ${driverlibPath}`);
                 // if (fs.existsSync(driverlibPath)) {
                 //     const driverlibFile = path.join(driverlibPath, 'driverlib.a');
-                //     this.outputChannel.appendLine(`🔗 $$$$$ Using driverlib: ${driverlibFile}`);
+                //     this.outputChannel.appendLine(`$$$$$ Using driverlib: ${driverlibFile}`);
                 //     if (fs.existsSync(driverlibFile)) {
                 //         args.push(`-Wl,-l${driverlibFile}`);
-                //         this.outputChannel.appendLine(`🔗 Added driverlib: ${driverlibFile}`);
+                //         this.outputChannel.appendLine(`Added driverlib: ${driverlibFile}`);
                 //     }
                 // }
 
                 // Display the full command being executed
-                this.outputChannel.appendLine(`🔨 Executing: ${path.basename(config.compilerPath)} ${args.join(' ')}`);
+                this.outputChannel.appendLine(`Executing: ${path.basename(config.compilerPath)} ${args.join(' ')}`);
                 this.outputChannel.appendLine('');
 
                 // Execute the compiler
@@ -626,7 +626,7 @@ export class BuildCommand {
                     const lines = output.split('\n');
                     lines.forEach((line: string) => {
                         if (line.trim()) {
-                            this.outputChannel.appendLine(`  📝 ${line.trim()}`);
+                            this.outputChannel.appendLine(`  ${line.trim()}`);
                         }
                     });
                 });
@@ -641,11 +641,11 @@ export class BuildCommand {
                         if (line.trim()) {
                             if (line.toLowerCase().includes('error:') || line.toLowerCase().includes('fatal error')) {
                                 hasCompileErrors = true;
-                                this.outputChannel.appendLine(`  ❌ ${line.trim()}`);
+                                this.outputChannel.appendLine(`  ${line.trim()}`);
                             } else if (line.toLowerCase().includes('warning:')) {
-                                this.outputChannel.appendLine(`  ⚠️  ${line.trim()}`);
+                                this.outputChannel.appendLine(`  ${line.trim()}`);
                             } else {
-                                this.outputChannel.appendLine(`  📝 ${line.trim()}`);
+                                this.outputChannel.appendLine(`  ${line.trim()}`);
                             }
                         }
                     });
@@ -656,7 +656,7 @@ export class BuildCommand {
                     this.buildProcess = null;
 
                     this.outputChannel.appendLine('');
-                    this.outputChannel.appendLine('📊 BUILD RESULTS');
+                    this.outputChannel.appendLine('BUILD RESULTS');
                     this.outputChannel.appendLine('-'.repeat(30));
 
                     // Parse diagnostics from output
@@ -676,8 +676,8 @@ export class BuildCommand {
                     };
 
                     if (result.success) {
-                        this.outputChannel.appendLine(`✅ BUILD COMPLETED SUCCESSFULLY (Exit Code: ${code})`);
-                        this.outputChannel.appendLine(`📦 Output: ${path.relative(config.projectPath, outputFile)}`);
+                        this.outputChannel.appendLine(`BUILD COMPLETED SUCCESSFULLY (Exit Code: ${code})`);
+                        this.outputChannel.appendLine(`Output: ${path.relative(config.projectPath, outputFile)}`);
 
                         (async () => {
                             try {
@@ -723,35 +723,35 @@ export class BuildCommand {
                                 // Run tiarmobjdump with output redirected to file
                                 await this.runToolWithOutputFile(tiarmobjdumpPath, disasmArgs, config.projectPath, 'STEP_8 tiarmobjdump -> full_disasm.txt', disasmOut);
 
-                                this.outputChannel.appendLine(`📦 Artifacts generated:`);
+                                this.outputChannel.appendLine(`Artifacts generated:`);
                                 this.outputChannel.appendLine(`   • ${path.relative(config.projectPath, hexOut)}`);
                                 this.outputChannel.appendLine(`   • ${path.relative(config.projectPath, elfOut)}`);
                                 this.outputChannel.appendLine(`   • ${path.relative(config.projectPath, disasmOut)}`);
                             } catch (postErr) {
-                                this.outputChannel.appendLine(`⚠️  Post-link step skipped due to error: ${String(postErr)}`);
+                                this.outputChannel.appendLine(`Post-link step skipped due to error: ${String(postErr)}`);
                             }
                         })();
 
                         // Show file size if available
                         try {
                             const stats = fs.statSync(outputFile);
-                            this.outputChannel.appendLine(`📏 Binary size: ${stats.size.toLocaleString()} bytes`);
+                            this.outputChannel.appendLine(`Binary size: ${stats.size.toLocaleString()} bytes`);
                         } catch (e) {
                             // Size check failed but build was successful
                         }
 
                         if (warnings.length > 0) {
-                            this.outputChannel.appendLine(`⚠️  Note: ${warnings.length} warning(s) reported`);
+                            this.outputChannel.appendLine(`Note: ${warnings.length} warning(s) reported`);
                         }
                     } else {
-                        this.outputChannel.appendLine(`❌ BUILD FAILED (Exit Code: ${code})`);
+                        this.outputChannel.appendLine(`BUILD FAILED (Exit Code: ${code})`);
                         this.outputChannel.appendLine(`   • Errors: ${errors.length}`);
                         this.outputChannel.appendLine(`   • Warnings: ${warnings.length}`);
 
                         // Show first few errors for quick reference
                         if (errors.length > 0) {
                             this.outputChannel.appendLine('');
-                            this.outputChannel.appendLine('🚨 COMPILATION ERRORS:');
+                            this.outputChannel.appendLine('COMPILATION ERRORS:');
                             errors.slice(0, 3).forEach((error, index) => {
                                 this.outputChannel.appendLine(`   ${index + 1}. ${error.message}`);
                             });
@@ -762,7 +762,7 @@ export class BuildCommand {
                     }
 
                     this.outputChannel.appendLine('');
-                    this.outputChannel.appendLine('🚀 NEXT STEPS:');
+                    this.outputChannel.appendLine('NEXT STEPS:');
                     if (result.success) {
                         this.outputChannel.appendLine('   • Use "Flash Firmware" to program your board');
                         this.outputChannel.appendLine('   • Use "Start Debug" to begin debugging session');
@@ -779,13 +779,13 @@ export class BuildCommand {
                 // Handle process errors
                 this.buildProcess.on('error', (error) => {
                     this.buildProcess = null;
-                    this.outputChannel.appendLine(`❌ Build process error: ${error.message}`);
+                    this.outputChannel.appendLine(`Build process error: ${error.message}`);
 
                     // Platform-specific troubleshooting
                     if (platform.startsWith('win32')) {
-                        this.outputChannel.appendLine('💡 Windows: Check compiler path and permissions');
+                        this.outputChannel.appendLine('Windows: Check compiler path and permissions');
                     } else {
-                        this.outputChannel.appendLine('💡 Unix: Check executable permissions (chmod +x)');
+                        this.outputChannel.appendLine('Unix: Check executable permissions (chmod +x)');
                     }
 
                     reject(new Error(`Build process error: ${error.message}`));
@@ -793,7 +793,7 @@ export class BuildCommand {
 
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
-                this.outputChannel.appendLine(`❌ Build setup error: ${errorMessage}`);
+                this.outputChannel.appendLine(`Build setup error: ${errorMessage}`);
                 reject(error);
             }
         });
@@ -806,18 +806,18 @@ export class BuildCommand {
         const mainFile = path.join(config.projectPath, 'main.c');
         if (fs.existsSync(mainFile)) {
             validFiles.push(mainFile);
-            this.outputChannel.appendLine(`✅ Found main source: main.c`);
+            this.outputChannel.appendLine(`Found main source: main.c`);
         } else {
-            this.outputChannel.appendLine(`❌ Missing main source: main.c`);
+            this.outputChannel.appendLine(`Missing main source: main.c`);
         }
 
         // 2. SysConfig generated file - ONLY from syscfg directory
         const syscfgFile = path.join(config.projectPath, 'syscfg', 'ti_msp_dl_config.c');
         if (fs.existsSync(syscfgFile)) {
             validFiles.push(syscfgFile);
-            this.outputChannel.appendLine(`✅ Found SysConfig: syscfg/ti_msp_dl_config.c`);
+            this.outputChannel.appendLine(`Found SysConfig: syscfg/ti_msp_dl_config.c`);
         } else {
-            this.outputChannel.appendLine(`⚠️  Missing SysConfig file: syscfg/ti_msp_dl_config.c`);
+            this.outputChannel.appendLine(`Missing SysConfig file: syscfg/ti_msp_dl_config.c`);
         }
 
         // 3. Startup file - look for ticlang version
@@ -834,14 +834,14 @@ export class BuildCommand {
         for (const startupFile of possibleStartupFiles) {
             if (fs.existsSync(startupFile)) {
                 validFiles.push(startupFile);
-                this.outputChannel.appendLine(`✅ Found startup: ${path.relative(config.projectPath, startupFile)}`);
+                this.outputChannel.appendLine(`Found startup: ${path.relative(config.projectPath, startupFile)}`);
                 startupFound = true;
                 break;
             }
         }
 
         if (!startupFound) {
-            this.outputChannel.appendLine(`⚠️  No startup file found - build may fail at link stage`);
+            this.outputChannel.appendLine(`No startup file found - build may fail at link stage`);
             this.outputChannel.appendLine(`   Searched: startup_mspm0g350x_ticlang.c`);
         }
 
@@ -879,32 +879,32 @@ export class BuildCommand {
                     // Include valid C files
                     if (fileName.endsWith('.c')) {
                         validFiles.push(sourceFile);
-                        this.outputChannel.appendLine(`✅ Additional source: ${relativePath}`);
+                        this.outputChannel.appendLine(`Additional source: ${relativePath}`);
                     }
                 }
             }
         }
 
-        this.outputChannel.appendLine(`📊 Total valid source files: ${validFiles.length}`);
+        this.outputChannel.appendLine(`Total valid source files: ${validFiles.length}`);
 
         // Verify we have essential files
         const hasMain = validFiles.some(f => path.basename(f) === 'main.c');
         const hasSysConfig = validFiles.some(f => f.includes('syscfg') && f.endsWith('ti_msp_dl_config.c'));
         const hasStartup = validFiles.some(f => f.includes('startup_mspm0g350x_ticlang.c'));
 
-        this.outputChannel.appendLine(`📋 Essential files check:`);
-        this.outputChannel.appendLine(`   • main.c: ${hasMain ? '✅' : '❌'}`);
-        this.outputChannel.appendLine(`   • SysConfig: ${hasSysConfig ? '✅' : '❌'}`);
-        this.outputChannel.appendLine(`   • Startup: ${hasStartup ? '✅' : '❌'}`);
+        this.outputChannel.appendLine(`Essential files check:`);
+        this.outputChannel.appendLine(`   • main.c: ${hasMain ? 'SUCCESS:' : 'ERROR:'}`);
+        this.outputChannel.appendLine(`   • SysConfig: ${hasSysConfig ? 'SUCCESS:' : 'ERROR:'}`);
+        this.outputChannel.appendLine(`   • Startup: ${hasStartup ? 'SUCCESS:' : 'ERROR:'}`);
 
         if (!hasMain) {
             throw new Error('main.c is required but not found');
         }
         if (!hasSysConfig) {
-            this.outputChannel.appendLine(`⚠️  Warning: No SysConfig file found - build may fail`);
+            this.outputChannel.appendLine(`Warning: No SysConfig file found - build may fail`);
         }
         if (!hasStartup) {
-            this.outputChannel.appendLine(`⚠️  Warning: No startup file found - linking may fail`);
+            this.outputChannel.appendLine(`Warning: No startup file found - linking may fail`);
         }
 
         return validFiles;
@@ -943,7 +943,7 @@ export class BuildCommand {
             const fileName = path.basename(sysConfigFilePath);
             const projectDir = path.dirname(sysConfigFilePath);
 
-            this.outputChannel.appendLine(`🔧 Processing SysConfig file: ${fileName}`);
+            this.outputChannel.appendLine(`Processing SysConfig file: ${fileName}`);
 
             // Create syscfg output directory if it doesn't exist
             const syscfgOutputDir = path.join(projectDir, 'syscfg');
@@ -982,7 +982,7 @@ export class BuildCommand {
             // Clean the path - remove extra quotes if present
             const cleanPath = sysConfigCliPath.replace(/^"(.*)"$/, '$1');
 
-            this.outputChannel.appendLine(`🔧 Executing SysConfig CLI:`);
+            this.outputChannel.appendLine(`Executing SysConfig CLI:`);
             this.outputChannel.appendLine(`   Path: ${cleanPath}`);
             this.outputChannel.appendLine(`   Args: ${args.join(' ')}`);
             this.outputChannel.appendLine(`   Working directory: ${cwd}`);
@@ -1060,7 +1060,7 @@ exit /b %ERRORLEVEL%`;
                     try {
                         fs.chmodSync(cleanPath, '755');
                     } catch (error) {
-                        this.outputChannel.appendLine(`   ⚠️  Could not set executable permission: ${error}`);
+                        this.outputChannel.appendLine(`   Could not set executable permission: ${error}`);
                     }
                 }
 
@@ -1080,7 +1080,7 @@ exit /b %ERRORLEVEL%`;
                 const lines = output.split('\n');
                 lines.forEach((line: string) => {
                     if (line.trim()) {
-                        this.outputChannel.appendLine(`  🔧 ${line.trim()}`);
+                        this.outputChannel.appendLine(`  ${line.trim()}`);
                     }
                 });
             });
@@ -1093,30 +1093,30 @@ exit /b %ERRORLEVEL%`;
                     if (line.trim()) {
                         const trimmedLine = line.trim();
 
-                        // Parse the summary line: "❌ 0 error(s), 9 warning(s)"
-                        const summaryMatch = trimmedLine.match(/^❌?\s*(\d+)\s+error\(s\),\s*(\d+)\s+warning\(s\)$/);
+                        // Parse the summary line: "0 error(s), 9 warning(s)"
+                        const summaryMatch = trimmedLine.match(/^ERROR:?\s*(\d+)\s+error\(s\),\s*(\d+)\s+warning\(s\)$/);
                         if (summaryMatch) {
                             errorCount = parseInt(summaryMatch[1]);
                             warningCount = parseInt(summaryMatch[2]);
 
                             if (errorCount > 0) {
                                 hasRealError = true;
-                                this.outputChannel.appendLine(`  ❌ ${trimmedLine}`);
+                                this.outputChannel.appendLine(`  ${trimmedLine}`);
                             } else if (warningCount > 0) {
-                                this.outputChannel.appendLine(`  ⚠️  ${trimmedLine}`);
+                                this.outputChannel.appendLine(`  ${trimmedLine}`);
                             } else {
-                                this.outputChannel.appendLine(`  ✅ ${trimmedLine}`);
+                                this.outputChannel.appendLine(`  ${trimmedLine}`);
                             }
                         } else if (
                             trimmedLine.toLowerCase().includes('error') &&
                             !trimmedLine.includes('0 error')
                         ) {
                             hasRealError = true;
-                            this.outputChannel.appendLine(`  ❌ ${trimmedLine}`);
+                            this.outputChannel.appendLine(`  ${trimmedLine}`);
                         } else if (trimmedLine.toLowerCase().includes('warning')) {
-                            this.outputChannel.appendLine(`  ⚠️  ${trimmedLine}`);
+                            this.outputChannel.appendLine(`  ${trimmedLine}`);
                         } else {
-                            this.outputChannel.appendLine(`  ❌ ${trimmedLine}`);
+                            this.outputChannel.appendLine(`  ${trimmedLine}`);
                         }
                     }
                 });
@@ -1135,30 +1135,30 @@ exit /b %ERRORLEVEL%`;
                 const filesExist = expectedFiles.every(file => fs.existsSync(file));
 
                 if (code === 0 && filesExist) {
-                    this.outputChannel.appendLine(`  ✅ SysConfig files generated successfully in ${syscfgOutputDir}`);
+                    this.outputChannel.appendLine(`  SysConfig files generated successfully in ${syscfgOutputDir}`);
                     this.outputChannel.appendLine('');
                     resolve();
                 } else if (code === 0 && !filesExist) {
                     // Warning but continue - some configurations might not generate all files
                     if (warningCount > 0) {
-                        this.outputChannel.appendLine(`  ⚠️  SysConfig completed with ${warningCount} warning(s), continuing build...`);
+                        this.outputChannel.appendLine(`  SysConfig completed with ${warningCount} warning(s), continuing build...`);
                         this.outputChannel.appendLine('');
                         resolve(); // Continue anyway if we have some files
                     } else {
                         const errorMsg = 'SysConfig completed but no output files were generated';
-                        this.outputChannel.appendLine(`  ❌ ${errorMsg}`);
+                        this.outputChannel.appendLine(`  ${errorMsg}`);
                         this.outputChannel.appendLine('');
                         reject(new Error(errorMsg));
                     }
                 } else if (code !== 0) {
                     const errorMsg = `SysConfig generation failed with exit code ${code}`;
-                    this.outputChannel.appendLine(`  ❌ ${errorMsg}`);
+                    this.outputChannel.appendLine(`  ${errorMsg}`);
                     this.outputChannel.appendLine('');
                     this.provideSysConfigTroubleshooting();
                     reject(new Error(errorMsg));
                 } else if (hasRealError && errorCount > 0) {
                     const errorMsg = `SysConfig generation failed with ${errorCount} error(s)`;
-                    this.outputChannel.appendLine(`  ❌ ${errorMsg}`);
+                    this.outputChannel.appendLine(`  ${errorMsg}`);
                     this.outputChannel.appendLine('');
                     this.provideSysConfigTroubleshooting();
                     reject(new Error(errorMsg));
@@ -1168,7 +1168,7 @@ exit /b %ERRORLEVEL%`;
             sysConfigProcess.on('error', (error) => {
                 hasRealError = true;
                 const errorMsg = `SysConfig process error: ${error.message}`;
-                this.outputChannel.appendLine(`  ❌ ${errorMsg}`);
+                this.outputChannel.appendLine(`  ${errorMsg}`);
                 reject(new Error(errorMsg));
             });
 
@@ -1186,7 +1186,7 @@ exit /b %ERRORLEVEL%`;
         return new Promise((resolve, reject) => {
             // Remove extraneous surrounding quotes if present
             const cleanPath = toolPath.replace(/^"(.*)"$/, '$1');
-            this.outputChannel.appendLine(`🔧 Running ${label}:`);
+            this.outputChannel.appendLine(`Running ${label}:`);
             this.outputChannel.appendLine(`   Path: ${cleanPath}`);
             this.outputChannel.appendLine(`   Args: ${args.join(' ')}`);
             this.outputChannel.appendLine(`   CWD:  ${cwd}`);
@@ -1202,7 +1202,7 @@ exit /b %ERRORLEVEL%`;
             proc.stdout?.on('data', (data) => {
                 const s = data.toString();
                 s.split('\n').forEach((line: string) => {
-                    if (line.trim()) this.outputChannel.appendLine(`  📝 ${line.trim()}`);
+                    if (line.trim()) this.outputChannel.appendLine(`  ${line.trim()}`);
                 });
             });
 
@@ -1210,16 +1210,16 @@ exit /b %ERRORLEVEL%`;
                 const s = data.toString();
                 stderr += s;
                 s.split('\n').forEach((line: string) => {
-                    if (line.trim()) this.outputChannel.appendLine(`  ⚙️ ${line.trim()}`);
+                    if (line.trim()) this.outputChannel.appendLine(`  ${line.trim()}`);
                 });
             });
 
             proc.on('close', (code) => {
                 if (code === 0) {
-                    this.outputChannel.appendLine(`✅ ${label} completed successfully`);
+                    this.outputChannel.appendLine(`${label} completed successfully`);
                     resolve();
                 } else {
-                    this.outputChannel.appendLine(`❌ ${label} failed with exit code ${code}`);
+                    this.outputChannel.appendLine(`${label} failed with exit code ${code}`);
                     if (stderr.trim()) this.outputChannel.appendLine(stderr.trim());
                     reject(new Error(`${label} failed`));
                 }
@@ -1231,7 +1231,7 @@ exit /b %ERRORLEVEL%`;
         return new Promise((resolve, reject) => {
             // Remove extraneous surrounding quotes if present
             const cleanPath = toolPath.replace(/^"(.*)"$/, '$1');
-            this.outputChannel.appendLine(`🔧 Running ${label}:`);
+            this.outputChannel.appendLine(`Running ${label}:`);
             this.outputChannel.appendLine(`   Path: ${cleanPath}`);
             this.outputChannel.appendLine(`   Args: ${args.join(' ')}`);
             this.outputChannel.appendLine(`   CWD:  ${cwd}`);
@@ -1255,7 +1255,7 @@ exit /b %ERRORLEVEL%`;
                 // Don't log every line to avoid spam, just indicate progress
                 const lines = s.split('\n').filter((l: string) => l.trim());
                 if (lines.length > 0) {
-                    this.outputChannel.appendLine(`  📝 Writing ${lines.length} lines to ${path.basename(outputFile)}...`);
+                    this.outputChannel.appendLine(`  Writing ${lines.length} lines to ${path.basename(outputFile)}...`);
                 }
             });
 
@@ -1263,7 +1263,7 @@ exit /b %ERRORLEVEL%`;
                 const s = data.toString();
                 stderr += s;
                 s.split('\n').forEach((line: string) => {
-                    if (line.trim()) this.outputChannel.appendLine(`  ⚙️ ${line.trim()}`);
+                    if (line.trim()) this.outputChannel.appendLine(`  ${line.trim()}`);
                 });
             });
 
@@ -1273,14 +1273,14 @@ exit /b %ERRORLEVEL%`;
                     // Check if file was created and has content
                     try {
                         const stats = fs.statSync(outputFile);
-                        this.outputChannel.appendLine(`✅ ${label} completed successfully (${stats.size.toLocaleString()} bytes)`);
+                        this.outputChannel.appendLine(`${label} completed successfully (${stats.size.toLocaleString()} bytes)`);
                         resolve();
                     } catch (err) {
-                        this.outputChannel.appendLine(`⚠️  ${label} completed but output file may be empty`);
+                        this.outputChannel.appendLine(`${label} completed but output file may be empty`);
                         resolve(); // Don't fail if we can't stat the file
                     }
                 } else {
-                    this.outputChannel.appendLine(`❌ ${label} failed with exit code ${code}`);
+                    this.outputChannel.appendLine(`${label} failed with exit code ${code}`);
                     if (stderr.trim()) this.outputChannel.appendLine(stderr.trim());
                     reject(new Error(`${label} failed`));
                 }
@@ -1288,14 +1288,14 @@ exit /b %ERRORLEVEL%`;
 
             proc.on('error', (error) => {
                 outputStream.end();
-                this.outputChannel.appendLine(`❌ ${label} process error: ${error.message}`);
+                this.outputChannel.appendLine(`${label} process error: ${error.message}`);
                 reject(error);
             });
         });
     }
 
     private provideSysConfigTroubleshooting(): void {
-        this.outputChannel.appendLine('🔍 SysConfig Troubleshooting:');
+        this.outputChannel.appendLine('SysConfig Troubleshooting:');
         this.outputChannel.appendLine('   1. Open the .syscfg file in TI SysConfig GUI to resolve configuration issues');
         this.outputChannel.appendLine('   2. Check device/board settings in the .syscfg file');
         this.outputChannel.appendLine('   3. Verify pin assignments don\'t conflict with board constraints');
@@ -1332,9 +1332,9 @@ exit /b %ERRORLEVEL%`;
         if (fs.existsSync(cmsisCorePath)) {
             args.push('-I');
             args.push(cmsisCorePath);
-            this.outputChannel.appendLine(`✅ Added CMSIS Core include: ${cmsisCorePath}`);
+            this.outputChannel.appendLine(`Added CMSIS Core include: ${cmsisCorePath}`);
         } else {
-            this.outputChannel.appendLine(`❌ CMSIS Core not found: ${cmsisCorePath}`);
+            this.outputChannel.appendLine(`CMSIS Core not found: ${cmsisCorePath}`);
         }
 
         // Add other SDK include paths
@@ -1377,7 +1377,7 @@ exit /b %ERRORLEVEL%`;
         args.push('-Wno-sign-compare');         // Don't warn about signed/unsigned comparisons
         args.push('-std=c99');                  // C99 standard
 
-        this.outputChannel.appendLine(`🔧 Generated ${args.length} compiler arguments for ${platform}`);
+        this.outputChannel.appendLine(`Generated ${args.length} compiler arguments for ${platform}`);
 
         return args;
     }
