@@ -486,36 +486,18 @@ export async function activate(context: vscode.ExtensionContext) {
       try {
         outputChannel.appendLine("Halt command triggered");
         outputChannel.show();
-        await executeSwdDebuggerCommand(['halt'], "Target halted successfully!");
-      } catch (error) {
-        outputChannel.appendLine(`ERROR: Halt command failed: ${error}`);
-      }
-    }
-  );
 
-  // Resume command
-  let resumeDisposable = vscode.commands.registerCommand(
-    "extension.resumeCommand",
-    async () => {
-      try {
-        outputChannel.appendLine("Resume command triggered");
-        outputChannel.show();
-        await executeSwdDebuggerCommand(
-          ['resume'],
-          "Target resumed successfully!"
-        );
+        // ✅ Use debugCommand.halt() instead of executeSwdDebuggerCommand()
+        await debugCommand.halt();
 
-        // After resume completes (target has halted), refresh variables
-        outputChannel.appendLine("Target halted after resume - updating variables...");
-
-        // Update registry data in DataViewProvider
+        // Update registry data in DataViewProvider when halted
         try {
           await dataViewProvider?.updateRegistryData();
         } catch (error) {
           outputChannel.appendLine(`Failed to update registry data: ${error}`);
         }
 
-        // Update variables in DataViewProvider
+        // Update variables in DataViewProvider when paused
         try {
           const variables = await debugCommand.getVariables();
           dataViewProvider?.updateVariables(
@@ -527,7 +509,7 @@ export async function activate(context: vscode.ExtensionContext) {
           outputChannel.appendLine(`Failed to update variables: ${error}`);
         }
 
-        // Update call stack
+        // Update call stack when paused
         try {
           const callStack = await debugCommand.getCallStack();
           callStackViewProvider?.updateCallStack(callStack, true);
@@ -535,15 +517,33 @@ export async function activate(context: vscode.ExtensionContext) {
           outputChannel.appendLine(`Failed to update call stack: ${error}`);
         }
 
-        // Show arrow at current PC location
-        try {
-          const pc = await debugCommand.readPC();
-          await showArrowAtPC(pc, outputChannel);
-        } catch (error) {
-          outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
-        }
+        // Show success message
+        vscode.window.showInformationMessage("Target halted successfully!");
+
+      } catch (error) {
+        outputChannel.appendLine(`ERROR: Halt command failed: ${error}`);
+        vscode.window.showErrorMessage(`Halt failed: ${error}`);
+      }
+    }
+  );
+
+  // Resume command
+  let resumeDisposable = vscode.commands.registerCommand(
+    "extension.resumeCommand",
+    async () => {
+      try {
+        outputChannel.appendLine("Resume command triggered");
+        outputChannel.show();
+
+        // ✅ Use debugCommand.resume() instead of executeSwdDebuggerCommand()
+        await debugCommand.resume();
+
+        // Note: Don't update UI here - wait for breakpoint hit or halt
+        vscode.window.showInformationMessage("Target resumed - monitoring for breakpoints...");
+
       } catch (error) {
         outputChannel.appendLine(`Resume command failed: ${error}`);
+        vscode.window.showErrorMessage(`Resume failed: ${error}`);
       }
     }
   );
@@ -1215,10 +1215,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
       // Debug stepping commands
       vscode.commands.registerCommand(
-        "port11-debugger.debug.stepOut",
+        "port11-debugger.debug.stepOver",
         async () => {
           try {
-            await debugCommand.stepOut();
+            await debugCommand.stepOver();
 
             // Update views after step
             try {

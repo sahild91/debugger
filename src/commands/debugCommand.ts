@@ -198,7 +198,9 @@ export class DebugCommand {
             // CRITICAL: Stop the monitoring process first before sending halt
             if (this.isMonitoring) {
                 this.outputChannel.appendLine('Stopping monitor process before halt...');
-                await this.stopMonitoring();
+                this.stopMonitoring();
+
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
 
             // Now send the halt command
@@ -218,71 +220,65 @@ export class DebugCommand {
         }
     }
 
-    private async startResumeWithMonitoring(): Promise<void> {
+    private startResumeWithMonitoring(): void {
         // If already monitoring, stop it first
         if (this.monitorProcess) {
-            await this.stopMonitoring();
+            this.stopMonitoring();  // ✅ Synchronous stop attempt
         }
 
-        return new Promise((resolve, reject) => {
-            const config = vscode.workspace.getConfiguration('port11-debugger');
-            const cliPath = this.cliManager.getSanitizedExecutablePath();
-            const board = this.currentSession?.board;
+        const config = vscode.workspace.getConfiguration('port11-debugger');
+        const cliPath = this.cliManager.getExecutablePath();  // ✅ Use unsanitized for spawn
+        const board = this.currentSession?.board;
 
-            if (!board || !cliPath) {
-                reject(new Error('No board connected or CLI not available'));
-                return;
+        if (!board || !cliPath) {
+            this.outputChannel.appendLine('ERROR: No board connected or CLI not available');
+            return;
+        }
+
+        const args = ['--port', board.path, 'resume'];
+
+        this.outputChannel.appendLine(`Executing: ${cliPath} ${args.join(' ')}`);
+
+        // Spawn the resume process which will monitor until halt
+        this.monitorProcess = spawn(cliPath, args, {
+            stdio: ['pipe', 'pipe', 'pipe']
+        });
+        this.isMonitoring = true;
+
+        let stdout = '';
+        let stderr = '';
+
+        this.monitorProcess.stdout?.on('data', (data) => {
+            const output = data.toString();
+            stdout += output;
+            this.outputChannel.append(output);
+
+            // Check if breakpoint was hit
+            if (this.checkForBreakpointHit(output)) {
+                this.handleBreakpointHit();
             }
+        });
 
-            const args = ['--port', board.path, '--baud', '115200', 'resume'];
+        this.monitorProcess.stderr?.on('data', (data) => {
+            const output = data.toString();
+            stderr += output;
 
-            this.outputChannel.appendLine(`Executing: ${cliPath} ${args.join(' ')}`);
-
-            // Spawn the resume process which will monitor until halt
-            this.monitorProcess = spawn(cliPath, args);
-            this.isMonitoring = true;
-
-            let stdout = '';
-            let stderr = '';
-
-            this.monitorProcess.stdout?.on('data', (data) => {
-                const output = data.toString();
-                stdout += output;
+            // ✅ Filter out transient monitor errors to reduce noise
+            if (!output.includes('Monitor sample failed')) {
                 this.outputChannel.append(output);
+            }
+        });
 
-                // Check if breakpoint was hit
-                if (this.checkForBreakpointHit(output)) {
-                    this.handleBreakpointHit();
-                }
-            });
+        this.monitorProcess.on('close', (code) => {
+            this.outputChannel.appendLine(`Monitor process ended with code ${code}`);
+            this.isMonitoring = false;
+            this.monitorProcess = null;
+        });
 
-            this.monitorProcess.stderr?.on('data', (data) => {
-                const output = data.toString();
-                stderr += output;
-                this.outputChannel.append(output);
-            });
-
-            this.monitorProcess.on('close', (code) => {
-                this.isMonitoring = false;
-                this.monitorProcess = null;
-
-                if (code === 0) {
-                    this.outputChannel.appendLine('Monitor process ended normally');
-                    resolve();
-                } else {
-                    // Non-zero exit is expected when halt interrupts monitoring
-                    this.outputChannel.appendLine(`Monitor process ended with code ${code}`);
-                    resolve(); // Still resolve, not an error
-                }
-            });
-
-            this.monitorProcess.on('error', (error) => {
-                this.isMonitoring = false;
-                this.monitorProcess = null;
-                reject(new Error(`Monitor process error: ${error.message}`));
-            });
-
-            // Don't set timeout for monitor - it should run until breakpoint or manual halt
+        this.monitorProcess.on('error', (error) => {
+            this.outputChannel.appendLine(`Monitor process error: ${error.message}`);
+            this.isMonitoring = false;
+            this.monitorProcess = null;
         });
     }
 
@@ -313,40 +309,39 @@ export class DebugCommand {
         this.eventEmitter.on('haltDetected', callback);
     }
 
-    private async stopMonitoring(): Promise<void> {
+    private stopMonitoring(): void {  // ✅ Changed from async to synchronous
         if (!this.monitorProcess || !this.isMonitoring) {
+            this.outputChannel.appendLine('No monitoring process to stop');
             return;
         }
 
         this.outputChannel.appendLine('Stopping monitor process...');
 
-        return new Promise((resolve) => {
-            if (!this.monitorProcess) {
-                resolve();
-                return;
-            }
-
-            // Set up cleanup before killing
-            const cleanup = () => {
-                this.isMonitoring = false;
-                this.monitorProcess = null;
-                resolve();
-            };
-
-            // Handle process exit
-            this.monitorProcess.once('exit', cleanup);
-
-            // Kill the process
+        try {
+            // Try graceful shutdown first
             this.monitorProcess.kill('SIGTERM');
 
-            // Fallback timeout
-            setTimeout(() => {
+            // Set up a timeout to force kill if needed
+            const forceKillTimeout = setTimeout(() => {
                 if (this.monitorProcess) {
+                    this.outputChannel.appendLine('Monitor process did not stop gracefully, force killing...');
                     this.monitorProcess.kill('SIGKILL');
                 }
-                cleanup();
-            }, 1000);
-        });
+            }, 500);  // 500ms timeout
+
+            // Clean up when process actually exits
+            this.monitorProcess.once('exit', () => {
+                clearTimeout(forceKillTimeout);
+                this.outputChannel.appendLine('Monitor process stopped');
+            });
+
+        } catch (error) {
+            this.outputChannel.appendLine(`Error stopping monitor: ${error}`);
+        } finally {
+            // Always reset the flags immediately
+            this.isMonitoring = false;
+            this.monitorProcess = null;
+        }
     }
 
     async resume(): Promise<void> {
@@ -364,7 +359,7 @@ export class DebugCommand {
 
         try {
             // Start the resume command which includes built-in monitoring
-            await this.startResumeWithMonitoring();
+            this.startResumeWithMonitoring();
             this.outputChannel.appendLine('Target resumed successfully - monitoring for breakpoints...');
         } catch (error) {
             this.outputChannel.appendLine(`Failed to resume: ${error}`);
