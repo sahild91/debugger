@@ -486,11 +486,13 @@ export class SysConfigManager {
 
             // Clean up download file on error
             if (downloadPath && fs.existsSync(downloadPath)) {
+                this.outputChannel.appendLine(`Removing incomplete installer file: ${downloadPath}`);
                 try {
                     fs.unlinkSync(downloadPath);
-                    this.outputChannel.appendLine('Cleaned up downloaded installer file');
+                    this.outputChannel.appendLine('Downloaded installer file cleaned up successfully');
                 } catch (cleanupError) {
                     this.outputChannel.appendLine(`Warning: Could not clean up download file: ${cleanupError}`);
+                    this.outputChannel.appendLine(`You may need to manually delete: ${downloadPath}`);
                 }
             }
 
@@ -500,11 +502,13 @@ export class SysConfigManager {
                 !fs.readdirSync(this.sysConfigPath).length;
 
             if (isActualInstallationFailure && fs.existsSync(this.sysConfigPath)) {
+                this.outputChannel.appendLine(`Cleaning up empty SysConfig installation at: ${this.sysConfigPath}`);
                 try {
-                    fs.rmSync(this.sysConfigPath, { recursive: true, force: true });
-                    this.outputChannel.appendLine('Cleaned up empty installation directory');
+                    fs.rmSync(this.sysConfigPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 1000 });
+                    this.outputChannel.appendLine('Empty SysConfig installation directory cleaned up successfully');
                 } catch (cleanupError) {
-                    this.outputChannel.appendLine(`SysConfig cleanup failed: ${cleanupError}`);
+                    this.outputChannel.appendLine(`Warning: Could not fully clean up SysConfig directory: ${cleanupError}`);
+                    this.outputChannel.appendLine(`You may need to manually delete: ${this.sysConfigPath}`);
                 }
             } else if (fs.existsSync(this.sysConfigPath)) {
                 this.outputChannel.appendLine('Preserving installation directory - files were installed successfully');

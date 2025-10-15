@@ -272,12 +272,16 @@ export class SDKManager {
                 message: `Installation failed: ${errorMessage}`
             });
 
-            // Clean up on failure
+            // Clean up partial clone on failure
             if (fs.existsSync(this.sdkPath)) {
+                this.outputChannel.appendLine(`Cleaning up partial SDK installation at: ${this.sdkPath}`);
                 try {
-                    fs.rmSync(this.sdkPath, { recursive: true, force: true });
+                    // Force remove the directory and all contents
+                    fs.rmSync(this.sdkPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 1000 });
+                    this.outputChannel.appendLine('Partial SDK installation cleaned up successfully');
                 } catch (cleanupError) {
-                    this.outputChannel.appendLine(`Cleanup failed: ${cleanupError}`);
+                    this.outputChannel.appendLine(`Warning: Could not fully clean up SDK directory: ${cleanupError}`);
+                    this.outputChannel.appendLine('You may need to manually delete: ' + this.sdkPath);
                 }
             }
 

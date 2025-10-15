@@ -346,25 +346,32 @@ export class ToolchainManager {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             this.outputChannel.appendLine(`Toolchain installation failed: ${errorMessage}`);
+
             // Clean up download file on error
             if (downloadPath && fs.existsSync(downloadPath)) {
+                this.outputChannel.appendLine(`Removing incomplete installer file: ${downloadPath}`);
                 try {
                     fs.unlinkSync(downloadPath);
-                    this.outputChannel.appendLine('Cleaned up downloaded installer file');
+                    this.outputChannel.appendLine('Downloaded installer file cleaned up successfully');
                 } catch (cleanupError) {
                     this.outputChannel.appendLine(`Warning: Could not clean up download file: ${cleanupError}`);
+                    // Try to make it more obvious to user
+                    this.outputChannel.appendLine(`You may need to manually delete: ${downloadPath}`);
                 }
             }
 
             // Clean up installation directory on failure
             if (fs.existsSync(this.toolchainPath)) {
+                this.outputChannel.appendLine(`Cleaning up partial toolchain installation at: ${this.toolchainPath}`);
                 try {
-                    fs.rmSync(this.toolchainPath, { recursive: true, force: true });
-                    this.outputChannel.appendLine('Cleaned up partial installation directory');
+                    fs.rmSync(this.toolchainPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 1000 });
+                    this.outputChannel.appendLine('Partial toolchain installation cleaned up successfully');
                 } catch (cleanupError) {
-                    this.outputChannel.appendLine(`Cleanup failed: ${cleanupError}`);
+                    this.outputChannel.appendLine(`Warning: Could not fully clean up toolchain directory: ${cleanupError}`);
+                    this.outputChannel.appendLine(`You may need to manually delete: ${this.toolchainPath}`);
                 }
             }
+
             // Complete the error progress callback
             progressCallback?.({
                 stage: 'error',
@@ -811,7 +818,7 @@ export class ToolchainManager {
             systemPaths.push(
                 // YuduRobotics plugin location (priority)
                 'C:\\YuduRobotics\\plugins\\ti-cgt-armllvm-4.0.3',
-                
+
                 // TI CCS standard locations
                 'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_4.0.3.LTS',
                 'C:\\ti\\ccs\\tools\\compiler\\ti-cgt-armllvm_3.2.2.LTS',

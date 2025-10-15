@@ -37,6 +37,8 @@ let statusBarItem: vscode.StatusBarItem;
 let connectStatusBar: vscode.StatusBarItem;
 let debugCommand: DebugCommand;
 let currentPCDecoration: vscode.TextEditorDecorationType | undefined;
+let setupInProgress = false;
+let currentSetupAbortSignal: AbortController | null = null;
 
 // Parse disassembly file to find source location for a PC address
 async function findSourceLocationForPC(
@@ -63,8 +65,7 @@ async function findSourceLocationForPC(
 
         if (result) {
           outputChannel.appendLine(
-            `Fast path found: ${result.file}:${result.line}${
-              result.functionName ? ` (${result.functionName})` : ""
+            `Fast path found: ${result.file}:${result.line}${result.functionName ? ` (${result.functionName})` : ""
             }`
           );
           return result;
@@ -1549,24 +1550,56 @@ async function highlightBreakpointLine(
 
 // Command implementations
 async function setupToolchain(): Promise<void> {
-  try {
-    outputChannel.appendLine(
-      "Starting complete toolchain setup (SDK + Toolchain + SysConfig)..."
+  // If setup is already in progress, ask user if they want to cancel and restart
+  if (setupInProgress) {
+    const action = await vscode.window.showWarningMessage(
+      "Setup is already in progress. Do you want to cancel the current setup and start over?",
+      { modal: true },
+      "Cancel Current Setup",
+      "Wait"
     );
-    updateStatusBar("Setting up toolchain...");
 
-    // Refresh TreeView before setup
-    treeViewProvider.refresh();
+    if (action === "Cancel Current Setup") {
+      outputChannel.appendLine("User requested to cancel current setup and restart");
+      
+      // Abort the current setup
+      if (currentSetupAbortSignal) {
+        currentSetupAbortSignal.abort();
+        outputChannel.appendLine("Aborting current setup...");
+      }
+      
+      // Wait a moment for cleanup
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Reset the flag
+      setupInProgress = false;
+      currentSetupAbortSignal = null;
+    } else {
+      outputChannel.appendLine("User chose to wait for current setup to complete");
+      return;
+    }
+  }
 
-    // Show progress notification
+  const abortController = new AbortController();
+
+  try {
+    setupInProgress = true;
+    currentSetupAbortSignal = abortController;
+    
+    outputChannel.appendLine("Starting complete toolchain setup...");
+    updateStatusBar("Setting up...");
+
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: "Port11 Setup",
+        title: "Setting up Port11 Development Environment",
         cancellable: false,
       },
       async (progress) => {
-        progress.report({ message: "Installing components..." });
+        // Check if aborted before each installation step
+        if (abortController.signal.aborted) {
+          throw new Error("Setup was cancelled by user");
+        }
 
         // Install SDK
         if (!(await sdkManager.isSDKInstalled())) {
@@ -1574,10 +1607,18 @@ async function setupToolchain(): Promise<void> {
           await sdkManager.installSDK();
         }
 
+        if (abortController.signal.aborted) {
+          throw new Error("Setup was cancelled by user");
+        }
+
         // Install Toolchain
         if (!(await toolchainManager.isToolchainInstalled())) {
           progress.report({ message: "Installing ARM-CGT-CLANG..." });
           await toolchainManager.installToolchain();
+        }
+
+        if (abortController.signal.aborted) {
+          throw new Error("Setup was cancelled by user");
         }
 
         // Install SysConfig
@@ -1602,11 +1643,22 @@ async function setupToolchain(): Promise<void> {
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    outputChannel.appendLine(`Setup failed: ${errorMessage}`);
-    updateStatusBar("Setup failed");
-    vscode.window.showErrorMessage(
-      `Port11 Debugger setup failed: ${errorMessage}`
-    );
+    
+    if (errorMessage.includes("cancelled") || errorMessage.includes("aborted")) {
+      outputChannel.appendLine("Setup was cancelled by user");
+      updateStatusBar("Setup cancelled");
+      vscode.window.showWarningMessage("Setup was cancelled");
+    } else {
+      outputChannel.appendLine(`Setup failed: ${errorMessage}`);
+      updateStatusBar("Setup failed");
+      vscode.window.showErrorMessage(
+        `Port11 Debugger setup failed: ${errorMessage}`
+      );
+    }
+  } finally {
+    // Always reset the flags, even if setup fails
+    setupInProgress = false;
+    currentSetupAbortSignal = null;
   }
 }
 
@@ -1632,17 +1684,15 @@ async function refreshStatus(): Promise<void> {
       `  SDK: ${sdkInstalled ? `installed (${sdkVersion})` : "not installed"}`
     );
     outputChannel.appendLine(
-      `  Toolchain: ${
-        toolchainInstalled
-          ? `installed (${toolchainInfo.version})`
-          : "not installed"
+      `  Toolchain: ${toolchainInstalled
+        ? `installed (${toolchainInfo.version})`
+        : "not installed"
       }`
     );
     outputChannel.appendLine(
-      `  SysConfig: ${
-        sysConfigInstalled
-          ? `installed (${sysConfigInfo.version})`
-          : "not installed"
+      `  SysConfig: ${sysConfigInstalled
+        ? `installed (${sysConfigInfo.version})`
+        : "not installed"
       }`
     );
     outputChannel.appendLine(`  Boards: ${boards.length} detected`);
@@ -1734,7 +1784,7 @@ function updateConnectStatusBar(): void {
     if (selectedPort) {
       const deviceType =
         selectedPortInfo?.deviceType !== "Unknown" &&
-        selectedPortInfo?.deviceType
+          selectedPortInfo?.deviceType
           ? ` (${selectedPortInfo.deviceType})`
           : "";
       connectStatusBar.text = `$(plug) ${selectedPort}${deviceType}`;

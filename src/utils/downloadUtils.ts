@@ -13,7 +13,7 @@ export interface DownloadProgress {
 
 export class DownloadUtils {
     private outputChannel: vscode.OutputChannel;
-    
+
     constructor(outputChannel: vscode.OutputChannel) {
         this.outputChannel = outputChannel;
     }
@@ -33,8 +33,8 @@ export class DownloadUtils {
     }
 
     async downloadFile(
-        url: string, 
-        destinationPath: string, 
+        url: string,
+        destinationPath: string,
         progressCallback?: (progress: number) => void
     ): Promise<void> {
         return new Promise(async (resolve, reject) => {
@@ -51,7 +51,7 @@ export class DownloadUtils {
                 const response = await fetch(url, {
                     headers: { 'User-Agent': this.getUserAgent() }
                 });
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
@@ -61,15 +61,15 @@ export class DownloadUtils {
                     this.outputChannel.appendLine('Warning: Server did not provide Content-Length. Cannot verify file size.');
                 }
                 const totalBytes = parseInt(totalBytesStr || '0', 10);
-                
+
                 let downloadedBytes = 0;
-                
+
                 fileStream = fs.createWriteStream(destinationPath);
-                
+
                 if (!response.body) {
                     throw new Error('Response body is null');
                 }
-                
+
                 response.body.pipe(fileStream);
 
                 let lastProgressTime = Date.now();
@@ -77,7 +77,7 @@ export class DownloadUtils {
 
                 response.body.on('data', (chunk: Buffer) => {
                     downloadedBytes += chunk.length;
-                    
+
                     // Calculate progress and speed
                     if (totalBytes > 0) {
                         const percentage = (downloadedBytes / totalBytes) * 100;
@@ -116,10 +116,10 @@ export class DownloadUtils {
 
                 fileStream.on('finish', () => {
                     this.outputChannel.appendLine(`Download stream finished. Verifying file size...`);
-                    
+
                     try {
                         const actualSize = fs.statSync(destinationPath).size;
-                        
+
                         // Verify the file size if the server provided it
                         if (totalBytes > 0 && actualSize !== totalBytes) {
                             const errorMsg = `Download corrupted. Expected ${totalBytes} bytes but received ${actualSize} bytes.`;
@@ -138,9 +138,9 @@ export class DownloadUtils {
                 // This top-level catch handles errors from the initial `fetch` call
                 const errorMessage = error instanceof Error ? error.message : String(error);
                 this.outputChannel.appendLine(`Download failed: ${errorMessage}`);
-                
+
                 // Ensure stream is closed and partial file is deleted
-                fileStream?.close(); 
+                fileStream?.close();
                 if (fs.existsSync(destinationPath)) {
                     try {
                         fs.unlinkSync(destinationPath);
@@ -164,17 +164,37 @@ export class DownloadUtils {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 this.outputChannel.appendLine(`Download attempt ${attempt}/${maxRetries}`);
-                
+
+                // Clean up any partial download from previous failed attempt
+                if (attempt > 1 && fs.existsSync(destinationPath)) {
+                    this.outputChannel.appendLine(`Removing incomplete file from previous attempt: ${destinationPath}`);
+                    try {
+                        fs.unlinkSync(destinationPath);
+                    } catch (cleanupError) {
+                        this.outputChannel.appendLine(`Warning: Could not remove partial file: ${cleanupError}`);
+                    }
+                }
+
                 await this.downloadFile(url, destinationPath, progressCallback);
                 return; // Success, exit the retry loop
-                
+
             } catch (error) {
                 lastError = error instanceof Error ? error : new Error(String(error));
                 this.outputChannel.appendLine(`Attempt ${attempt} failed: ${lastError.message}`);
-                
+
+                // Clean up partial download on error
+                if (fs.existsSync(destinationPath)) {
+                    try {
+                        this.outputChannel.appendLine(`Cleaning up partial download: ${destinationPath}`);
+                        fs.unlinkSync(destinationPath);
+                    } catch (cleanupError) {
+                        this.outputChannel.appendLine(`Warning: Could not clean up partial file: ${cleanupError}`);
+                    }
+                }
+
                 if (attempt < maxRetries) {
                     const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Exponential backoff, max 10s
-                    this.outputChannel.appendLine(`Retrying in ${delayMs/1000}s...`);
+                    this.outputChannel.appendLine(`Retrying in ${delayMs / 1000}s...`);
                     await this.delay(delayMs);
                 }
             }
@@ -186,9 +206,9 @@ export class DownloadUtils {
 
     async checkConnectivity(url?: string): Promise<boolean> {
         const testUrl = url || 'https://www.google.com';
-        
+
         try {
-            const response = await fetch(testUrl, { 
+            const response = await fetch(testUrl, {
                 method: 'HEAD',
                 headers: { 'User-Agent': this.getUserAgent() }
             });
@@ -201,18 +221,18 @@ export class DownloadUtils {
 
     async getFileSize(url: string): Promise<number> {
         try {
-            const response = await fetch(url, { 
+            const response = await fetch(url, {
                 method: 'HEAD',
                 headers: { 'User-Agent': this.getUserAgent() }
             });
-            
+
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
             const contentLength = response.headers.get('content-length');
             return contentLength ? parseInt(contentLength, 10) : 0;
-            
+
         } catch (error) {
             this.outputChannel.appendLine(`Error getting file size: ${error}`);
             return 0;
@@ -220,7 +240,7 @@ export class DownloadUtils {
     }
 
     private formatBytes(bytes: number): string {
-        if (bytes === 0) {return '0 B';}
+        if (bytes === 0) { return '0 B'; }
         const units = ['B', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(1024));
         return `${parseFloat((bytes / Math.pow(1024, i)).toFixed(1))} ${units[i]}`;
