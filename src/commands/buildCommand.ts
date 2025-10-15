@@ -7,6 +7,7 @@ import { SDKManager } from '../managers/sdkManager';
 import { ToolchainManager } from '../managers/toolchainManager';
 import { SysConfigManager } from '../managers/sysconfigManager';
 import { DownloadUtils } from '../utils/downloadUtils';
+import { detectEntryPoint, EntryPointResult } from '../utils/entryPointFinder';
 
 export interface BuildOptions {
     target?: string;
@@ -388,7 +389,6 @@ export class BuildCommand {
                 return {
                     rootPath: folderPath,
                     projectFiles,
-                    hasMain: projectFiles.some(f => f.endsWith('main.c')),
                     hasMakeFile: projectFiles.some(f => f.toLowerCase().includes('makefile')),
                     hasSysConfig: projectFiles.some(f => f.endsWith('.syscfg')),
                     foundFileTypes
@@ -417,6 +417,17 @@ export class BuildCommand {
 
     private async prepareBuildConfig(projectInfo: any, options: BuildOptions): Promise<any> {
         this.outputChannel.appendLine('Preparing build configuration...');
+
+        // Detect entry point file (with main() function)
+        this.outputChannel.appendLine('Detecting project entry point...');
+        const entryPoint = await detectEntryPoint(projectInfo.rootPath, this.outputChannel);
+
+        if (!entryPoint) {
+            throw new Error('No entry point file found. Build cancelled.');
+        }
+
+        this.outputChannel.appendLine(`Entry point detected: ${entryPoint.fileName}`);
+        this.outputChannel.appendLine('');
 
         // Get compiler path with detailed logging
         const compilerPath = this.toolchainManager.getCompilerPath();
@@ -473,6 +484,8 @@ export class BuildCommand {
             includePaths,
             libraryPaths,
             sourceFiles: await this.findSourceFiles(projectInfo.rootPath),
+            entryPointFile: entryPoint.filePath,
+            entryPointBaseName: entryPoint.baseName,
             optimization: options.optimization || 'debug',
             verbose: options.verbose || false,
             outputPath: path.join(projectInfo.rootPath, 'build')
@@ -526,8 +539,8 @@ export class BuildCommand {
                     args.push(sourceFile);
                 });
 
-                // Output file
-                const outputFile = path.join(config.outputPath, 'main.out');
+                // Output file (use entry point base name)
+                const outputFile = path.join(config.outputPath, `${config.entryPointBaseName}.out`);
                 args.push('-o');
                 args.push(outputFile);
 
@@ -567,9 +580,9 @@ export class BuildCommand {
                 }
                 // Additional linker flags
                 args.push('-Wl,--diag_wrap=off');          // Disable diagnostic wrapping
-                args.push('-Wl,--display_error_number');    // Show error numbers  
+                args.push('-Wl,--display_error_number');    // Show error numbers
                 args.push('-Wl,--warn_sections');           // Warn about section issues
-                args.push('-Wl,--xml_link_info=main_linkInfo.xml');
+                args.push(`-Wl,--xml_link_info=${config.entryPointBaseName}_linkInfo.xml`);
                 args.push('-Wl,--rom_model');              // Use ROM model
 
                 // Add additional TI-specific linker libraries if available
@@ -587,7 +600,7 @@ export class BuildCommand {
                 }
 
                 // Add map file generation for debugging
-                const mapFile = path.join(config.outputPath, 'main.map');
+                const mapFile = path.join(config.outputPath, `${config.entryPointBaseName}.map`);
                 args.push(`-Wl,-m${path.basename(mapFile)}`);
 
                 // const driverlibPath = path.join(this.sdkManager.getSDKPath(), 'source', 'ti', 'driverlib', 'lib', 'ticlang', 'm0p', 'mspm0g1x0x_g3x0x');
@@ -692,9 +705,9 @@ export class BuildCommand {
                                 const tiarmobjcopyPath = path.join(binDir, `tiarmobjcopy${exe}`);
 
                                 const outDir = config.outputPath;           // build directory
-                                const outOut = outputFile;                  // build/main.out
-                                const hexOut = path.join(outDir, 'main.hex');
-                                const elfOut = path.join(outDir, 'main.elf');
+                                const outOut = outputFile;                  // build/<entrypoint>.out
+                                const hexOut = path.join(outDir, `${config.entryPointBaseName}.hex`);
+                                const elfOut = path.join(outDir, `${config.entryPointBaseName}.elf`);
 
                                 // STEP_6: Generate Intel HEX from main.out
                                 // Mirrors your Compiler_Commands.txt STEP_6 flags
@@ -804,13 +817,14 @@ export class BuildCommand {
     private async getValidSourceFiles(config: any): Promise<string[]> {
         const validFiles: string[] = [];
 
-        // 1. Main source file
-        const mainFile = path.join(config.projectPath, 'main.c');
-        if (fs.existsSync(mainFile)) {
-            validFiles.push(mainFile);
-            this.outputChannel.appendLine(`Found main source: main.c`);
+        // 1. Entry point source file (dynamically detected)
+        const entryPointFile = config.entryPointFile;
+        if (entryPointFile && fs.existsSync(entryPointFile)) {
+            validFiles.push(entryPointFile);
+            this.outputChannel.appendLine(`Found entry point: ${path.basename(entryPointFile)}`);
         } else {
-            this.outputChannel.appendLine(`Missing main source: main.c`);
+            this.outputChannel.appendLine(`ERROR: Entry point file not found: ${entryPointFile || 'undefined'}`);
+            throw new Error('Entry point file not found. Please ensure your project has a file with main() function.');
         }
 
         // 2. SysConfig generated file - ONLY from syscfg directory
@@ -890,17 +904,17 @@ export class BuildCommand {
         this.outputChannel.appendLine(`Total valid source files: ${validFiles.length}`);
 
         // Verify we have essential files
-        const hasMain = validFiles.some(f => path.basename(f) === 'main.c');
+        const hasEntryPoint = validFiles.some(f => f === config.entryPointFile);
         const hasSysConfig = validFiles.some(f => f.includes('syscfg') && f.endsWith('ti_msp_dl_config.c'));
         const hasStartup = validFiles.some(f => f.includes('startup_mspm0g350x_ticlang.c'));
 
         this.outputChannel.appendLine(`Essential files check:`);
-        this.outputChannel.appendLine(`   • main.c: ${hasMain ? 'SUCCESS:' : 'ERROR:'}`);
+        this.outputChannel.appendLine(`   • Entry point (${path.basename(config.entryPointFile)}): ${hasEntryPoint ? 'SUCCESS:' : 'ERROR:'}`);
         this.outputChannel.appendLine(`   • SysConfig: ${hasSysConfig ? 'SUCCESS:' : 'ERROR:'}`);
         this.outputChannel.appendLine(`   • Startup: ${hasStartup ? 'SUCCESS:' : 'ERROR:'}`);
 
-        if (!hasMain) {
-            throw new Error('main.c is required but not found');
+        if (!hasEntryPoint) {
+            throw new Error(`Entry point file ${path.basename(config.entryPointFile)} is required but not found`);
         }
         if (!hasSysConfig) {
             this.outputChannel.appendLine(`Warning: No SysConfig file found - build may fail`);

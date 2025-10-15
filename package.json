@@ -67,15 +67,13 @@
           "id": "port11.variablesView",
           "name": "Breakpoints",
           "type": "webview",
-          "icon": "$(debug-breakpoint)",
-          "canCollapse": false
+          "icon": "$(debug-breakpoint)"
         },
         {
           "id": "port11.dataView",
           "name": "Variables",
           "type": "webview",
-          "icon": "$(symbol-variable)",
-          "canCollapse": false
+          "icon": "$(symbol-variable)"
         },
         {
           "id": "port11.boardsView",

@@ -18,6 +18,7 @@ import { ConnectionManager } from "./managers/connectionManager";
 import { BuildCommand } from "./commands/buildCommand";
 import { FlashCommand } from "./commands/flashCommand";
 import { DebugCommand } from "./commands/debugCommand";
+import { detectEntryPoint } from "./utils/entryPointFinder";
 
 let outputChannel: vscode.OutputChannel;
 let treeViewProvider: Port11TreeViewProvider;
@@ -478,7 +479,22 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine("Flash command triggered");
         outputChannel.show();
 
-        const binPath = getAbsolutePath("build/main.hex");
+        // Detect entry point to determine hex file name
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!workspaceFolder) {
+          throw new Error("No workspace folder open");
+        }
+
+        const entryPoint = await detectEntryPoint(workspaceFolder, outputChannel);
+        if (!entryPoint) {
+          throw new Error("Could not detect entry point file. Please ensure your project has a main() function.");
+        }
+
+        const hexFileName = `build/${entryPoint.baseName}.hex`;
+        const binPath = getAbsolutePath(hexFileName);
+
+        outputChannel.appendLine(`Using hex file: ${hexFileName}`);
+
         await executeSwdDebuggerCommand(
           ["flash", "--file", binPath],
           "Flash completed successfully!",
@@ -487,6 +503,7 @@ export async function activate(context: vscode.ExtensionContext) {
         );
       } catch (error) {
         outputChannel.appendLine(`ERROR: Flash command failed: ${error}`);
+        vscode.window.showErrorMessage(`Flash failed: ${error}`);
       }
     }
   );
