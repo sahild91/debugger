@@ -97,7 +97,7 @@ export class SymbolParser {
     private static extractFilePath(lines: string[], index: number): string | undefined {
         // Look backwards for file path comment
         for (let i = index; i >= Math.max(0, index - 10); i--) {
-            const fileMatch = lines[i].match(/^\s*\/\*\s*([^:]+):(\d+)/);
+            const fileMatch = lines[i].match(/^\s*\/\*\s*(.+?):(\d+)/);
             if (fileMatch) {
                 return fileMatch[1];
             }
@@ -108,7 +108,7 @@ export class SymbolParser {
     private static extractLineNumber(lines: string[], index: number): number | undefined {
         // Look backwards for line number comment
         for (let i = index; i >= Math.max(0, index - 10); i--) {
-            const lineMatch = lines[i].match(/^\s*\/\*\s*[^:]+:(\d+)/);
+            const lineMatch = lines[i].match(/^\s*\/\*\s*.+?:(\d+)/);
             if (lineMatch) {
                 return parseInt(lineMatch[1]);
             }

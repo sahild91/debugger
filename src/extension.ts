@@ -9,6 +9,7 @@ import { BreakpointsViewProvider } from "./views/breakpointViewProvider";
 import { BoardsViewProvider } from "./views/boardsViewProvider";
 import { SetupViewProvider } from "./views/setupViewProvider";
 import { DataViewProvider } from "./views/dataViewProvider";
+import { TopToolbarProvider } from "./views/topToolbarProvider";
 import { SDKManager } from "./managers/sdkManager";
 import { ToolchainManager } from "./managers/toolchainManager";
 import { SysConfigManager } from "./managers/sysconfigManager";
@@ -26,6 +27,7 @@ let breakpointsViewProvider: BreakpointsViewProvider;
 let boardsViewProvider: BoardsViewProvider;
 let setupViewProvider: SetupViewProvider;
 let dataViewProvider: DataViewProvider;
+let topToolbarProvider: TopToolbarProvider;
 let sdkManager: SDKManager;
 let toolchainManager: ToolchainManager;
 let sysConfigManager: SysConfigManager;
@@ -53,13 +55,17 @@ async function findSourceLocationForPC(
 
         // Debug: Show mapper stats
         const stats = addressMapper.getStats();
-        outputChannel.appendLine(`   Mapper has ${stats.totalMappings} mappings loaded`);
+        outputChannel.appendLine(
+          `   Mapper has ${stats.totalMappings} mappings loaded`
+        );
 
         const result = addressMapper.getSourceLocationForAddress(pcAddress);
 
         if (result) {
           outputChannel.appendLine(
-            `Fast path found: ${result.file}:${result.line}${result.functionName ? ` (${result.functionName})` : ''}`
+            `Fast path found: ${result.file}:${result.line}${
+              result.functionName ? ` (${result.functionName})` : ""
+            }`
           );
           return result;
         } else {
@@ -67,17 +73,25 @@ async function findSourceLocationForPC(
 
           // Debug: Try to see what addresses are near this one
           outputChannel.appendLine(`   Searching for PC: ${pcAddress}`);
-          outputChannel.appendLine(`   Normalized: ${pcAddress.replace(/^0x/i, '').toLowerCase()}`);
+          outputChannel.appendLine(
+            `   Normalized: ${pcAddress.replace(/^0x/i, "").toLowerCase()}`
+          );
 
           // Show sample of what's in the map
           const sampleAddresses = addressMapper.getSampleAddresses(5);
-          outputChannel.appendLine(`   Sample addresses in map: ${sampleAddresses.join(', ')}`);
+          outputChannel.appendLine(
+            `   Sample addresses in map: ${sampleAddresses.join(", ")}`
+          );
         }
       } else {
-        outputChannel.appendLine(`Fast path unavailable: addressMapper not loaded, using fallback...`);
+        outputChannel.appendLine(
+          `Fast path unavailable: addressMapper not loaded, using fallback...`
+        );
       }
     } else {
-      outputChannel.appendLine(`Fast path unavailable: breakpointsViewProvider not initialized, using fallback...`);
+      outputChannel.appendLine(
+        `Fast path unavailable: breakpointsViewProvider not initialized, using fallback...`
+      );
     }
 
     // FALLBACK: Parse full_disasm.txt file
@@ -130,16 +144,12 @@ async function findSourceLocationForPC(
     }
 
     if (!functionName) {
-      outputChannel.appendLine(
-        `No function found at address ${cleanAddress}`
-      );
+      outputChannel.appendLine(`No function found at address ${cleanAddress}`);
       return undefined;
     }
 
     // Step 2: Search backwards for "bl 0x2a4 <functionName>" to find the call site
-    outputChannel.appendLine(
-      `Searching for call to function: ${functionName}`
-    );
+    outputChannel.appendLine(`Searching for call to function: ${functionName}`);
 
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i];
@@ -224,8 +234,8 @@ async function showArrowAtPC(
 
     // Resolve file path
     let fileUri: vscode.Uri;
-    if (location.file.startsWith("/") || location.file.match(/^[a-zA-Z]:\\/)) {
-      // Absolute path
+    if (location.file.startsWith("/") || location.file.match(/^[a-zA-Z]:[/\\]/)) {
+      // Absolute path (Unix: /path or Windows: C:/ or C:\)
       fileUri = vscode.Uri.file(location.file);
     } else {
       // Relative path
@@ -259,7 +269,9 @@ async function showArrowAtPC(
       gutterIconSize: "contain",
       isWholeLine: true,
       backgroundColor: "rgba(255, 255, 0, 0.2)", // Light yellow background
-      overviewRulerColor: new vscode.ThemeColor("editorOverviewRuler.infoForeground"),
+      overviewRulerColor: new vscode.ThemeColor(
+        "editorOverviewRuler.infoForeground"
+      ),
       overviewRulerLane: vscode.OverviewRulerLane.Left,
     });
 
@@ -298,13 +310,13 @@ function getAbsolutePath(relativePath: string): string {
 }
 
 function executeSwdDebuggerCommand(
-  args: string[],  // ✅ Changed from string to string[]
+  args: string[], // ✅ Changed from string to string[]
   successMessage: string,
   requiresPort: boolean = true,
   requiresWorkspace: boolean = false
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const executablePath = cliManager.getExecutablePath();  // ✅ Use unsanitized for spawn
+    const executablePath = cliManager.getExecutablePath(); // ✅ Use unsanitized for spawn
     const selectedPort = connectionManager.getSelectedPort();
 
     // Validate port requirement
@@ -339,36 +351,36 @@ function executeSwdDebuggerCommand(
     const fullArgs: string[] = [];
 
     if (selectedPort) {
-      fullArgs.push('--port', selectedPort);
+      fullArgs.push("--port", selectedPort);
     }
 
-    fullArgs.push(...args);  // ✅ Spread the args array
+    fullArgs.push(...args); // ✅ Spread the args array
 
     outputChannel.appendLine(`Executing: ${executablePath}`);
-    outputChannel.appendLine(`Arguments: ${fullArgs.join(' ')}`);
+    outputChannel.appendLine(`Arguments: ${fullArgs.join(" ")}`);
 
     // ✅ Use spawn instead of exec
     const swdProcess = spawn(executablePath, fullArgs, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: workspaceFolder || undefined
+      stdio: ["pipe", "pipe", "pipe"],
+      cwd: workspaceFolder || undefined,
     });
 
-    let stdout = '';
-    let stderr = '';
+    let stdout = "";
+    let stderr = "";
 
-    swdProcess.stdout.on('data', (data: { toString: () => any; }) => {
+    swdProcess.stdout.on("data", (data: { toString: () => any }) => {
       const output = data.toString();
       stdout += output;
       outputChannel.append(output);
     });
 
-    swdProcess.stderr.on('data', (data: { toString: () => any; }) => {
+    swdProcess.stderr.on("data", (data: { toString: () => any }) => {
       const output = data.toString();
       stderr += output;
       outputChannel.append(output);
     });
 
-    swdProcess.on('close', (code: number) => {
+    swdProcess.on("close", (code: number) => {
       if (code === 0) {
         outputChannel.appendLine(successMessage);
         vscode.window.showInformationMessage(successMessage);
@@ -390,7 +402,7 @@ function executeSwdDebuggerCommand(
       syscall?: string;
     }
 
-    swdProcess.on('error', (error: SwdProcessError) => {
+    swdProcess.on("error", (error: SwdProcessError) => {
       const errorMessage: string = `Process error: ${error.message}`;
       outputChannel.appendLine(`ERROR: ${errorMessage}`);
       vscode.window.showErrorMessage(errorMessage);
@@ -468,7 +480,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         const binPath = getAbsolutePath("build/main.hex");
         await executeSwdDebuggerCommand(
-          ['flash', '--file', binPath],
+          ["flash", "--file", binPath],
           "Flash completed successfully!",
           true,
           true
@@ -519,7 +531,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Show success message
         vscode.window.showInformationMessage("Target halted successfully!");
-
+        // Show arrow at current PC location
+        try {
+          const pc = await debugCommand.readPC();
+          await showArrowAtPC(pc, outputChannel);
+        } catch (error) {
+          outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
+        }
       } catch (error) {
         outputChannel.appendLine(`ERROR: Halt command failed: ${error}`);
         vscode.window.showErrorMessage(`Halt failed: ${error}`);
@@ -539,9 +557,13 @@ export async function activate(context: vscode.ExtensionContext) {
         await debugCommand.resume();
 
         // Note: Don't update UI here - wait for breakpoint hit or halt
-        vscode.window.showInformationMessage("Target resumed - monitoring for breakpoints...");
+        vscode.window.showInformationMessage(
+          "Target resumed - monitoring for breakpoints..."
+        );
 
-        outputChannel.appendLine("⏸️ Target halted after resume - updating variables...");
+        outputChannel.appendLine(
+          "⏸️ Target halted after resume - updating variables..."
+        );
 
         // Update registry data in DataViewProvider
         try {
@@ -577,7 +599,6 @@ export async function activate(context: vscode.ExtensionContext) {
         } catch (error) {
           outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
         }
-
       } catch (error) {
         outputChannel.appendLine(`Resume command failed: ${error}`);
         vscode.window.showErrorMessage(`Resume failed: ${error}`);
@@ -593,7 +614,7 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine("Erase command triggered");
         outputChannel.show();
         await executeSwdDebuggerCommand(
-          ['erase', '0x00000000', '0x0001FFFF'],
+          ["erase", "0x00000000", "0x0001FFFF"],
           "Flash memory erased successfully!"
         );
       } catch (error) {
@@ -781,9 +802,7 @@ export async function activate(context: vscode.ExtensionContext) {
         "  CLI Manager initialized and swd-debugger ready"
       );
     } catch (error) {
-      outputChannel.appendLine(
-        `  CLI Manager initialization failed: ${error}`
-      );
+      outputChannel.appendLine(`  CLI Manager initialization failed: ${error}`);
       throw error;
     }
 
@@ -853,17 +872,12 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`Failed to update call stack: ${error}`);
       }
 
-      // HIGHLIGHT THE LINE IN EDITOR WHERE BREAKPOINT WAS HIT
+      // Show arrow at current PC location
       try {
-        await highlightBreakpointLine(
-          debugCommand,
-          breakpointsViewProvider,
-          outputChannel
-        );
+        const pc = await debugCommand.readPC();
+        await showArrowAtPC(pc, outputChannel);
       } catch (error) {
-        outputChannel.appendLine(
-          `Failed to highlight breakpoint line: ${error}`
-        );
+        outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
       }
     });
 
@@ -942,17 +956,12 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`Failed to update call stack: ${error}`);
       }
 
-      // HIGHLIGHT THE LINE IN EDITOR WHERE EXECUTION WAS HALTED
+      // Show arrow at current PC location
       try {
-        await highlightBreakpointLine(
-          debugCommand,
-          breakpointsViewProvider,
-          outputChannel
-        );
+        const pc = await debugCommand.readPC();
+        await showArrowAtPC(pc, outputChannel);
       } catch (error) {
-        outputChannel.appendLine(
-          `Failed to highlight current line: ${error}`
-        );
+        outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
       }
     });
 
@@ -965,9 +974,7 @@ export async function activate(context: vscode.ExtensionContext) {
         toolchainManager,
         sysConfigManager,
       });
-      outputChannel.appendLine(
-        "  TreeView provider initialized successfully"
-      );
+      outputChannel.appendLine("  TreeView provider initialized successfully");
       outputChannel.appendLine("");
     } catch (error) {
       const errorMessage =
@@ -980,6 +987,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // TreeView provider is initialized but not registered as a view
     // It's used for internal state management only
+
+    // Initialize and Register Top Toolbar Provider
+    outputChannel.appendLine("Initializing Top Toolbar...");
+    topToolbarProvider = new TopToolbarProvider(context.extensionUri);
+    context.subscriptions.push(
+      vscode.window.registerWebviewViewProvider(
+        "port11.topToolbarView",
+        topToolbarProvider
+      )
+    );
+    outputChannel.appendLine("  Top Toolbar initialized successfully");
 
     // Initialize and Register Console View Provider
     outputChannel.appendLine("Initializing Console View...");
@@ -1116,6 +1134,9 @@ export async function activate(context: vscode.ExtensionContext) {
           await debugCommand.start(port);
           treeViewProvider.setDebugActive(true);
 
+          // Show the top toolbar when debug starts
+          topToolbarProvider?.show();
+
           // Load disassembly for address mapping in breakpoint view
           const workspaceFolder =
             vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -1162,6 +1183,9 @@ export async function activate(context: vscode.ExtensionContext) {
         async () => {
           await debugCommand.stop();
           treeViewProvider.setDebugActive(false);
+
+          // Hide the top toolbar when debug stops
+          topToolbarProvider?.hide();
 
           // Deactivate breakpoint view (ADDED)
           try {
@@ -1213,17 +1237,12 @@ export async function activate(context: vscode.ExtensionContext) {
             outputChannel.appendLine(`Failed to update call stack: ${error}`);
           }
 
-          // HIGHLIGHT THE LINE IN EDITOR WHERE EXECUTION WAS HALTED
+          // Show arrow at current PC location
           try {
-            await highlightBreakpointLine(
-              debugCommand,
-              breakpointsViewProvider,
-              outputChannel
-            );
+            const pc = await debugCommand.readPC();
+            await showArrowAtPC(pc, outputChannel);
           } catch (error) {
-            outputChannel.appendLine(
-              `Failed to highlight current line: ${error}`
-            );
+            outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
           }
         }
       ),
@@ -1318,17 +1337,12 @@ export async function activate(context: vscode.ExtensionContext) {
               );
             }
 
-            // Highlight the line
+            // Show arrow at current PC location
             try {
-              await highlightBreakpointLine(
-                debugCommand,
-                breakpointsViewProvider,
-                outputChannel
-              );
+              const pc = await debugCommand.readPC();
+              await showArrowAtPC(pc, outputChannel);
             } catch (error) {
-              outputChannel.appendLine(
-                `Failed to highlight current line: ${error}`
-              );
+              outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
             }
           } catch (error) {
             outputChannel.appendLine(`Step Into failed: ${error}`);
@@ -1360,17 +1374,12 @@ export async function activate(context: vscode.ExtensionContext) {
               );
             }
 
-            // Highlight the line
+            // Show arrow at current PC location
             try {
-              await highlightBreakpointLine(
-                debugCommand,
-                breakpointsViewProvider,
-                outputChannel
-              );
+              const pc = await debugCommand.readPC();
+              await showArrowAtPC(pc, outputChannel);
             } catch (error) {
-              outputChannel.appendLine(
-                `Failed to highlight current line: ${error}`
-              );
+              outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
             }
           } catch (error) {
             outputChannel.appendLine(`Step Out failed: ${error}`);
@@ -1525,9 +1534,7 @@ async function highlightBreakpointLine(
           }, 5000);
         }
 
-        outputChannel.appendLine(
-          `Highlighted line ${bp.line} in ${bp.file}`
-        );
+        outputChannel.appendLine(`Highlighted line ${bp.line} in ${bp.file}`);
         return; // Found and highlighted, exit
       }
     }
@@ -1535,9 +1542,7 @@ async function highlightBreakpointLine(
     outputChannel.appendLine(`No source mapping found for PC: ${pc}`);
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    outputChannel.appendLine(
-      `Error highlighting breakpoint line: ${errorMsg}`
-    );
+    outputChannel.appendLine(`Error highlighting breakpoint line: ${errorMsg}`);
     throw error;
   }
 }
@@ -1627,15 +1632,17 @@ async function refreshStatus(): Promise<void> {
       `  SDK: ${sdkInstalled ? `installed (${sdkVersion})` : "not installed"}`
     );
     outputChannel.appendLine(
-      `  Toolchain: ${toolchainInstalled
-        ? `installed (${toolchainInfo.version})`
-        : "not installed"
+      `  Toolchain: ${
+        toolchainInstalled
+          ? `installed (${toolchainInfo.version})`
+          : "not installed"
       }`
     );
     outputChannel.appendLine(
-      `  SysConfig: ${sysConfigInstalled
-        ? `installed (${sysConfigInfo.version})`
-        : "not installed"
+      `  SysConfig: ${
+        sysConfigInstalled
+          ? `installed (${sysConfigInfo.version})`
+          : "not installed"
       }`
     );
     outputChannel.appendLine(`  Boards: ${boards.length} detected`);
@@ -1727,7 +1734,7 @@ function updateConnectStatusBar(): void {
     if (selectedPort) {
       const deviceType =
         selectedPortInfo?.deviceType !== "Unknown" &&
-          selectedPortInfo?.deviceType
+        selectedPortInfo?.deviceType
           ? ` (${selectedPortInfo.deviceType})`
           : "";
       connectStatusBar.text = `$(plug) ${selectedPort}${deviceType}`;

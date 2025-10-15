@@ -67,8 +67,8 @@ export class AddressMapper {
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
 
-            // Match file path comments: ; /path/to/file.c:123
-            const fileMatch = line.match(/^;\s*([^:]+):(\d+)/);
+            // Match file path comments: ; /path/to/file.c:123 or ; C:\path\to\file.c:123
+            const fileMatch = line.match(/^;\s*(.+?):(\d+)$/);
             if (fileMatch) {
                 currentFile = fileMatch[1];
                 const lineNumber = parseInt(fileMatch[2]);
@@ -76,13 +76,17 @@ export class AddressMapper {
                 // Look ahead for the next instruction address
                 const address = this.findNextInstructionAddress(lines, i);
                 if (address && currentFile) {
-                    const key = this.makeKey(currentFile, lineNumber);
+                    // IMPORTANT: Normalize file path to forward slashes for consistent lookup
+                    const normalizedFile = currentFile.replace(/\\/g, '/');
+                    const key = this.makeKey(normalizedFile, lineNumber);
                     this.lineToAddressMap.set(key, address);
+
+                    console.log(`[AddressMapper] Mapped: ${key} -> ${address}`);
 
                     // Build reverse map: address -> source location
                     const normalizedAddress = address.toLowerCase();
                     this.addressToLineMap.set(normalizedAddress, {
-                        file: currentFile,
+                        file: normalizedFile,
                         line: lineNumber,
                         functionName: currentFunction || undefined
                     });
@@ -103,6 +107,8 @@ export class AddressMapper {
                 }
             }
         }
+
+        console.log(`[AddressMapper] Total mappings: ${this.lineToAddressMap.size}`);
     }
 
     /**
@@ -114,7 +120,7 @@ export class AddressMapper {
             const line = lines[i];
 
             // Stop if we encounter another source line comment
-            if (line.match(/^;\s*([^:]+):(\d+)/)) {
+            if (line.match(/^;\s*(.+?):(\d+)$/)) {
                 break;
             }
 
@@ -204,6 +210,8 @@ export class AddressMapper {
         const breakpoints = vscode.debug.breakpoints;
         const result: SourceLineAddress[] = [];
 
+        console.log(`[AddressMapper] Getting addresses for ${breakpoints.length} breakpoints`);
+
         breakpoints.forEach(bp => {
             if (bp instanceof vscode.SourceBreakpoint) {
                 const location = bp.location;
@@ -214,7 +222,9 @@ export class AddressMapper {
                 // This ensures Windows paths (C:\path\file.c) match the normalized keys
                 const normalizedPath = filePath.replace(/\\/g, '/');
 
+                console.log(`[AddressMapper] Looking up: ${normalizedPath}:${lineNumber}`);
                 const address = this.getAddressForLine(normalizedPath, lineNumber);
+                console.log(`[AddressMapper] Found address: ${address || 'NOT FOUND'}`);
 
                 if (address) {
                     result.push({
@@ -237,6 +247,7 @@ export class AddressMapper {
             }
         });
 
+        console.log(`[AddressMapper] Resolved ${result.length} addresses`);
         return result;
     }
 

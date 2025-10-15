@@ -145,18 +145,24 @@ export class TopToolbarProvider implements vscode.WebviewViewProvider {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    gap: 4px;
-                    padding: 8px 4px;
+                    gap: 12px;
+                    padding: 12px 8px;
                     background-color: var(--vscode-sideBar-background);
-                    border-bottom: 1px solid var(--vscode-panel-border);
+                }
+
+                .toolbar-button-wrapper {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 4px;
                 }
 
                 .toolbar-button {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    width: 32px;
-                    height: 32px;
+                    width: 36px;
+                    height: 36px;
                     border: none;
                     background: transparent;
                     cursor: pointer;
@@ -167,84 +173,75 @@ export class TopToolbarProvider implements vscode.WebviewViewProvider {
 
                 .toolbar-button:hover {
                     background-color: var(--vscode-list-hoverBackground);
-                    transform: scale(1.1);
+                    transform: scale(1.05);
                 }
 
                 .toolbar-button:active {
-                    background-color: #cccccc;
                     transform: scale(0.95);
                 }
 
                 /* SVG icons with specific colors */
                 .icon {
-                    width: 24px;
-                    height: 24px;
+                    width: 16px;
+                    height: 16px;
                 }
 
                 /* Button-specific colors */
-                .icon-resume { color: #cccccc; } /* Light Blue */
-                .icon-stop { color: #cccccc; } /* Red */
-                .icon-step { color: #cccccc; } /* Blue */
-                .icon-halt { color: #cccccc; } /* Purple */
-                .icon-flash { color: #cccccc; } /* Yellow */
-                .icon-connect { color: #cccccc; } /* Green */
+                .icon-halt { color: #87CEEB; } /* Sky Blue */
+                .icon-step { color: #CCCCCC; } /* Grey */
+                .icon-resume { color: #4CAF50; } /* Green */
+                .icon-stop { color: #F44336; } /* Red */
 
-                .separator {
-                    width: 1px;
-                    height: 24px;
-                    background-color: var(--vscode-panel-border);
-                    margin: 0 2px;
+                /* Button labels */
+                .button-label {
+                    font-size: 11px;
+                    color: #999999;
+                    text-align: center;
                 }
             </style>
         </head>
         <body>
             <div class="toolbar">
-                <!-- Resume Button -->
-                <button class="toolbar-button" onclick="sendCommand('resume')" title="Resume Target">
-                    <svg class="icon icon-resume" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M4 3v10l9-5z"/>
-                    </svg>
-                </button>
-
-                <!-- Stop Button -->
-                <button class="toolbar-button" onclick="sendCommand('stop')" title="Stop Debug Session">
-                    <svg class="icon icon-stop" viewBox="0 0 16 16" fill="currentColor">
-                        <rect x="4" y="4" width="8" height="8" rx="1"/>
-                    </svg>
-                </button>
+                <!-- Halt Button -->
+                <div class="toolbar-button-wrapper">
+                    <button class="toolbar-button" onclick="sendCommand('halt')" title="Halt Target">
+                        <svg class="icon icon-halt" viewBox="0 0 12 12" fill="currentColor">
+                            <rect x="4" y="3" width="3" height="10" rx="0.5"/>
+                            <rect x="9" y="3" width="3" height="10" rx="0.5"/>
+                        </svg>
+                    </button>
+                    <div class="button-label">Halt</div>
+                </div>
 
                 <!-- Step Button -->
-                <button class="toolbar-button" onclick="sendCommand('step')" title="Step Over">
-                    <svg class="icon icon-step" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M8 1l5 5-5 5V8H3V4h5V1zm1 9v3l3-3h-3z"/>
-                    </svg>
-                </button>
+                <div class="toolbar-button-wrapper">
+                    <button class="toolbar-button" onclick="sendCommand('step')" title="Step Over">
+                        <svg class="icon icon-step" viewBox="0 0 12 12" fill="currentColor">
+                            <path d="M8 1l5 5-5 5V8H3V4h5V1zm1 9v3l3-3h-3z"/>
+                        </svg>
+                    </button>
+                    <div class="button-label">Step</div>
+                </div>
 
-                <div class="separator"></div>
+                <!-- Resume Button -->
+                <div class="toolbar-button-wrapper">
+                    <button class="toolbar-button" onclick="sendCommand('resume')" title="Resume Target">
+                        <svg class="icon icon-resume" viewBox="0 0 12 12" fill="currentColor">
+                            <path d="M4 3v10l9-5z"/>
+                        </svg>
+                    </button>
+                    <div class="button-label">Resume</div>
+                </div>
 
-                <!-- Halt Button -->
-                <button class="toolbar-button" onclick="sendCommand('halt')" title="Halt Target">
-                    <svg class="icon icon-halt" viewBox="0 0 16 16" fill="currentColor">
-                        <rect x="4" y="3" width="3" height="10" rx="0.5"/>
-                        <rect x="9" y="3" width="3" height="10" rx="0.5"/>
-                    </svg>
-                </button>
-
-                <div class="separator"></div>
-
-                <!-- Flash Button -->
-                <button class="toolbar-button" onclick="sendCommand('flash')" title="Flash Firmware">
-                    <svg class="icon icon-flash" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M10 1L6 9h3l-1 6 5-8H9l1-6z"/>
-                    </svg>
-                </button>
-
-                <!-- Connect Button -->
-                <button class="toolbar-button" onclick="sendCommand('connect')" title="Connect to Port">
-                    <svg class="icon icon-connect" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M11 4h1v1h-1V4zm-1 2V5h1v1h-1zm-1 1h1V6h-1v1zm-1 1V7h1v1H8zm5-4h-1V3h1v1zm1 1V4h-1v1h1zm1 1h-1V5h1v1zm0 1V6h1v1h-1zm-2 2h1V7h-1v1zM2 6h5v1H2V6zm0 2h4v1H2V8zm13 2h-3v1h3v-1zm0 2h-3v1h3v-1zM2 10h3v1H2v-1zm0 2h3v1H2v-1z"/>
-                    </svg>
-                </button>
+                <!-- Stop Button -->
+                <div class="toolbar-button-wrapper">
+                    <button class="toolbar-button" onclick="sendCommand('stop')" title="Stop Debug Session">
+                        <svg class="icon icon-stop" viewBox="0 0 12 12" fill="currentColor">
+                            <rect x="4" y="4" width="8" height="8" rx="1"/>
+                        </svg>
+                    </button>
+                    <div class="button-label">Stop</div>
+                </div>
             </div>
 
             <script>
