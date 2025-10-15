@@ -872,17 +872,12 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`Failed to update call stack: ${error}`);
       }
 
-      // HIGHLIGHT THE LINE IN EDITOR WHERE BREAKPOINT WAS HIT
+      // Show arrow at current PC location
       try {
-        await highlightBreakpointLine(
-          debugCommand,
-          breakpointsViewProvider,
-          outputChannel
-        );
+        const pc = await debugCommand.readPC();
+        await showArrowAtPC(pc, outputChannel);
       } catch (error) {
-        outputChannel.appendLine(
-          `Failed to highlight breakpoint line: ${error}`
-        );
+        outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
       }
     });
 
@@ -961,15 +956,12 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`Failed to update call stack: ${error}`);
       }
 
-      // HIGHLIGHT THE LINE IN EDITOR WHERE EXECUTION WAS HALTED
+      // Show arrow at current PC location
       try {
-        await highlightBreakpointLine(
-          debugCommand,
-          breakpointsViewProvider,
-          outputChannel
-        );
+        const pc = await debugCommand.readPC();
+        await showArrowAtPC(pc, outputChannel);
       } catch (error) {
-        outputChannel.appendLine(`Failed to highlight current line: ${error}`);
+        outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
       }
     });
 
@@ -1245,17 +1237,12 @@ export async function activate(context: vscode.ExtensionContext) {
             outputChannel.appendLine(`Failed to update call stack: ${error}`);
           }
 
-          // HIGHLIGHT THE LINE IN EDITOR WHERE EXECUTION WAS HALTED
+          // Show arrow at current PC location
           try {
-            await highlightBreakpointLine(
-              debugCommand,
-              breakpointsViewProvider,
-              outputChannel
-            );
+            const pc = await debugCommand.readPC();
+            await showArrowAtPC(pc, outputChannel);
           } catch (error) {
-            outputChannel.appendLine(
-              `Failed to highlight current line: ${error}`
-            );
+            outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
           }
         }
       ),
@@ -1350,17 +1337,12 @@ export async function activate(context: vscode.ExtensionContext) {
               );
             }
 
-            // Highlight the line
+            // Show arrow at current PC location
             try {
-              await highlightBreakpointLine(
-                debugCommand,
-                breakpointsViewProvider,
-                outputChannel
-              );
+              const pc = await debugCommand.readPC();
+              await showArrowAtPC(pc, outputChannel);
             } catch (error) {
-              outputChannel.appendLine(
-                `Failed to highlight current line: ${error}`
-              );
+              outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
             }
           } catch (error) {
             outputChannel.appendLine(`Step Into failed: ${error}`);
@@ -1392,17 +1374,12 @@ export async function activate(context: vscode.ExtensionContext) {
               );
             }
 
-            // Highlight the line
+            // Show arrow at current PC location
             try {
-              await highlightBreakpointLine(
-                debugCommand,
-                breakpointsViewProvider,
-                outputChannel
-              );
+              const pc = await debugCommand.readPC();
+              await showArrowAtPC(pc, outputChannel);
             } catch (error) {
-              outputChannel.appendLine(
-                `Failed to highlight current line: ${error}`
-              );
+              outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
             }
           } catch (error) {
             outputChannel.appendLine(`Step Out failed: ${error}`);
