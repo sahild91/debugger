@@ -812,15 +812,20 @@ export class DebugCommand {
 
         try {
             // Execute the step command
-            await this.executeDAPCommand(['step']);
+            const stepOutput = await this.executeDAPCommand(['step']);
             this.outputChannel.appendLine('Step completed');
+
+            // Extract PC address from step output (format: "PC after step: 0x000002A4")
+            const pcMatch = stepOutput.match(/PC after step:\s*(0x[0-9a-fA-F]+)/i);
+            const pcAddress = pcMatch ? pcMatch[1] : null;
 
             // AUTO-READ registers after step
             this.outputChannel.appendLine('Automatically reading registers...');
             await this.readAllRegisters();
 
             // Emit event to update UI and highlight the new line
-            this.eventEmitter.emit('stepCompleted');
+            // Pass the PC address so extension.ts can call showArrowAtPC
+            this.eventEmitter.emit('stepCompleted', pcAddress);
 
         } catch (error) {
             this.outputChannel.appendLine(`Failed to step: ${error}`);
@@ -843,7 +848,7 @@ export class DebugCommand {
         throw new Error('Step Out command requires GDB/LLDB integration');
     }
 
-    public onStepCompleted(callback: () => void): void {
+    public onStepCompleted(callback: (pcAddress: string | null) => void): void {
         this.eventEmitter.on('stepCompleted', callback);
     }
 

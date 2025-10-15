@@ -541,6 +541,43 @@ export async function activate(context: vscode.ExtensionContext) {
         // Note: Don't update UI here - wait for breakpoint hit or halt
         vscode.window.showInformationMessage("Target resumed - monitoring for breakpoints...");
 
+        outputChannel.appendLine("⏸️ Target halted after resume - updating variables...");
+
+        // Update registry data in DataViewProvider
+        try {
+          await dataViewProvider?.updateRegistryData();
+        } catch (error) {
+          outputChannel.appendLine(`Failed to update registry data: ${error}`);
+        }
+
+        // Update variables in DataViewProvider
+        try {
+          const variables = await debugCommand.getVariables();
+          dataViewProvider?.updateVariables(
+            variables.localVariables,
+            variables.globalVariables,
+            true
+          );
+        } catch (error) {
+          outputChannel.appendLine(`Failed to update variables: ${error}`);
+        }
+
+        // Update call stack
+        try {
+          const callStack = await debugCommand.getCallStack();
+          callStackViewProvider?.updateCallStack(callStack, true);
+        } catch (error) {
+          outputChannel.appendLine(`Failed to update call stack: ${error}`);
+        }
+
+        // Show arrow at current PC location
+        try {
+          const pc = await debugCommand.readPC();
+          await showArrowAtPC(pc, outputChannel);
+        } catch (error) {
+          outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
+        }
+
       } catch (error) {
         outputChannel.appendLine(`Resume command failed: ${error}`);
         vscode.window.showErrorMessage(`Resume failed: ${error}`);
@@ -830,7 +867,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     });
 
-    debugCommand.onStepCompleted(async () => {
+    debugCommand.onStepCompleted(async (pcAddress: string | null) => {
       outputChannel.appendLine("Step completed - updating UI...");
 
       // Update registry data in DataViewProvider
@@ -860,15 +897,17 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`Failed to update call stack: ${error}`);
       }
 
-      // HIGHLIGHT THE LINE IN EDITOR WHERE EXECUTION STOPPED AFTER STEP
+      // Show arrow at current PC location (similar to resume)
       try {
-        await highlightBreakpointLine(
-          debugCommand,
-          breakpointsViewProvider,
-          outputChannel
-        );
+        if (pcAddress) {
+          await showArrowAtPC(pcAddress, outputChannel);
+        } else {
+          // Fallback: read PC if not provided in step output
+          const pc = await debugCommand.readPC();
+          await showArrowAtPC(pc, outputChannel);
+        }
       } catch (error) {
-        outputChannel.appendLine(`Failed to highlight current line: ${error}`);
+        outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
       }
     });
 
@@ -1237,17 +1276,20 @@ export async function activate(context: vscode.ExtensionContext) {
               );
             }
 
-            // Highlight the line
+            // Update call stack
             try {
-              await highlightBreakpointLine(
-                debugCommand,
-                breakpointsViewProvider,
-                outputChannel
-              );
+              const callStack = await debugCommand.getCallStack();
+              callStackViewProvider?.updateCallStack(callStack, true);
             } catch (error) {
-              outputChannel.appendLine(
-                `Failed to highlight current line: ${error}`
-              );
+              outputChannel.appendLine(`Failed to update call stack: ${error}`);
+            }
+
+            // Show arrow at current PC location
+            try {
+              const pc = await debugCommand.readPC();
+              await showArrowAtPC(pc, outputChannel);
+            } catch (error) {
+              outputChannel.appendLine(`Failed to show arrow at PC: ${error}`);
             }
           } catch (error) {
             outputChannel.appendLine(`Step Out failed: ${error}`);
