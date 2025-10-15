@@ -234,8 +234,8 @@ async function showArrowAtPC(
 
     // Resolve file path
     let fileUri: vscode.Uri;
-    if (location.file.startsWith("/") || location.file.match(/^[a-zA-Z]:\\/)) {
-      // Absolute path
+    if (location.file.startsWith("/") || location.file.match(/^[a-zA-Z]:[/\\]/)) {
+      // Absolute path (Unix: /path or Windows: C:/ or C:\)
       fileUri = vscode.Uri.file(location.file);
     } else {
       // Relative path
