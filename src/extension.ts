@@ -1149,8 +1149,10 @@ export async function activate(context: vscode.ExtensionContext) {
         "port11-debugger.debug.start",
         async (port?: string) => {
           await debugCommand.start(port);
-          treeViewProvider.setDebugActive(true);
 
+          treeViewProvider.setDebugActive(true);
+          breakpointsViewProvider?.setDebugActive(true); 
+          
           // Show the top toolbar when debug starts
           topToolbarProvider?.show();
 
@@ -1283,9 +1285,6 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.window.showErrorMessage(`Failed to resume target: ${error}`);
           }
         }
-      ),
-      vscode.commands.registerCommand("port11-debugger.debug.restart", () =>
-        restartDebugSession(debugCommand)
       ),
 
       // Debug stepping commands
