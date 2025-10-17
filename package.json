@@ -4,6 +4,10 @@
   "description": "MSPM0 Development and Debugging Extension",
   "version": "0.1.3",
   "publisher": "YuduRobotics",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Yudu-Robotics/debugger.git"
+  },
   "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.85.0"
